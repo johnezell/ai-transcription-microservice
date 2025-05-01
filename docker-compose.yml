@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  laravel:
+    build:
+      context: .
+      dockerfile: Dockerfile.laravel
+    container_name: aws-transcription-laravel
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./app/laravel:/var/www
+    networks:
+      - app-network
+    environment:
+      - APP_ENV=local
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/database/database.sqlite
+
+  transcription-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    container_name: aws-transcription-service
+    restart: unless-stopped
+    volumes:
+      - ./app/services/transcriptions:/app
+    depends_on:
+      - laravel
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

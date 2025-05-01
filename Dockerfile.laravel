@@ -1,0 +1,43 @@
+FROM php:8.2-fpm
+
+WORKDIR /var/www
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    zip \
+    unzip \
+    nginx \
+    supervisor
+
+# Install PHP extensions
+RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Set up Nginx
+COPY docker/nginx/default.conf /etc/nginx/sites-available/default
+RUN ln -sf /dev/stdout /var/log/nginx/access.log \
+    && ln -sf /dev/stderr /var/log/nginx/error.log
+
+# Set up Supervisor
+COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Copy existing application directory
+COPY ./app/laravel .
+
+# Create required directories and set permissions
+RUN mkdir -p /var/www/storage /var/www/bootstrap/cache \
+    && chown -R www-data:www-data /var/www \
+    && chmod -R 755 /var/www/storage
+
+# Expose port 80
+EXPOSE 80
+
+# Start Supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"] 

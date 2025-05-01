@@ -1,94 +1,48 @@
-# Whisper AI Transcription Service
+# AWS Transcription Service
 
 ## Overview
 
-The Whisper AI Transcription Service is a powerful application designed to transcribe video lessons, with a particular focus on guitar instruction content. Leveraging OpenAI's Whisper AI technology, this service not only provides accurate transcriptions but also enhances content with summaries, articles, and domain-specific analysis.
+The AWS Transcription Service is a microservices-based application designed to transcribe audio/video content using AWS Transcription services. The application features a web interface and API for managing transcription jobs.
+
+## Architecture
+
+The application is built with a microservices architecture consisting of:
+
+1. **Laravel Application**: Serves both web UI and API endpoints
+2. **Transcription Service**: Python-based service that interfaces with AWS Transcription API
 
 ## Key Features
 
-### Core Functionality
-- **Audio/Video Transcription**: Converts spoken content to text using OpenAI's Whisper AI models
-- **Content Enhancement**:
-  - Formatted transcripts with timestamps
-  - Concise summaries of the content
-  - SEO-optimized articles based on the transcribed content
-  - Automatic keyword extraction
-  - SRT subtitle file generation
-
-### Technical Capabilities
-- **Dual Operation Modes**:
-  - Web Interface: User-friendly browser interface for file uploads
-  - Command-Line Mode: For batch processing with transcription IDs
-- **Database Integration**: Stores and retrieves transcription data using SQLAlchemy/SQLModel
-- **AWS Integration**:
-  - Downloads videos from S3 buckets
-  - Deployable through AWS Elastic Container Services (ECS)
-
-### Domain-Specific Features
-- **Guitar Instruction Focus**:
-  - Detection of guitar-specific terminology
-  - Classification by genre, instrument, level, and topic
-  - Customized prompts for guitar instruction content
-- **Educational Content Processing**: Optimized for educational video content
-
-## User Interface
-
-The web interface allows users to:
-1. Upload media files (audio/video)
-2. Select the Whisper model to use (Base or Turbo)
-3. Customize prompts for transcript, summary, and article generation
-4. View and download the generated content
+- Web interface for managing transcription jobs
+- RESTful API for programmatic access
+- AWS Transcription integration
+- Containerized deployment with Docker
 
 ## Getting Started
 
 ### Prerequisites
-- **AWS Credentials**: Contact your DevOps team for access
-- **Docker Desktop**: Ensure Docker is installed and running
-- **VS Code**: With the Dev Containers extension installed
+- Docker and Docker Compose
+- AWS Credentials (for transcription services)
 
-### Setup
-1. **Configure AWS Credentials**:
+### Setup and Installation
+
+1. Clone the repository
+2. Configure environment variables
+3. Run with Docker Compose:
    ```bash
-   chmod +x getenv.sh
-   ./getenv.sh
+   docker-compose up -d
    ```
-   Enter your AWS Key and Secret when prompted.
 
-2. **Start the Dev Container**:
-   - Open VS Code
-   - Press `Cmd+Shift+P` (Mac) and select "Dev Containers: Reopen in Container"
-   - First-time setup will take longer as it pulls all required images
-
-### Running the Application
-- **Web Interface Mode**: Access the application through your browser at `http://localhost:5100`
-- **Command-Line Mode**: Run `python app/app.py [transcription_id]`
-
-## Deployment
-
-Deployment is handled through GitHub Actions and defined in `.github/workflows/aws.yml`. This is triggered when pushing to the main branch.
-
-## Configuration
-
-The application can be configured through:
-- Environment variables in `.env` file
-- Settings in `app/config.ini`
-
-Key configuration options include:
-- Whisper AI model selection
-- Custom prompts for transcript, summary, and article generation
-- Database connection settings
-- AWS credentials and settings
+### Accessing the Application
+- **Web Interface**: Access through your browser at `http://localhost:8080`
+- **API Endpoints**: Access at `http://localhost:8080/api`
 
 ## Technical Stack
 
-- **Backend**: Python, Flask
-- **AI Models**: 
-  - OpenAI Whisper for transcription
-  - GPT models for content enhancement
-  - Specialized models for domain-specific analysis
-- **Database**: SQLAlchemy/SQLModel
-- **Deployment**: Docker, AWS ECS
-- **Development**: Dev Containers
+- **Web & API**: PHP Laravel 12
+- **Transcription Service**: Python
+- **Database**: SQLite (for local development)
+- **Deployment**: Docker Compose
 
 ## License
 

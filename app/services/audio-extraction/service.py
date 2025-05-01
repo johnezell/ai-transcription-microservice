@@ -17,15 +17,16 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 
+# Set environment constants for cleaner path handling
+S3_BASE_DIR = '/var/www/storage/app/public/s3'
+S3_JOBS_DIR = os.path.join(S3_BASE_DIR, 'jobs')
+
 # Get environment variables
 LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://laravel/api')
 TRANSCRIPTION_SERVICE_URL = os.environ.get('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000')
-SHARED_AUDIO_DIR = '/app/shared/audio'
-SHARED_FILES_DIR = '/app/shared/files'
 
-# Ensure shared directories exist
-os.makedirs(SHARED_AUDIO_DIR, exist_ok=True)
-os.makedirs(SHARED_FILES_DIR, exist_ok=True)
+# Ensure base directory exists
+os.makedirs(S3_JOBS_DIR, exist_ok=True)
 
 def convert_to_wav(input_path, output_path):
     """Convert media to WAV format optimized for transcription."""
@@ -70,8 +71,7 @@ def connectivity_test():
         'laravel_api': test_laravel_connectivity(),
         'transcription_service': test_transcription_connectivity(),
         'shared_directories': {
-            'audio_dir': os.path.exists(SHARED_AUDIO_DIR) and os.access(SHARED_AUDIO_DIR, os.W_OK),
-            'files_dir': os.path.exists(SHARED_FILES_DIR) and os.access(SHARED_FILES_DIR, os.W_OK),
+            'jobs_dir': os.path.exists(S3_JOBS_DIR) and os.access(S3_JOBS_DIR, os.W_OK),
         }
     }
     
@@ -95,30 +95,62 @@ def process_audio_extraction():
     job_id = data['job_id']
     video_path = data['video_path']
     
-    # For Laravel storage paths, handle the path conversion
-    if video_path.startswith('public/'):
-        # Convert Laravel storage path to local container path
-        local_path = video_path.replace('public/', '/var/www/storage/app/public/')
+    logger.info(f"Processing job {job_id} with video path: {video_path}")
+    
+    # Create job directory if it doesn't exist
+    job_dir = os.path.join(S3_JOBS_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    
+    # Standardize path handling
+    if video_path.startswith('s3/'):
+        local_path = os.path.join('/var/www/storage/app/public', video_path)
     else:
+        # Assume it's a full path already
         local_path = video_path
-        
-    logger.info(f"Received audio extraction job: {job_id} for video: {local_path}")
+    
+    logger.info(f"Resolved video path: {local_path}")
+    
+    # Define output paths with standardized filenames
+    audio_path = os.path.join(job_dir, 'audio.wav')
+    
+    # Basic directory structure check for debugging
+    try:
+        if os.path.exists(job_dir):
+            dir_contents = os.listdir(job_dir)
+            logger.info(f"Job directory contents: {dir_contents}")
+        else:
+            logger.error(f"Job directory {job_dir} does not exist")
+            logger.info(f"Creating job directory: {job_dir}")
+            os.makedirs(job_dir, exist_ok=True)
+    except Exception as e:
+        logger.error(f"Error with job directory: {str(e)}")
     
     try:
         # Check if the video file exists
         if not os.path.exists(local_path):
             error_msg = f"Video file not found at path: {local_path}"
             logger.error(error_msg)
+            
+            # Additional file access troubleshooting
+            try:
+                # Check parent directories
+                parent_exists = os.path.exists(os.path.dirname(local_path))
+                logger.error(f"Parent directory exists: {parent_exists}")
+                
+                # Check permissions
+                if parent_exists:
+                    stats = os.stat(os.path.dirname(local_path))
+                    logger.error(f"Parent directory permissions: {oct(stats.st_mode)}")
+                    logger.error(f"Parent directory owner/group: {stats.st_uid}/{stats.st_gid}")
+            except Exception as perm_error:
+                logger.error(f"Permission check error: {str(perm_error)}")
+            
             update_job_status(job_id, 'failed', None, error_msg)
             return jsonify({
                 'success': False,
                 'message': error_msg
             }), 404
             
-        # Generate output audio filename with .wav extension
-        audio_filename = f"{job_id}_{uuid.uuid4()}.wav"
-        audio_path = os.path.join(SHARED_AUDIO_DIR, audio_filename)
-        
         # Extract audio using ffmpeg
         convert_to_wav(local_path, audio_path)
         

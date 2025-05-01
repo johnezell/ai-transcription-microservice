@@ -45,21 +45,12 @@ class VideoController extends Controller
         $originalFilename = $file->getClientOriginalName();
         $extension = $file->getClientOriginalExtension();
         
-        // Generate a unique S3-like key (simulating S3 storage)
-        $s3Key = 'source_videos/' . Str::uuid() . '.' . $extension;
-        $storagePath = 'public/s3/' . $s3Key;
-        
-        // Store the file in our "s3" directory
-        $file->storeAs('public/s3/source_videos', basename($s3Key));
-        
-        // Create database record
+        // Create a new video record first to get its UUID
         $video = Video::create([
             'original_filename' => $originalFilename,
-            'storage_path' => $storagePath,
-            's3_key' => $s3Key,
             'mime_type' => $file->getMimeType(),
             'size_bytes' => $file->getSize(),
-            'status' => 'uploaded',
+            'status' => 'uploading',
             'metadata' => [
                 'uploaded_at' => now()->toIso8601String(),
                 'ip_address' => $request->ip(),
@@ -67,8 +58,58 @@ class VideoController extends Controller
             ],
         ]);
         
-        return redirect()->route('videos.index')
-            ->with('success', 'Video uploaded successfully.');
+        try {
+            // Use the video UUID as the job ID for consistent folder structure
+            $jobId = $video->id;
+            
+            // Create job directory structure
+            $s3JobPath = "s3/jobs/{$jobId}";
+            Storage::disk('public')->makeDirectory($s3JobPath);
+            
+            // Store the video with a standardized filename
+            $videoFilename = "video.{$extension}";
+            $videoPath = "{$s3JobPath}/{$videoFilename}";
+            
+            // Store the file
+            $result = Storage::disk('public')->putFileAs($s3JobPath, $file, $videoFilename);
+            
+            if (!$result) {
+                throw new \Exception("Failed to store video file");
+            }
+            
+            // Update the video record with the storage path
+            $video->update([
+                'storage_path' => $videoPath,
+                's3_key' => $videoFilename,
+                'status' => 'uploaded',
+            ]);
+            
+            // Log the file storage details for debugging
+            Log::info('Video file upload', [
+                'job_id' => $jobId,
+                'original_filename' => $originalFilename,
+                'storage_path' => $videoPath,
+                'file_size' => $file->getSize(),
+                'storage_result' => $result,
+                'exists' => Storage::disk('public')->exists($videoPath),
+                'full_path' => Storage::disk('public')->path($videoPath),
+            ]);
+            
+            return redirect()->route('videos.index')
+                ->with('success', 'Video uploaded successfully.');
+                
+        } catch (\Exception $e) {
+            // If anything goes wrong, update the status to failed
+            $video->update(['status' => 'failed']);
+            
+            Log::error('Video upload failed', [
+                'error' => $e->getMessage(),
+                'video_id' => $video->id
+            ]);
+            
+            return redirect()->route('videos.index')
+                ->with('error', 'Failed to upload video: ' . $e->getMessage());
+        }
     }
     
     /**
@@ -86,14 +127,43 @@ class VideoController extends Controller
      */
     public function destroy(Video $video)
     {
-        // Delete the file
-        Storage::delete($video->storage_path);
-        
-        // Delete the record
-        $video->delete();
-        
-        return redirect()->route('videos.index')
-            ->with('success', 'Video deleted successfully.');
+        try {
+            // Get job directory path based on video ID
+            $jobPath = "s3/jobs/{$video->id}";
+            
+            // Check if the job directory exists
+            if (Storage::disk('public')->exists($jobPath)) {
+                // Delete the entire job directory with all its contents
+                Storage::disk('public')->deleteDirectory($jobPath);
+                Log::info('Deleted job directory for video', [
+                    'video_id' => $video->id,
+                    'job_path' => $jobPath
+                ]);
+            } else {
+                // Fallback to just deleting the video file if job directory doesn't exist
+                if ($video->storage_path && Storage::disk('public')->exists($video->storage_path)) {
+                    Storage::disk('public')->delete($video->storage_path);
+                    Log::info('Deleted video file only', [
+                        'video_id' => $video->id,
+                        'storage_path' => $video->storage_path
+                    ]);
+                }
+            }
+            
+            // Delete the record
+            $video->delete();
+            
+            return redirect()->route('videos.index')
+                ->with('success', 'Video and all associated files deleted successfully.');
+        } catch (\Exception $e) {
+            Log::error('Error deleting video', [
+                'video_id' => $video->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return redirect()->route('videos.index')
+                ->with('error', 'Error deleting video: ' . $e->getMessage());
+        }
     }
     
     /**
@@ -102,6 +172,17 @@ class VideoController extends Controller
     public function requestTranscription(Video $video)
     {
         try {
+            // Check if file exists
+            if (!Storage::disk('public')->exists($video->storage_path)) {
+                Log::error('Video file not found', [
+                    'video_id' => $video->id,
+                    'storage_path' => $video->storage_path
+                ]);
+                
+                return redirect()->route('videos.show', $video)
+                    ->with('error', 'Video file not found. Please try uploading again.');
+            }
+            
             // Mark video as processing
             $video->update([
                 'status' => 'processing'
@@ -114,13 +195,15 @@ class VideoController extends Controller
             Log::info('Requesting audio extraction for video', [
                 'video_id' => $video->id,
                 'service_url' => $audioServiceUrl,
-                'storage_path' => $video->storage_path
+                'storage_path' => $video->storage_path,
+                'exists' => Storage::disk('public')->exists($video->storage_path),
+                'full_path' => Storage::disk('public')->path($video->storage_path)
             ]);
 
             // Send request to the audio extraction service
             $response = Http::post("{$audioServiceUrl}/process", [
-                'job_id' => (string) $video->id, // Use video ID as job ID for simplicity
-                'video_path' => $video->storage_path // This should be a path like 'public/s3/source_videos/filename.mp4'
+                'job_id' => (string) $video->id, // Video UUID as job ID
+                'video_path' => $video->storage_path // Pass the storage path
             ]);
 
             if ($response->successful()) {

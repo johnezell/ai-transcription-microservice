@@ -14,14 +14,15 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 
+# Set environment constants for cleaner path handling
+S3_BASE_DIR = '/var/www/storage/app/public/s3'
+S3_JOBS_DIR = os.path.join(S3_BASE_DIR, 'jobs')
+
 # Get environment variables
 LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://laravel/api')
-SHARED_AUDIO_DIR = '/app/shared/audio'
-SHARED_FILES_DIR = '/app/shared/files'
 
-# Ensure shared directories exist
-os.makedirs(SHARED_AUDIO_DIR, exist_ok=True)
-os.makedirs(SHARED_FILES_DIR, exist_ok=True)
+# Ensure base directory exists
+os.makedirs(S3_JOBS_DIR, exist_ok=True)
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -38,8 +39,7 @@ def connectivity_test():
     results = {
         'laravel_api': test_laravel_connectivity(),
         'shared_directories': {
-            'audio_dir': os.path.exists(SHARED_AUDIO_DIR) and os.access(SHARED_AUDIO_DIR, os.R_OK),
-            'files_dir': os.path.exists(SHARED_FILES_DIR) and os.access(SHARED_FILES_DIR, os.W_OK),
+            'jobs_dir': os.path.exists(S3_JOBS_DIR) and os.access(S3_JOBS_DIR, os.W_OK),
         }
     }
     
@@ -65,6 +65,13 @@ def process_transcription():
     
     logger.info(f"Received transcription job: {job_id} for audio: {audio_path}")
     
+    # Create or get job directory
+    job_dir = os.path.join(S3_JOBS_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    
+    # Define output path with standardized filename
+    transcript_path = os.path.join(job_dir, 'transcript.txt')
+    
     try:
         # Check if audio file exists
         if not os.path.exists(audio_path):
@@ -82,22 +89,19 @@ def process_transcription():
         # Simulate transcription
         transcript = "This is a simulated transcript. The actual transcription would be generated from the audio file."
         
-        # Generate output file
-        output_filename = f"{uuid.uuid4()}.txt"
-        output_path = os.path.join(SHARED_FILES_DIR, output_filename)
-        
         # Write transcript to file
-        with open(output_path, 'w') as f:
+        with open(transcript_path, 'w') as f:
             f.write(transcript)
         
         # Log success
-        logger.info(f"Successfully created transcript at {output_path}")
+        logger.info(f"Successfully created transcript at {transcript_path}")
         
         # Prepare response data
         response_data = {
             'message': 'Transcription completed successfully',
             'service_timestamp': datetime.now().isoformat(),
-            'transcript_path': output_path,
+            'transcript_path': transcript_path,
+            'transcript_text': transcript,
             'metadata': {
                 'service': 'transcription-service',
                 'processed_by': 'Transcription service'

@@ -16,6 +16,7 @@ class TranscriptionLog extends Model
      */
     protected $fillable = [
         'job_id',
+        'video_id',
         'status',
         'request_data',
         'response_data',
@@ -35,4 +36,12 @@ class TranscriptionLog extends Model
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
+    
+    /**
+     * Get the video that this transcription log belongs to.
+     */
+    public function video()
+    {
+        return $this->belongsTo(Video::class);
+    }
 }

@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('transcription_logs', function (Blueprint $table) {
             $table->id();
+            $table->uuid('video_id')->nullable();
             $table->string('job_id')->unique()->comment('Unique job identifier');
             $table->string('status')->default('pending')->comment('Job status: pending, processing, completed, failed');
             $table->text('request_data')->nullable()->comment('JSON data sent to the transcription service');
@@ -21,6 +22,8 @@ return new class extends Migration
             $table->timestamp('started_at')->nullable()->comment('When the job started processing');
             $table->timestamp('completed_at')->nullable()->comment('When the job was completed or failed');
             $table->timestamps();
+            
+            $table->foreign('video_id')->references('id')->on('videos')->onDelete('cascade');
         });
     }
 

@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessTranscriptionJob;
 use App\Models\TranscriptionLog;
+use App\Models\Video;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class TranscriptionController extends Controller
@@ -55,41 +57,41 @@ class TranscriptionController extends Controller
     public function getJobStatus($jobId)
     {
         $log = TranscriptionLog::where('job_id', $jobId)->first();
-
+        
         if (!$log) {
             return response()->json([
                 'success' => false,
                 'message' => 'Job not found',
             ], 404);
         }
-
+        
         return response()->json([
             'success' => true,
             'data' => [
-                'job_id' => $log->job_id,
                 'status' => $log->status,
-                'created_at' => $log->created_at,
                 'started_at' => $log->started_at,
                 'completed_at' => $log->completed_at,
                 'error_message' => $log->error_message,
-                'response_data' => $log->response_data,
             ],
         ]);
     }
 
     /**
      * Update the status of a transcription job.
-     * This endpoint is called by the Python service.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  string  $jobId
+     * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function updateJobStatus(Request $request, $jobId)
+    public function updateJobStatus($jobId, Request $request)
     {
+        // Find the transcription log
         $log = TranscriptionLog::where('job_id', $jobId)->first();
 
-        if (!$log) {
+        // In case job_id is actually a video ID
+        $video = Video::find($jobId);
+
+        if (!$log && !$video) {
             return response()->json([
                 'success' => false,
                 'message' => 'Job not found',
@@ -98,24 +100,75 @@ class TranscriptionController extends Controller
 
         // Validate request
         $request->validate([
-            'status' => 'required|string|in:processing,completed,failed',
+            'status' => 'required|string|in:processing,completed,failed,extracting_audio,transcribing',
             'completed_at' => 'nullable|date',
             'response_data' => 'nullable',
             'error_message' => 'nullable|string',
         ]);
 
-        // Update the log
-        $log->update([
-            'status' => $request->status,
-            'completed_at' => $request->completed_at ?? $log->completed_at,
-            'response_data' => $request->response_data ?? $log->response_data,
-            'error_message' => $request->error_message ?? $log->error_message,
-        ]);
+        // Update the log if it exists
+        if ($log) {
+            $log->update([
+                'status' => $request->status,
+                'completed_at' => $request->completed_at ?? $log->completed_at,
+                'response_data' => $request->response_data ?? $log->response_data,
+                'error_message' => $request->error_message ?? $log->error_message,
+            ]);
+        }
+
+        // Update the video if it exists
+        if ($video) {
+            $videoData = [
+                'status' => $request->status
+            ];
+
+            // If we have response data and it includes audio information
+            if ($request->response_data) {
+                $responseData = is_array($request->response_data) ? $request->response_data : json_decode($request->response_data, true);
+                
+                // Audio extraction completed
+                if (isset($responseData['audio_path'])) {
+                    $videoData['audio_path'] = $responseData['audio_path'];
+                    $videoData['audio_size'] = $responseData['audio_size_bytes'] ?? null;
+                    $videoData['audio_duration'] = $responseData['duration_seconds'] ?? null;
+                }
+                
+                // Transcription completed
+                if (isset($responseData['transcript_path'])) {
+                    $videoData['transcript_path'] = $responseData['transcript_path'];
+                    // If there's a transcript text in the response, save it
+                    if (isset($responseData['transcript_text'])) {
+                        $videoData['transcript_text'] = $responseData['transcript_text'];
+                    } else if (isset($responseData['transcript_path']) && file_exists($responseData['transcript_path'])) {
+                        // Try to read the transcript file if it exists
+                        try {
+                            $videoData['transcript_text'] = file_get_contents($responseData['transcript_path']);
+                        } catch (\Exception $e) {
+                            // Log error but continue
+                            Log::error('Failed to read transcript file: ' . $e->getMessage());
+                        }
+                    }
+                }
+            }
+
+            $video->update($videoData);
+            
+            // If there was no log but we have a video, create a log entry for it
+            if (!$log) {
+                TranscriptionLog::create([
+                    'job_id' => $jobId,
+                    'video_id' => $video->id,
+                    'status' => $request->status,
+                    'response_data' => $request->response_data,
+                    'error_message' => $request->error_message,
+                    'completed_at' => $request->completed_at ?? now(),
+                ]);
+            }
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'Job status updated successfully',
-            'job_id' => $jobId,
         ]);
     }
 

@@ -34,6 +34,29 @@ defineProps({
                                         class="w-full max-h-[500px]"
                                     ></video>
                                 </div>
+                                
+                                <!-- Audio Player (if audio extraction is complete) -->
+                                <div v-if="video.audio_url" class="mt-6">
+                                    <h3 class="text-lg font-medium mb-4">Extracted Audio</h3>
+                                    <div class="bg-gray-100 rounded-lg p-4">
+                                        <audio controls class="w-full">
+                                            <source :src="video.audio_url" type="audio/wav">
+                                            Your browser does not support the audio element.
+                                        </audio>
+                                        <div class="mt-2 text-sm text-gray-600">
+                                            <p v-if="video.formatted_duration">Duration: {{ video.formatted_duration }}</p>
+                                            <p v-if="video.audio_size">Size: {{ formatFileSize(video.audio_size) }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Transcription (if available) -->
+                                <div v-if="video.transcript_text" class="mt-6">
+                                    <h3 class="text-lg font-medium mb-4">Transcription</h3>
+                                    <div class="bg-gray-100 rounded-lg p-4 max-h-60 overflow-y-auto">
+                                        <p class="whitespace-pre-line">{{ video.transcript_text }}</p>
+                                    </div>
+                                </div>
                             </div>
                             
                             <div class="md:w-1/3 mt-6 md:mt-0">
@@ -45,8 +68,8 @@ defineProps({
                                             <span class="text-gray-500 text-sm">Status:</span>
                                             <span class="ml-2 px-2 py-1 text-xs rounded-full" 
                                                 :class="{
-                                                    'bg-green-100 text-green-800': video.status === 'processed',
-                                                    'bg-yellow-100 text-yellow-800': video.status === 'processing',
+                                                    'bg-green-100 text-green-800': video.status === 'completed',
+                                                    'bg-yellow-100 text-yellow-800': video.is_processing,
                                                     'bg-blue-100 text-blue-800': video.status === 'uploaded',
                                                     'bg-red-100 text-red-800': video.status === 'failed',
                                                 }">
@@ -77,6 +100,7 @@ defineProps({
                                     
                                     <div class="mt-6 space-y-3">
                                         <Link
+                                            v-if="!video.is_processing && !video.audio_path"
                                             :href="route('videos.transcription.request', video.id)"
                                             method="post" 
                                             as="button"
@@ -84,6 +108,10 @@ defineProps({
                                         >
                                             Request Transcription
                                         </Link>
+                                        
+                                        <div v-if="video.is_processing" class="w-full p-2 bg-yellow-50 text-yellow-800 rounded-md text-center">
+                                            Processing... {{ video.status }}
+                                        </div>
                                         
                                         <Link
                                             :href="route('videos.destroy', video.id)"

@@ -1,5 +1,5 @@
 .sandbox
 .env
 sample_course
-source_videos/*.mp4
-extracted_audios/*.wav
+app/shared/jobs/*
+app/laravel/storage/*

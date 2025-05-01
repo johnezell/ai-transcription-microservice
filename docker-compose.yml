@@ -11,6 +11,7 @@ services:
       - "8080:80"
     volumes:
       - ./app/laravel:/var/www
+      - ./app/shared:/var/www/storage/app/public/s3:delegated
     networks:
       - app-network
     environment:
@@ -29,7 +30,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./app/services/audio-extraction:/app
-      - ./app/shared:/app/shared
+      - ./app/shared:/var/www/storage/app/public/s3:delegated
     networks:
       - app-network
     environment:
@@ -46,7 +47,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./app/services/transcription:/app
-      - ./app/shared:/app/shared
+      - ./app/shared:/var/www/storage/app/public/s3:delegated
     depends_on:
       - laravel
       - audio-extraction-service

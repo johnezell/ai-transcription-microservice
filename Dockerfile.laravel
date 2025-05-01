@@ -40,9 +40,10 @@ COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY ./app/laravel .
 
 # Create required directories and set permissions
-RUN mkdir -p /var/www/storage /var/www/bootstrap/cache \
+RUN mkdir -p /var/www/storage/app/public/s3/jobs \
+    && mkdir -p /var/www/bootstrap/cache \
     && chown -R www-data:www-data /var/www \
-    && chmod -R 755 /var/www/storage
+    && chmod -R 777 /var/www/storage
 
 # Expose port 80
 EXPOSE 80

@@ -196,6 +196,27 @@ class TranscriptionController extends Controller
                         }
                     }
                     
+                    // If there's a transcript.json file, save its contents to the database
+                    $jsonPath = dirname($responseData['transcript_path']) . '/transcript.json';
+                    if (file_exists($jsonPath)) {
+                        try {
+                            $jsonContent = file_get_contents($jsonPath);
+                            $videoData['transcript_json'] = json_decode($jsonContent, true);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to read transcript JSON file: ' . $e->getMessage());
+                        }
+                    }
+                    
+                    // If there's a transcript.srt file, save its contents to the database
+                    $srtPath = dirname($responseData['transcript_path']) . '/transcript.srt';
+                    if (file_exists($srtPath)) {
+                        try {
+                            $videoData['transcript_srt'] = file_get_contents($srtPath);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to read transcript SRT file: ' . $e->getMessage());
+                        }
+                    }
+                    
                     // Set status to completed when we receive transcript data
                     $videoData['status'] = 'completed';
                     
@@ -242,19 +263,29 @@ class TranscriptionController extends Controller
                     }
                 }
                 
-                // Music term recognition completed
+                // Music term recognition completed (update to use terminology fields)
                 if (isset($responseData['music_terms_json_path'])) {
-                    $videoData['music_terms_path'] = $responseData['music_terms_json_path'];
-                    $videoData['music_terms_count'] = $responseData['term_count'] ?? 0;
-                    $videoData['has_music_terms'] = true;
+                    $videoData['terminology_path'] = $responseData['music_terms_json_path'];
+                    $videoData['terminology_count'] = $responseData['term_count'] ?? 0;
+                    $videoData['has_terminology'] = true;
                     $videoData['status'] = 'completed';
                     
                     // Save category breakdown as metadata
                     if (isset($responseData['categories'])) {
-                        $videoData['music_terms_metadata'] = [
+                        $videoData['terminology_metadata'] = [
                             'categories' => $responseData['categories'],
                             'service_timestamp' => $responseData['service_timestamp'] ?? now()->toIso8601String(),
                         ];
+                    }
+                    
+                    // Save the terminology JSON file content to database
+                    if (file_exists($responseData['music_terms_json_path'])) {
+                        try {
+                            $jsonContent = file_get_contents($responseData['music_terms_json_path']);
+                            $videoData['terminology_json'] = json_decode($jsonContent, true);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to read terminology JSON file: ' . $e->getMessage());
+                        }
                     }
                     
                     // Update transcription log with completion data
@@ -276,7 +307,7 @@ class TranscriptionController extends Controller
                     }
 
                     // Log successful processing
-                    Log::info('Successfully processed music term recognition', [
+                    Log::info('Successfully processed terminology recognition', [
                         'video_id' => $video->id,
                         'term_count' => $responseData['term_count'] ?? 0
                     ]);

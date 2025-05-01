@@ -7,6 +7,7 @@ import TranscriptionTimeline from '@/Components/TranscriptionTimeline.vue';
 import SynchronizedTranscript from '@/Components/SynchronizedTranscript.vue';
 import AdvancedSubtitles from '@/Components/AdvancedSubtitles.vue';
 import MusicTermsViewer from '@/Components/MusicTermsViewer.vue';
+import TerminologyViewer from '@/Components/TerminologyViewer.vue';
 
 const props = defineProps({
     video: Object,
@@ -27,6 +28,7 @@ const manualTranscriptUrl = ref('');
 const transcriptData = ref(null);
 const overallConfidence = ref(null);
 const processingMusicTerms = ref(false);
+const processingTerminology = ref(false);
 
 // Check if this is a newly uploaded video that needs monitoring
 const isNewVideo = computed(() => {
@@ -298,17 +300,17 @@ function calculateOverallConfidence() {
     }
 }
 
-// Add the music term recognition trigger method
-async function triggerMusicTermRecognition() {
+// Add the terminology recognition trigger method
+async function triggerTerminologyRecognition() {
     if (!videoData.value || !videoData.value.id) {
         console.error('No video data available');
         return;
     }
     
-    processingMusicTerms.value = true;
+    processingTerminology.value = true;
     
     try {
-        const response = await fetch(`/api/videos/${videoData.value.id}/music-terms`, {
+        const response = await fetch(`/api/videos/${videoData.value.id}/terminology`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -319,18 +321,18 @@ async function triggerMusicTermRecognition() {
         const data = await response.json();
         
         if (response.ok && data.success) {
-            console.log('Music term recognition triggered successfully');
+            console.log('Terminology recognition triggered successfully');
             // Start polling for video status to show processing indicator
             startPolling();
         } else {
-            console.error('Failed to trigger music term recognition:', data.message);
-            alert('Failed to start music term recognition: ' + (data.message || 'Unknown error'));
+            console.error('Failed to trigger terminology recognition:', data.message);
+            alert('Failed to start terminology recognition: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
-        console.error('Error triggering music term recognition:', error);
+        console.error('Error triggering terminology recognition:', error);
         alert('Error: ' + (error.message || 'Failed to communicate with server'));
     } finally {
-        processingMusicTerms.value = false;
+        processingTerminology.value = false;
     }
 }
 
@@ -406,6 +408,7 @@ onBeforeUnmount(() => {
                                     <AdvancedSubtitles
                                         :video-ref="videoElement"
                                         :transcript-json-url="videoData.transcript_json_url"
+                                        :transcript-json-api-url="videoData.transcript_json_api_url"
                                     />
                                 </div>
                                 
@@ -423,17 +426,18 @@ onBeforeUnmount(() => {
                                     />
                                 </div>
                                 
-                                <!-- Music Terms Viewer (moved below transcript) -->
-                                <div v-if="videoData.has_music_terms" class="mt-8">
-                                    <MusicTermsViewer 
-                                        :music-terms-url="videoData.music_terms_url"
-                                        :music-terms-metadata="videoData.music_terms_metadata"
-                                        :music-term-count="videoData.music_terms_count"
+                                <!-- Terminology Viewer (renamed from MusicTermsViewer) -->
+                                <div v-if="videoData.has_terminology || videoData.has_music_terms" class="mt-8">
+                                    <TerminologyViewer 
+                                        :terminology-url="videoData.terminology_url || videoData.music_terms_url"
+                                        :terminology-api-url="videoData.terminology_json_api_url"
+                                        :terminology-metadata="videoData.terminology_metadata || videoData.music_terms_metadata"
+                                        :terminology-count="videoData.terminology_count || videoData.music_terms_count"
                                     />
                                 </div>
                                 
-                                <!-- Music Terms Recognition Trigger (moved below transcript) -->
-                                <div v-else-if="videoData.transcript_path && !videoData.has_music_terms" class="mt-8">
+                                <!-- Terminology Recognition Trigger (renamed from MusicTermsRecognition) -->
+                                <div v-else-if="videoData.transcript_path && !videoData.has_terminology && !videoData.has_music_terms" class="mt-8">
                                     <div class="bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200">
                                         <h3 class="text-lg font-medium mb-4 flex items-center">
                                             <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -445,18 +449,18 @@ onBeforeUnmount(() => {
                                             Identify terminology in the transcript to help analyze the content.
                                         </p>
                                         <button 
-                                            @click="triggerMusicTermRecognition" 
+                                            @click="triggerTerminologyRecognition" 
                                             class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition shadow-sm"
-                                            :disabled="processingMusicTerms"
+                                            :disabled="processingTerminology"
                                         >
-                                            <span v-if="processingMusicTerms" class="flex items-center">
+                                            <span v-if="processingTerminology" class="flex items-center">
                                                 <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                                 </svg>
                                                 Processing...
                                             </span>
-                                            <span v-else>Identify Music Terms</span>
+                                            <span v-else>Identify Terminology</span>
                                         </button>
                                     </div>
                                 </div>

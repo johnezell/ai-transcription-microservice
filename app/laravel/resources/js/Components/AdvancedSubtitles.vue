@@ -294,6 +294,10 @@ export default {
     transcriptJsonUrl: {
       type: String,
       default: null
+    },
+    transcriptJsonApiUrl: {
+      type: String,
+      default: null
     }
   },
   
@@ -337,7 +341,13 @@ export default {
   
   watch: {
     transcriptJsonUrl: {
-      immediate: true,
+      handler(url) {
+        if (url && !this.transcriptJsonApiUrl) {
+          this.fetchTranscriptData();
+        }
+      }
+    },
+    transcriptJsonApiUrl: {
       handler(url) {
         if (url) {
           this.fetchTranscriptData();
@@ -426,24 +436,32 @@ export default {
     },
     
     async fetchTranscriptData() {
-      if (!this.transcriptJsonUrl) {
+      // Prefer the API URL if available
+      if (!this.transcriptJsonApiUrl && !this.transcriptJsonUrl) {
         return;
       }
       
       try {
-        // Get just the path part of the URL to avoid CORS issues
-        let urlToFetch = this.transcriptJsonUrl;
+        let urlToFetch;
         
-        // If it's an absolute URL, convert to a relative path
-        if (urlToFetch.startsWith('http')) {
-          try {
-            const url = new URL(urlToFetch);
-            const pathMatch = url.pathname.match(/\/storage\/(.+)/);
-            if (pathMatch && pathMatch[1]) {
-              urlToFetch = `/storage/${pathMatch[1]}`;
+        // First try the API URL if available
+        if (this.transcriptJsonApiUrl) {
+          urlToFetch = this.transcriptJsonApiUrl;
+        } else {
+          // Fallback to file URL
+          urlToFetch = this.transcriptJsonUrl;
+          
+          // If it's an absolute URL, convert to a relative path
+          if (urlToFetch.startsWith('http')) {
+            try {
+              const url = new URL(urlToFetch);
+              const pathMatch = url.pathname.match(/\/storage\/(.+)/);
+              if (pathMatch && pathMatch[1]) {
+                urlToFetch = `/storage/${pathMatch[1]}`;
+              }
+            } catch (e) {
+              // Silently handle URL parsing errors
             }
-          } catch (e) {
-            // Silently handle URL parsing errors
           }
         }
         

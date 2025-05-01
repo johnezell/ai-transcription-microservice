@@ -29,10 +29,13 @@ class Video extends Model
         'audio_size',
         'transcript_path',
         'transcript_text',
-        'music_terms_path',
-        'music_terms_count',
-        'music_terms_metadata',
-        'has_music_terms',
+        'transcript_json',
+        'transcript_srt',
+        'terminology_path',
+        'terminology_count',
+        'terminology_metadata',
+        'terminology_json',
+        'has_terminology',
     ];
     
     /**
@@ -45,9 +48,11 @@ class Video extends Model
         'size_bytes' => 'integer',
         'audio_size' => 'integer',
         'audio_duration' => 'float',
-        'music_terms_count' => 'integer',
-        'music_terms_metadata' => 'array',
-        'has_music_terms' => 'boolean',
+        'terminology_count' => 'integer',
+        'terminology_metadata' => 'array',
+        'transcript_json' => 'array',
+        'terminology_json' => 'array',
+        'has_terminology' => 'boolean',
     ];
     
     /**
@@ -137,29 +142,40 @@ class Video extends Model
     }
     
     /**
-     * Get the URL for the music terms JSON file if it exists.
+     * Get the URL for the terminology JSON file if it exists.
      * 
      * @return string|null
      */
-    public function getMusicTermsUrlAttribute()
+    public function getTerminologyUrlAttribute()
     {
-        if (empty($this->music_terms_path)) {
+        if (empty($this->terminology_path)) {
             return null;
         }
         
         // If it's a relative path within the public disk
-        if (str_starts_with($this->music_terms_path, 's3/')) {
-            return asset('storage/' . $this->music_terms_path);
+        if (str_starts_with($this->terminology_path, 's3/')) {
+            return asset('storage/' . $this->terminology_path);
         }
         
         // Convert absolute path to relative URL
-        if (str_starts_with($this->music_terms_path, '/var/www/storage/app/public/')) {
-            $path = str_replace('/var/www/storage/app/public/', '', $this->music_terms_path);
+        if (str_starts_with($this->terminology_path, '/var/www/storage/app/public/')) {
+            $path = str_replace('/var/www/storage/app/public/', '', $this->terminology_path);
             return asset('storage/' . $path);
         }
         
         // Default fallback - just return the path as-is
-        return $this->music_terms_path;
+        return $this->terminology_path;
+    }
+    
+    /**
+     * Get the URL for the music terms JSON file if it exists.
+     * 
+     * @return string|null
+     * @deprecated Use getTerminologyUrlAttribute instead
+     */
+    public function getMusicTermsUrlAttribute()
+    {
+        return $this->getTerminologyUrlAttribute();
     }
     
     /**
@@ -237,7 +253,108 @@ class Video extends Model
     }
     
     /**
-     * Get the URL for the transcript.json file if it exists.
+     * Get the transcript JSON data.
+     *
+     * @return array|null
+     */
+    public function getTranscriptJsonDataAttribute()
+    {
+        // If we have JSON data stored in the database, return it
+        if (!empty($this->transcript_json)) {
+            return $this->transcript_json;
+        }
+        
+        // Otherwise try to load from file if we have a transcript path
+        if (empty($this->transcript_path)) {
+            return null;
+        }
+        
+        // Get the directory path from the transcript path
+        $dir = dirname($this->transcript_path);
+        $jsonPath = $dir . '/transcript.json';
+        
+        // If the JSON file exists, read and return its contents
+        if (file_exists($jsonPath)) {
+            try {
+                $jsonData = json_decode(file_get_contents($jsonPath), true);
+                return $jsonData;
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to read transcript JSON file: ' . $e->getMessage());
+                return null;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the music terms JSON data.
+     *
+     * @return array|null
+     * @deprecated Use getTerminologyJsonDataAttribute instead
+     */
+    public function getMusicTermsJsonDataAttribute()
+    {
+        return $this->getTerminologyJsonDataAttribute();
+    }
+    
+    /**
+     * Check if music terms are available for this video.
+     * 
+     * @return bool
+     * @deprecated Use getHasTerminologyAttribute instead
+     */
+    public function getHasMusicTermsAttribute()
+    {
+        return $this->getHasTerminologyAttribute();
+    }
+
+    /**
+     * Get the terminology JSON data.
+     *
+     * @return array|null
+     */
+    public function getTerminologyJsonDataAttribute()
+    {
+        // If we have JSON data stored in the database, return it
+        if (!empty($this->terminology_json)) {
+            return $this->terminology_json;
+        }
+        
+        // Otherwise try to load from file if we have a terminology path
+        if (empty($this->terminology_path)) {
+            return null;
+        }
+        
+        // If the JSON file exists, read and return its contents
+        if (file_exists($this->terminology_path)) {
+            try {
+                $jsonData = json_decode(file_get_contents($this->terminology_path), true);
+                return $jsonData;
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to read terminology JSON file: ' . $e->getMessage());
+                return null;
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Check if terminology is available for this video.
+     * 
+     * @return bool
+     */
+    public function getHasTerminologyAttribute()
+    {
+        return !empty($this->terminology_json) ||
+               !empty($this->terminology_path) || 
+               !empty($this->terminology_metadata) || 
+               ($this->terminology_count ?? 0) > 0;
+    }
+
+    /**
+     * Get the URL for the transcript JSON file if it exists.
      * 
      * @return string|null
      */
@@ -252,7 +369,6 @@ class Video extends Model
         $jsonPath = $dir . '/transcript.json';
         
         // Determine the relative path for asset URL based on the directory pattern
-        // This is more reliable than checking if the file exists
         $relativePath = null;
         
         // If it's inside public disk path
@@ -275,16 +391,32 @@ class Video extends Model
         
         return null;
     }
-    
+
     /**
-     * Check if music terms are available for this video.
-     * 
-     * @return bool
+     * Get the URL for accessing transcript JSON data from the database API.
+     *
+     * @return string|null
      */
-    public function getHasMusicTermsAttribute()
+    public function getTranscriptJsonApiUrlAttribute()
     {
-        return !empty($this->music_terms_path) || 
-               !empty($this->music_terms_metadata) || 
-               ($this->music_terms_count ?? 0) > 0;
+        if (!$this->id) {
+            return null;
+        }
+        
+        return url('/api/videos/' . $this->id . '/transcript-json');
+    }
+
+    /**
+     * Get the URL for accessing terminology JSON data from the database API.
+     *
+     * @return string|null
+     */
+    public function getTerminologyJsonApiUrlAttribute()
+    {
+        if (!$this->id) {
+            return null;
+        }
+        
+        return url('/api/videos/' . $this->id . '/terminology-json');
     }
 }

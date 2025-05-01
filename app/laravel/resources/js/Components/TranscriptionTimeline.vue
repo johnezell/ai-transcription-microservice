@@ -127,9 +127,9 @@ export default {
           )
         },
         {
-          id: 'music_term_recognition',
-          label: 'Music Term Analysis',
-          status: this.getStepStatus('music_term_recognition'),
+          id: 'term_analysis',
+          status: this.getStepStatus('term_analysis'),
+          label: 'Terminology Analysis',
           timing: this.formatTiming(
             timing.music_term_recognition_started_at, 
             timing.music_term_recognition_completed_at,
@@ -159,7 +159,7 @@ export default {
         case 'transcribing':
           return 'Transcribing audio...';
         case 'processing_music_terms':
-          return 'Analyzing music terminology...';
+          return 'Analyzing terminology...';
         case 'completed':
           return 'Processing completed successfully';
         case 'failed':
@@ -248,7 +248,7 @@ export default {
         }
       }
       
-      if (stepId === 'music_term_recognition') {
+      if (stepId === 'term_analysis') {
         if (this.status === 'processing_music_terms') {
           return 'active';
         }
@@ -263,7 +263,7 @@ export default {
       
       // Default status based on current position in workflow
       const workflowOrder = ['uploaded', 'processing', 'transcribing', 'processing_music_terms', 'completed'];
-      const stepOrder = ['upload', 'audio_extraction', 'transcription', 'music_term_recognition', 'complete'];
+      const stepOrder = ['upload', 'audio_extraction', 'transcription', 'term_analysis', 'complete'];
       
       const currentPosition = workflowOrder.indexOf(this.status);
       const stepPosition = stepOrder.indexOf(stepId);

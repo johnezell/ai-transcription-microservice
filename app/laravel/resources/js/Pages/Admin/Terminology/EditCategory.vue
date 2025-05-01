@@ -51,7 +51,7 @@
                   </label>
                 </div>
                 <p class="mt-1 text-sm text-gray-500">
-                  Inactive categories and their terms won't be used in music term recognition.
+                  Inactive categories and their terms won't be used in terminology recognition.
                 </p>
                 <InputError class="mt-2" :message="form.errors.active" />
               </div>

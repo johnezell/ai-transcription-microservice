@@ -18,8 +18,8 @@ return new class extends Migration
             // Add column for storing the SRT content
             $table->longText('transcript_srt')->nullable()->after('transcript_json');
             
-            // Add column for storing the music terms JSON data
-            $table->longText('music_terms_json')->nullable()->after('music_terms_metadata');
+            // Add column for storing the terminology JSON data (renamed from music_terms_json)
+            $table->longText('terminology_json')->nullable()->after('music_terms_metadata');
         });
     }
 
@@ -31,7 +31,7 @@ return new class extends Migration
         Schema::table('videos', function (Blueprint $table) {
             $table->dropColumn('transcript_json');
             $table->dropColumn('transcript_srt');
-            $table->dropColumn('music_terms_json');
+            $table->dropColumn('terminology_json');
         });
     }
 }; 

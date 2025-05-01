@@ -17,6 +17,8 @@ services:
       - APP_ENV=local
       - DB_CONNECTION=sqlite
       - DB_DATABASE=/var/www/database/database.sqlite
+      - PYTHON_SERVICE_URL=http://transcription-service:5000
+      - QUEUE_CONNECTION=database
 
   transcription-service:
     build:
@@ -30,6 +32,10 @@ services:
       - laravel
     networks:
       - app-network
+    environment:
+      - LARAVEL_API_URL=http://laravel/api
+    ports:
+      - "5050:5000"
 
 networks:
   app-network:

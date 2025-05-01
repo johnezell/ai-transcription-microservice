@@ -1,13 +1,20 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
+# Copy requirements first for better caching
+COPY app/services/transcriptions/requirements.txt .
+
 # Install dependencies
-COPY ./app/services/transcriptions/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=service.py
+ENV FLASK_ENV=development
 
 # Copy application files
 COPY ./app/services/transcriptions .
 
-# Keep the container running
-CMD ["python", "-u", "service.py"] 
+# Command to run the service
+CMD ["python", "service.py"] 

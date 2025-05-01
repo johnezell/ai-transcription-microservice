@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\HelloController;
+use App\Http\Controllers\Api\TranscriptionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -21,3 +22,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 // Hello World endpoint
 Route::get('/hello', [HelloController::class, 'hello']);
+
+// Transcription endpoints
+Route::post('/transcription', [TranscriptionController::class, 'dispatchJob']);
+Route::get('/transcription/{jobId}', [TranscriptionController::class, 'getJobStatus']);
+Route::post('/transcription/{jobId}/status', [TranscriptionController::class, 'updateJobStatus']);
+Route::get('/test-python-service', [TranscriptionController::class, 'testPythonService']);

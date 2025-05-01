@@ -111,7 +111,8 @@ class VideoController extends Controller
             // Dispatch audio extraction job to queue
             \App\Jobs\AudioExtractionJob::dispatch($video);
             
-            return redirect()->route('videos.index')
+            // Redirect to the video's detail page instead of index
+            return redirect()->route('videos.show', $video)
                 ->with('success', 'Video uploaded successfully and processing started.');
                 
         } catch (\Exception $e) {

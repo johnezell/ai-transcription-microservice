@@ -5,6 +5,9 @@ use App\Http\Controllers\Api\HelloController;
 use App\Http\Controllers\Api\TranscriptionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Models\Video;
+use App\Models\TranscriptionLog;
+use Illuminate\Support\Str;
 
 /*
 |--------------------------------------------------------------------------
@@ -32,3 +35,121 @@ Route::post('/transcription', [TranscriptionController::class, 'dispatchJob']);
 Route::get('/transcription/{jobId}', [TranscriptionController::class, 'getJobStatus']);
 Route::post('/transcription/{jobId}/status', [TranscriptionController::class, 'updateJobStatus']);
 Route::get('/test-python-service', [TranscriptionController::class, 'testPythonService']);
+
+// Status polling endpoint for video processing
+Route::get('/videos/{id}/status', function($id) {
+    $video = Video::find($id);
+    
+    if (!$video) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Video not found'
+        ], 404);
+    }
+    
+    // Get the transcription log if available
+    $log = TranscriptionLog::where('video_id', $id)->first();
+    
+    // Calculate progress percentage based on status
+    $progressPercentage = 0;
+    if ($video->status === 'uploaded') {
+        $progressPercentage = 0;
+    } elseif ($video->status === 'processing') {
+        $progressPercentage = 25; // Audio extraction in progress
+    } elseif ($video->status === 'transcribing') {
+        $progressPercentage = 75; // Transcription in progress
+    } elseif ($video->status === 'completed') {
+        $progressPercentage = 100;
+    }
+    
+    $response = [
+        'success' => true,
+        'status' => $video->status,
+        'progress_percentage' => $progressPercentage,
+        'video' => [
+            'id' => $video->id,
+            'original_filename' => $video->original_filename,
+            'status' => $video->status,
+            'created_at' => $video->created_at,
+            'updated_at' => $video->updated_at,
+            'has_audio' => !empty($video->audio_path),
+            'has_transcript' => !empty($video->transcript_path),
+            'error_message' => $video->error_message,
+        ]
+    ];
+    
+    // Add timing details if log exists
+    if ($log) {
+        $response['timing'] = [
+            'started_at' => $log->started_at,
+            'audio_extraction_started_at' => $log->audio_extraction_started_at,
+            'audio_extraction_completed_at' => $log->audio_extraction_completed_at,
+            'transcription_started_at' => $log->transcription_started_at,
+            'transcription_completed_at' => $log->transcription_completed_at,
+            'completed_at' => $log->completed_at,
+            'audio_extraction_duration_seconds' => $log->audio_extraction_duration_seconds,
+            'transcription_duration_seconds' => $log->transcription_duration_seconds,
+            'total_processing_duration_seconds' => $log->total_processing_duration_seconds,
+        ];
+        
+        // If there's detailed progress information
+        if ($log->progress_percentage > 0) {
+            $response['progress_percentage'] = $log->progress_percentage;
+        }
+    }
+    
+    // Add media details if available
+    if ($video->audio_path) {
+        $response['media'] = [
+            'audio_size' => $video->audio_size,
+            'audio_duration' => $video->audio_duration,
+            'audio_url' => $video->audio_url,
+        ];
+    }
+    
+    // Add transcript details if available
+    if ($video->transcript_path) {
+        $response['transcript'] = [
+            'transcript_url' => $video->transcript_url,
+            'transcript_json_url' => $video->transcript_json_url,
+            'transcript_excerpt' => Str::limit($video->transcript_text, 200),
+        ];
+    }
+    
+    // Add direct paths to the important video data
+    $response['video']['url'] = $video->url;
+    $response['video']['audio_url'] = $video->audio_url;
+    $response['video']['transcript_url'] = $video->transcript_url;
+    $response['video']['subtitles_url'] = $video->subtitles_url;
+    $response['video']['transcript_json_url'] = $video->transcript_json_url;
+    $response['video']['formatted_duration'] = $video->formatted_duration;
+    $response['video']['is_processing'] = $video->is_processing;
+    
+    return response()->json($response);
+});
+
+// Get a single video
+Route::get('/videos/{id}', function($id) {
+    $video = Video::find($id);
+    
+    if (!$video) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Video not found'
+        ], 404);
+    }
+    
+    // Get full video details with all accessors
+    return response()->json([
+        'success' => true,
+        'video' => $video->toArray() + [
+            'url' => $video->url,
+            'audio_url' => $video->audio_url,
+            'transcript_url' => $video->transcript_url,
+            'subtitles_url' => $video->subtitles_url,
+            'transcript_json_url' => $video->transcript_json_url,
+            'formatted_duration' => $video->formatted_duration,
+            'is_processing' => $video->is_processing,
+        ]
+    ]);
+});

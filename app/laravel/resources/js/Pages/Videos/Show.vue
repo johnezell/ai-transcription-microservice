@@ -1,21 +1,231 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
+import TranscriptionTimeline from '@/Components/TranscriptionTimeline.vue';
+import SynchronizedTranscript from '@/Components/SynchronizedTranscript.vue';
+import AdvancedSubtitles from '@/Components/AdvancedSubtitles.vue';
 
-defineProps({
+const props = defineProps({
     video: Object,
+});
+
+const videoData = ref(props.video);
+const timelineData = ref({
+    timing: {},
+    progress_percentage: 0,
+    status: props.video.status
+});
+const pollingInterval = ref(null);
+const videoError = ref(null);
+const videoElement = ref(null);
+const isLoading = ref(false);
+const lastPolled = ref(Date.now());
+const manualTranscriptUrl = ref('');
+
+// Check if this is a newly uploaded video that needs monitoring
+const isNewVideo = computed(() => {
+    // If created less than 2 minutes ago, treat as new
+    if (!videoData.value.created_at) return false;
+    const createdTime = new Date(videoData.value.created_at).getTime();
+    const now = Date.now();
+    return (now - createdTime) < 120000; // 2 minutes in milliseconds
+});
+
+function startPolling() {
+    // For newly uploaded videos, always poll initially since status may be changing quickly
+    const isNewlyUploaded = 
+        videoData.value.status === 'uploaded' || 
+        videoData.value.status === 'processing' || 
+        videoData.value.is_processing || 
+        videoData.value.status === 'transcribing' ||
+        isNewVideo.value;
+    
+    // Only poll if the video is being processed or newly uploaded
+    if (!isNewlyUploaded) {
+        return;
+    }
+    
+    // Poll every 3 seconds
+    pollingInterval.value = setInterval(fetchStatus, 3000);
+}
+
+async function fetchStatus() {
+    try {
+        // Set loading state for first fetch
+        if (Date.now() - lastPolled.value > 5000) {
+            isLoading.value = true;
+        }
+        
+        const response = await fetch(`/api/videos/${videoData.value.id}/status`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        lastPolled.value = Date.now();
+        isLoading.value = false;
+        
+        if (data.success) {
+            // Check if status changed from processing/transcribing to completed
+            const wasProcessing = videoData.value.status === 'processing' || videoData.value.status === 'transcribing';
+            const nowCompleted = data.video.status === 'completed';
+            
+            // Update the video data
+            if (data.video.status !== videoData.value.status) {
+                videoData.value.status = data.video.status;
+                
+                // If status changed from processing to completed, force a full refresh
+                if (wasProcessing && nowCompleted) {
+                    await fetchVideoDetails();
+                    return;
+                }
+                
+                // If status changed to a new state, force refresh for newly created videos
+                // This ensures we get all updated UI elements
+                if (isNewVideo.value && 
+                    (data.video.status === 'completed' || 
+                     data.video.has_audio || 
+                     data.video.has_transcript)) {
+                    window.location.reload();
+                    return;
+                }
+            }
+            
+            // Copy all available properties from the response to our video data
+            if (data.video) {
+                // Copy standard properties
+                videoData.value.error_message = data.video.error_message;
+                videoData.value.is_processing = data.video.is_processing || 
+                    ['processing', 'transcribing'].includes(data.video.status);
+                
+                // Copy URLs if they exist
+                if (data.video.url) videoData.value.url = data.video.url;
+                if (data.video.audio_url) videoData.value.audio_url = data.video.audio_url;
+                if (data.video.transcript_url) videoData.value.transcript_url = data.video.transcript_url;
+                if (data.video.subtitles_url) videoData.value.subtitles_url = data.video.subtitles_url;
+                if (data.video.transcript_json_url) {
+                    videoData.value.transcript_json_url = data.video.transcript_json_url;
+                }
+            }
+            
+            // Also check if transcript info is in the separate transcript property
+            if (data.transcript && data.transcript.transcript_json_url) {
+                videoData.value.transcript_json_url = data.transcript.transcript_json_url;
+            }
+            
+            // Instead of reloading the page, update the local data
+            if (data.video.has_audio && !videoData.value.audio_url) {
+                // Fetch complete video data using the API
+                fetchVideoDetails();
+                return;
+            }
+            
+            if (data.video.has_transcript && !videoData.value.transcript_text) {
+                // Fetch complete video data using the API
+                fetchVideoDetails();
+                return;
+            }
+            
+            // Update timeline data
+            timelineData.value = {
+                status: data.status,
+                progress_percentage: data.progress_percentage,
+                timing: data.timing || {},
+                error: data.video.error_message
+            };
+            
+            // Stop polling once processing is complete
+            if (data.video.status === 'completed' || data.video.status === 'failed') {
+                stopPolling();
+                
+                // Fetch complete video data instead of reloading
+                fetchVideoDetails();
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching status:', error);
+        isLoading.value = false;
+    }
+}
+
+// New function to fetch full video details
+async function fetchVideoDetails() {
+    try {
+        // Make sure we have an ID
+        if (!videoData.value.id) {
+            console.error('Cannot fetch video details: No video ID available');
+            return;
+        }
+        
+        // Use relative URL to avoid CORS issues
+        const response = await fetch(`/api/videos/${videoData.value.id}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Update our local data with the full video details
+            Object.assign(videoData.value, data.video);
+        } else {
+            console.error('API returned error:', data.message || 'Unknown error');
+        }
+    } catch (error) {
+        console.error('Error fetching video details:', error);
+    }
+}
+
+function stopPolling() {
+    if (pollingInterval.value) {
+        clearInterval(pollingInterval.value);
+        pollingInterval.value = null;
+    }
+}
+
+function handleVideoError(event) {
+    videoError.value = event.target.error ? event.target.error.message : 'An error occurred while loading the video.';
+}
+
+function applyManualTranscriptUrl() {
+    // Use the manually entered URL to override the transcript_json_url
+    if (!manualTranscriptUrl.value) {
+        alert('Please enter a transcript JSON URL first');
+        return;
+    }
+    
+    console.log('Setting manual transcript URL:', manualTranscriptUrl.value);
+    videoData.value.transcript_json_url = manualTranscriptUrl.value;
+}
+
+onMounted(() => {
+    // Get initial status immediately
+    fetchStatus();
+    
+    // Then start polling after a short delay to ensure backend has time to update
+    setTimeout(() => {
+        startPolling();
+    }, 1000);
+});
+
+onBeforeUnmount(() => {
+    stopPolling();
 });
 </script>
 
 <template>
-    <Head :title="video.original_filename" />
+    <Head :title="videoData.original_filename" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex justify-between">
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ video.original_filename }}</h2>
-                <Link :href="route('videos.index')" class="px-4 py-2 bg-gray-100 rounded-md text-gray-700">
+                <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ videoData.original_filename }}</h2>
+                <Link :href="route('videos.index')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 transition">
                     &larr; Back to Videos
                 </Link>
             </div>
@@ -27,107 +237,178 @@ defineProps({
                     <div class="p-6 text-gray-900">
                         <div class="flex flex-col md:flex-row md:space-x-6">
                             <div class="md:w-2/3">
-                                <div class="bg-black rounded-lg overflow-hidden">
+                                <!-- Video player with better styling -->
+                                <div class="bg-gray-900 rounded-lg overflow-hidden shadow-lg relative">
                                     <video 
-                                        :src="video.url" 
+                                        ref="videoElement"
+                                        :src="videoData.url" 
                                         controls
                                         class="w-full max-h-[500px]"
+                                        preload="metadata"
+                                        @error="handleVideoError"
+                                        poster="/images/video-placeholder.svg"
+                                        type="video/mp4"
                                     ></video>
-                                </div>
-                                
-                                <!-- Audio Player (if audio extraction is complete) -->
-                                <div v-if="video.audio_url" class="mt-6">
-                                    <h3 class="text-lg font-medium mb-4">Extracted Audio</h3>
-                                    <div class="bg-gray-100 rounded-lg p-4">
-                                        <audio controls class="w-full">
-                                            <source :src="video.audio_url" type="audio/wav">
-                                            Your browser does not support the audio element.
-                                        </audio>
-                                        <div class="mt-2 text-sm text-gray-600">
-                                            <p v-if="video.formatted_duration">Duration: {{ video.formatted_duration }}</p>
-                                            <p v-if="video.audio_size">Size: {{ formatFileSize(video.audio_size) }}</p>
+                                    
+                                    <div v-if="videoError" class="p-4 bg-red-50 text-red-800 text-sm">
+                                        <div class="font-medium">Error loading video:</div>
+                                        {{ videoError }}
+                                        <div class="mt-2">
+                                            <a :href="videoData.url" target="_blank" class="text-blue-600 hover:underline">Download video</a>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <!-- Transcription (if available) -->
-                                <div v-if="video.transcript_text" class="mt-6">
-                                    <h3 class="text-lg font-medium mb-4">Transcription</h3>
-                                    <div class="bg-gray-100 rounded-lg p-4 max-h-60 overflow-y-auto">
-                                        <p class="whitespace-pre-line">{{ video.transcript_text }}</p>
+                                <!-- Advanced Subtitles component (moved outside video container for better positioning) -->
+                                <AdvancedSubtitles
+                                    v-if="videoData.transcript_json_url && videoElement"
+                                    :video-ref="videoElement"
+                                    :transcript-json-url="videoData.transcript_json_url"
+                                    class="mt-4"
+                                />
+                                
+                                <!-- Transcript Tabs -->
+                                <div v-if="videoData.transcript_text" class="mt-6 border-b border-gray-200">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h3 class="text-lg font-medium flex items-center">
+                                            <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            </svg>
+                                            Transcript
+                                        </h3>
+                                    </div>
+                                </div>
+                                
+                                <!-- Synchronized Transcript (original implementation) -->
+                                <SynchronizedTranscript
+                                    v-if="videoData.transcript_text"
+                                    :video-ref="$refs.videoElement"
+                                    :srt-url="videoData.subtitles_url"
+                                    :transcript-json-url="videoData.transcript_json_url"
+                                    :transcript-text="videoData.transcript_text"
+                                />
+                                
+                                <!-- Actions -->
+                                <div class="mt-6 flex space-x-3">
+                                    <Link
+                                        :href="route('videos.destroy', videoData.id)"
+                                        method="delete"
+                                        as="button"
+                                        class="inline-flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition shadow-sm"
+                                        onclick="return confirm('Are you sure you want to delete this video?')"
+                                    >
+                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        Delete Video
+                                    </Link>
+                                </div>
+                                
+                                <!-- Error message -->
+                                <div v-if="videoData.error_message" class="mt-4 p-3 bg-red-50 text-red-800 rounded-md border border-red-200">
+                                    <div class="font-medium flex items-center">
+                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        Error
+                                    </div>
+                                    <div class="mt-1">{{ videoData.error_message }}</div>
+                                </div>
+                                
+                                <!-- Audio Player (if audio extraction is complete) -->
+                                <div v-if="videoData.audio_url" class="mt-8">
+                                    <h3 class="text-lg font-medium mb-4 flex items-center">
+                                        <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                        </svg>
+                                        Extracted Audio
+                                    </h3>
+                                    <div class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200">
+                                        <audio controls class="w-full">
+                                            <source :src="videoData.audio_url" type="audio/wav">
+                                            Your browser does not support the audio element.
+                                        </audio>
+                                        <div class="mt-2 flex space-x-4 text-sm text-gray-600">
+                                            <div v-if="videoData.formatted_duration" class="flex items-center">
+                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                                {{ videoData.formatted_duration }}
+                                            </div>
+                                            <div v-if="videoData.audio_size" class="flex items-center">
+                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                                                </svg>
+                                                {{ formatFileSize(videoData.audio_size) }}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             
                             <div class="md:w-1/3 mt-6 md:mt-0">
-                                <div class="bg-gray-50 rounded-lg p-4">
-                                    <h3 class="text-lg font-medium mb-4">Video Information</h3>
+                                <div class="bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200">
+                                    <h3 class="text-lg font-medium mb-4 flex items-center">
+                                        <svg class="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        Video Information
+                                    </h3>
                                     
-                                    <div class="space-y-3">
+                                    <div class="space-y-4">
                                         <div>
-                                            <span class="text-gray-500 text-sm">Status:</span>
-                                            <span class="ml-2 px-2 py-1 text-xs rounded-full" 
+                                            <div class="text-gray-500 text-sm mb-1">Original Filename</div>
+                                            <div class="font-medium">{{ videoData.original_filename }}</div>
+                                        </div>
+                                        
+                                        <div>
+                                            <div class="text-gray-500 text-sm mb-1">Status</div>
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
                                                 :class="{
-                                                    'bg-green-100 text-green-800': video.status === 'completed',
-                                                    'bg-yellow-100 text-yellow-800': video.is_processing,
-                                                    'bg-blue-100 text-blue-800': video.status === 'uploaded',
-                                                    'bg-red-100 text-red-800': video.status === 'failed',
+                                                    'bg-green-100 text-green-800': videoData.status === 'completed',
+                                                    'bg-blue-100 text-blue-800': videoData.status === 'processing',
+                                                    'bg-purple-100 text-purple-800': videoData.status === 'transcribing',
+                                                    'bg-yellow-100 text-yellow-800': videoData.status === 'uploaded',
+                                                    'bg-red-100 text-red-800': videoData.status === 'failed',
                                                 }">
-                                                {{ video.status }}
+                                                <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
+                                                    v-if="videoData.status === 'completed'">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                                </svg>
+                                                <svg class="w-3.5 h-3.5 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
+                                                    v-else-if="videoData.is_processing">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                                </svg>
+                                                {{ videoData.status }}
                                             </span>
                                         </div>
                                         
                                         <div>
-                                            <span class="text-gray-500 text-sm">File size:</span>
-                                            <span class="ml-2">{{ formatFileSize(video.size_bytes) }}</span>
+                                            <div class="text-gray-500 text-sm mb-1">File Size</div>
+                                            <div class="font-medium">{{ formatFileSize(videoData.size_bytes) }}</div>
                                         </div>
                                         
                                         <div>
-                                            <span class="text-gray-500 text-sm">Type:</span>
-                                            <span class="ml-2">{{ video.mime_type }}</span>
+                                            <div class="text-gray-500 text-sm mb-1">File Type</div>
+                                            <div class="font-medium">{{ videoData.mime_type }}</div>
                                         </div>
                                         
                                         <div>
-                                            <span class="text-gray-500 text-sm">Uploaded:</span>
-                                            <span class="ml-2">{{ new Date(video.created_at).toLocaleString() }}</span>
+                                            <div class="text-gray-500 text-sm mb-1">Uploaded</div>
+                                            <div class="font-medium">{{ new Date(videoData.created_at).toLocaleString() }}</div>
                                         </div>
-                                        
-                                        <div>
-                                            <span class="text-gray-500 text-sm">S3 Key:</span>
-                                            <span class="ml-2 text-xs font-mono bg-gray-100 p-1 rounded">{{ video.s3_key }}</span>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mt-6 space-y-3">
-                                        <Link
-                                            v-if="!video.is_processing && !video.audio_path"
-                                            :href="route('videos.transcription.request', video.id)"
-                                            method="post" 
-                                            as="button"
-                                            class="w-full inline-flex justify-center px-4 py-2 bg-green-600 text-white rounded-md"
-                                        >
-                                            Request Transcription
-                                        </Link>
-                                        
-                                        <div v-if="video.is_processing" class="w-full p-2 bg-yellow-50 text-yellow-800 rounded-md text-center">
-                                            Processing... {{ video.status }}
-                                        </div>
-                                        
-                                        <Link
-                                            :href="route('videos.destroy', video.id)"
-                                            method="delete"
-                                            as="button"
-                                            class="w-full inline-flex justify-center px-4 py-2 bg-red-600 text-white rounded-md"
-                                            onclick="return confirm('Are you sure you want to delete this video?')"
-                                        >
-                                            Delete Video
-                                        </Link>
                                     </div>
                                 </div>
                                 
-                                <div class="bg-gray-50 rounded-lg p-4 mt-6" v-if="video.metadata">
-                                    <h3 class="text-lg font-medium mb-2">Metadata</h3>
-                                    <pre class="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-40">{{ JSON.stringify(video.metadata, null, 2) }}</pre>
+                                <!-- Timeline component (moved to sidebar) -->
+                                <div class="mt-6 bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200">
+                                    <TranscriptionTimeline 
+                                        :status="timelineData.status || videoData.status"
+                                        :timing="timelineData.timing"
+                                        :progress-percentage="timelineData.progress_percentage"
+                                        :error="videoData.error_message"
+                                        :media-duration="videoData.audio_duration"
+                                    />
                                 </div>
                             </div>
                         </div>

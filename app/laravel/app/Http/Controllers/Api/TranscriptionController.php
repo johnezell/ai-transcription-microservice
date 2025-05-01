@@ -85,6 +85,9 @@ class TranscriptionController extends Controller
      */
     public function updateJobStatus($jobId, Request $request)
     {
+        // Get current timestamp
+        $now = now();
+        
         // Find the transcription log
         $log = TranscriptionLog::where('job_id', $jobId)->first();
 
@@ -105,15 +108,27 @@ class TranscriptionController extends Controller
             'response_data' => 'nullable',
             'error_message' => 'nullable|string',
         ]);
-
+        
         // Update the log if it exists
         if ($log) {
-            $log->update([
+            $logData = [
                 'status' => $request->status,
-                'completed_at' => $request->completed_at ?? $log->completed_at,
-                'response_data' => $request->response_data ?? $log->response_data,
                 'error_message' => $request->error_message ?? $log->error_message,
-            ]);
+            ];
+            
+            // Set completion timestamp if provided or if status is completed/failed
+            if ($request->completed_at) {
+                $logData['completed_at'] = $request->completed_at;
+            } elseif (in_array($request->status, ['completed', 'failed'])) {
+                $logData['completed_at'] = $now;
+            }
+            
+            // Store response data if provided
+            if ($request->response_data) {
+                $logData['response_data'] = $request->response_data;
+            }
+            
+            $log->update($logData);
         }
 
         // Update the video if it exists
@@ -132,6 +147,34 @@ class TranscriptionController extends Controller
                     $videoData['audio_size'] = $responseData['audio_size_bytes'] ?? null;
                     $videoData['audio_duration'] = $responseData['duration_seconds'] ?? null;
                     
+                    // Find or create transcription log
+                    if (!$log) {
+                        $log = TranscriptionLog::firstOrCreate(
+                            ['video_id' => $video->id],
+                            [
+                                'job_id' => $video->id,
+                                'status' => 'processing',
+                                'started_at' => $now,
+                            ]
+                        );
+                    }
+                    
+                    // Update timing information for audio extraction
+                    $log->update([
+                        'audio_extraction_completed_at' => $now,
+                        'audio_file_size' => $responseData['audio_size_bytes'] ?? null,
+                        'audio_duration_seconds' => $responseData['duration_seconds'] ?? null,
+                        'progress_percentage' => 50, // Audio extraction complete, now 50% done
+                    ]);
+                    
+                    // Calculate audio extraction duration if we have the start time
+                    if ($log->audio_extraction_started_at) {
+                        $extractionDuration = $now->diffInSeconds($log->audio_extraction_started_at);
+                        $log->update([
+                            'audio_extraction_duration_seconds' => $extractionDuration
+                        ]);
+                    }
+                    
                     // Audio extraction is complete, trigger transcription service
                     $this->triggerTranscription($video->id);
                 }
@@ -139,8 +182,6 @@ class TranscriptionController extends Controller
                 // Transcription completed
                 if (isset($responseData['transcript_path'])) {
                     $videoData['transcript_path'] = $responseData['transcript_path'];
-                    // Set status to completed when we receive transcript data
-                    $videoData['status'] = 'completed';
                     
                     // If there's a transcript text in the response, save it
                     if (isset($responseData['transcript_text'])) {
@@ -153,6 +194,33 @@ class TranscriptionController extends Controller
                             // Log error but continue
                             Log::error('Failed to read transcript file: ' . $e->getMessage());
                         }
+                    }
+                    
+                    // Set status to completed when we receive transcript data
+                    $videoData['status'] = 'completed';
+                    
+                    // Update transcription log with completion data
+                    if ($log) {
+                        $logUpdateData = [
+                            'status' => 'completed',
+                            'transcription_completed_at' => $now,
+                            'completed_at' => $now,
+                            'progress_percentage' => 100
+                        ];
+                        
+                        // Calculate transcription duration if we have the start time
+                        if ($log->transcription_started_at) {
+                            $transcriptionDuration = $now->diffInSeconds($log->transcription_started_at);
+                            $logUpdateData['transcription_duration_seconds'] = $transcriptionDuration;
+                        }
+                        
+                        // Calculate total duration if we have the start time
+                        if ($log->started_at) {
+                            $totalDuration = $now->diffInSeconds($log->started_at);
+                            $logUpdateData['total_processing_duration_seconds'] = $totalDuration;
+                        }
+                        
+                        $log->update($logUpdateData);
                     }
                 }
             }
@@ -167,7 +235,7 @@ class TranscriptionController extends Controller
                     'status' => $request->status,
                     'response_data' => $request->response_data,
                     'error_message' => $request->error_message,
-                    'completed_at' => $request->completed_at ?? now(),
+                    'completed_at' => $request->completed_at ?? $now,
                 ]);
             }
         }

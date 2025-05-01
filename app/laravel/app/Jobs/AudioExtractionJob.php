@@ -61,6 +61,23 @@ class AudioExtractionJob implements ShouldQueue
             $this->video->update([
                 'status' => 'processing'
             ]);
+            
+            // Get or create transcription log
+            $log = \App\Models\TranscriptionLog::firstOrCreate(
+                ['video_id' => $this->video->id],
+                [
+                    'job_id' => $this->video->id,
+                    'status' => 'processing',
+                    'started_at' => now(),
+                ]
+            );
+            
+            // Update audio extraction start time
+            $extractionStartTime = now();
+            $log->update([
+                'audio_extraction_started_at' => $extractionStartTime,
+                'status' => 'processing'
+            ]);
 
             // Get the audio service URL from environment
             $audioServiceUrl = env('AUDIO_SERVICE_URL', 'http://audio-extraction-service:5000');
@@ -83,15 +100,31 @@ class AudioExtractionJob implements ShouldQueue
                     'video_id' => $this->video->id,
                     'response' => $response->json()
                 ]);
+                
+                // Don't complete here, the audio extraction service will call back
             } else {
                 $errorMessage = 'Audio extraction service returned error: ' . $response->body();
                 Log::error($errorMessage, [
                     'video_id' => $this->video->id
                 ]);
                 
+                // Update video and log with failure
                 $this->video->update([
                     'status' => 'failed',
                     'error_message' => $errorMessage
+                ]);
+                
+                $extractionEndTime = now();
+                $extractionDuration = $extractionEndTime->diffInSeconds($extractionStartTime);
+                
+                $log->update([
+                    'status' => 'failed',
+                    'error_message' => $errorMessage,
+                    'audio_extraction_completed_at' => $extractionEndTime,
+                    'audio_extraction_duration_seconds' => $extractionDuration,
+                    'completed_at' => $extractionEndTime,
+                    'total_processing_duration_seconds' => $extractionDuration,
+                    'progress_percentage' => 0
                 ]);
             }
         } catch (\Exception $e) {
@@ -101,10 +134,36 @@ class AudioExtractionJob implements ShouldQueue
                 'error' => $e->getMessage()
             ]);
             
+            // Update video with failure
             $this->video->update([
                 'status' => 'failed',
                 'error_message' => $errorMessage
             ]);
+            
+            // Try to update log with timing information
+            try {
+                $log = \App\Models\TranscriptionLog::where('video_id', $this->video->id)->first();
+                if ($log) {
+                    $endTime = now();
+                    $startTime = $log->audio_extraction_started_at ?? $log->started_at ?? $endTime;
+                    $duration = $endTime->diffInSeconds($startTime);
+                    
+                    $log->update([
+                        'status' => 'failed',
+                        'error_message' => $errorMessage,
+                        'audio_extraction_completed_at' => $endTime,
+                        'audio_extraction_duration_seconds' => $duration,
+                        'completed_at' => $endTime,
+                        'total_processing_duration_seconds' => $duration,
+                        'progress_percentage' => 0
+                    ]);
+                }
+            } catch (\Exception $logEx) {
+                Log::error('Failed to update transcription log', [
+                    'video_id' => $this->video->id,
+                    'error' => $logEx->getMessage()
+                ]);
+            }
         }
     }
 } 

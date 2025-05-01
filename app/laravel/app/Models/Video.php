@@ -46,7 +46,7 @@ class Video extends Model
     /**
      * Get the URL for the video.
      *
-     * @return string
+     * @return string|null
      */
     public function getUrlAttribute()
     {
@@ -54,6 +54,26 @@ class Video extends Model
             return null;
         }
         
+        // Debug log to help troubleshoot URL issues
+        \Illuminate\Support\Facades\Log::info('Video URL generation', [
+            'video_id' => $this->id,
+            'storage_path' => $this->storage_path,
+            'full_path' => Storage::disk('public')->path($this->storage_path),
+            'exists' => Storage::disk('public')->exists($this->storage_path)
+        ]);
+        
+        // If it's a relative path within the public disk (preferred format)
+        if (str_starts_with($this->storage_path, 's3/')) {
+            return asset('storage/' . $this->storage_path);
+        }
+        
+        // Convert absolute path to relative URL if needed
+        if (str_starts_with($this->storage_path, '/var/www/storage/app/public/')) {
+            $path = str_replace('/var/www/storage/app/public/', '', $this->storage_path);
+            return asset('storage/' . $path);
+        }
+        
+        // Default fallback - assuming it's relative to storage/app/public
         return asset('storage/' . $this->storage_path);
     }
     
@@ -142,5 +162,84 @@ class Video extends Model
     public function transcriptionLog()
     {
         return $this->hasOne(TranscriptionLog::class);
+    }
+    
+    /**
+     * Get the URL for the SRT subtitles file if it exists.
+     * 
+     * @return string|null
+     */
+    public function getSubtitlesUrlAttribute()
+    {
+        if (empty($this->transcript_path)) {
+            return null;
+        }
+        
+        // Get the directory path from the transcript path
+        $dir = dirname($this->transcript_path);
+        $srtPath = $dir . '/transcript.srt';
+        
+        // Determine the relative path for asset URL
+        $relativePath = null;
+        
+        // If it's inside public disk path
+        if (str_starts_with($srtPath, '/var/www/storage/app/public/')) {
+            $relativePath = str_replace('/var/www/storage/app/public/', '', $srtPath);
+        } else if (str_starts_with($srtPath, 's3/')) {
+            $relativePath = $srtPath;
+        } else {
+            // Try to extract path based on transcript pattern
+            if (preg_match('#/s3/jobs/(.+)/transcript\.txt$#', $this->transcript_path, $matches)) {
+                $jobId = $matches[1];
+                $relativePath = "s3/jobs/{$jobId}/transcript.srt";
+            }
+        }
+        
+        // If we have a relative path, return the asset URL
+        if ($relativePath) {
+            return asset('storage/' . $relativePath);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get the URL for the transcript.json file if it exists.
+     * 
+     * @return string|null
+     */
+    public function getTranscriptJsonUrlAttribute()
+    {
+        if (empty($this->transcript_path)) {
+            return null;
+        }
+        
+        // Get the directory path from the transcript path
+        $dir = dirname($this->transcript_path);
+        $jsonPath = $dir . '/transcript.json';
+        
+        // Determine the relative path for asset URL based on the directory pattern
+        // This is more reliable than checking if the file exists
+        $relativePath = null;
+        
+        // If it's inside public disk path
+        if (str_starts_with($jsonPath, '/var/www/storage/app/public/')) {
+            $relativePath = str_replace('/var/www/storage/app/public/', '', $jsonPath);
+        } else if (str_starts_with($jsonPath, 's3/')) {
+            $relativePath = $jsonPath;
+        } else {
+            // Try to extract path based on transcript pattern
+            if (preg_match('#/s3/jobs/(.+)/transcript\.txt$#', $this->transcript_path, $matches)) {
+                $jobId = $matches[1];
+                $relativePath = "s3/jobs/{$jobId}/transcript.json";
+            }
+        }
+        
+        // If we have a relative path, return the asset URL
+        if ($relativePath) {
+            return asset('storage/' . $relativePath);
+        }
+        
+        return null;
     }
 }

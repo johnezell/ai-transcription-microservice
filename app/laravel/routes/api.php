@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ConnectivityController;
 use App\Http\Controllers\Api\HelloController;
 use App\Http\Controllers\Api\TranscriptionController;
 use Illuminate\Http\Request;
@@ -21,7 +22,10 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 // Hello World endpoint
-Route::get('/hello', [HelloController::class, 'hello']);
+Route::get('/hello', [HelloController::class, 'hello'])->name('api.hello');
+
+// Connectivity test
+Route::get('/connectivity-test', [ConnectivityController::class, 'testConnectivity'])->name('api.connectivity-test');
 
 // Transcription endpoints
 Route::post('/transcription', [TranscriptionController::class, 'dispatchJob']);

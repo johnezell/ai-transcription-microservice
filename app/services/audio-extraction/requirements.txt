@@ -1,0 +1,7 @@
+flask==2.3.3
+requests==2.31.0
+python-dotenv==1.0.0
+pydub==0.25.1
+boto3==1.28.64
+werkzeug==2.3.7
+moviepy==1.0.3 

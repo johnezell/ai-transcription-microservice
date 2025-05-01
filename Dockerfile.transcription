@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY app/services/transcription/requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=service.py
+ENV FLASK_ENV=development
+
+# Command to run the service
+CMD ["python", "service.py"] 

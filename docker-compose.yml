@@ -17,25 +17,45 @@ services:
       - APP_ENV=local
       - DB_CONNECTION=sqlite
       - DB_DATABASE=/var/www/database/database.sqlite
-      - PYTHON_SERVICE_URL=http://transcription-service:5000
+      - AUDIO_SERVICE_URL=http://audio-extraction-service:5000
+      - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
       - QUEUE_CONNECTION=database
+
+  audio-extraction-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.audio-service
+    container_name: aws-audio-extraction
+    restart: unless-stopped
+    volumes:
+      - ./app/services/audio-extraction:/app
+      - ./app/shared:/app/shared
+    networks:
+      - app-network
+    environment:
+      - LARAVEL_API_URL=http://laravel/api
+      - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
+    ports:
+      - "5050:5000"
 
   transcription-service:
     build:
       context: .
-      dockerfile: Dockerfile.service
+      dockerfile: Dockerfile.transcription
     container_name: aws-transcription-service
     restart: unless-stopped
     volumes:
-      - ./app/services/transcriptions:/app
+      - ./app/services/transcription:/app
+      - ./app/shared:/app/shared
     depends_on:
       - laravel
+      - audio-extraction-service
     networks:
       - app-network
     environment:
       - LARAVEL_API_URL=http://laravel/api
     ports:
-      - "5050:5000"
+      - "5051:5000"
 
 networks:
   app-network:

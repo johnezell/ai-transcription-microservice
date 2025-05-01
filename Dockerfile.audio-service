@@ -1,0 +1,26 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install essential tools for audio extraction
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    curl \
+    libsndfile1 \
+    sox \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY app/services/audio-extraction/requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=service.py
+ENV FLASK_ENV=development
+
+# Command to run the service
+CMD ["python", "service.py"] 

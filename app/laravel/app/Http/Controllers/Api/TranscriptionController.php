@@ -131,6 +131,9 @@ class TranscriptionController extends Controller
                     $videoData['audio_path'] = $responseData['audio_path'];
                     $videoData['audio_size'] = $responseData['audio_size_bytes'] ?? null;
                     $videoData['audio_duration'] = $responseData['duration_seconds'] ?? null;
+                    
+                    // Audio extraction is complete, trigger transcription service
+                    $this->triggerTranscription($video->id);
                 }
                 
                 // Transcription completed
@@ -170,6 +173,79 @@ class TranscriptionController extends Controller
             'success' => true,
             'message' => 'Job status updated successfully',
         ]);
+    }
+
+    /**
+     * Trigger the transcription service to process a video's audio file.
+     *
+     * @param  string  $videoId
+     * @return bool
+     */
+    protected function triggerTranscription($videoId)
+    {
+        try {
+            // Update video status to transcribing
+            $video = Video::findOrFail($videoId);
+            $video->update(['status' => 'transcribing']);
+            
+            // Get the transcription service URL from environment
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            
+            // Log the request
+            Log::info('Triggering transcription service for video', [
+                'video_id' => $videoId,
+                'service_url' => $transcriptionServiceUrl
+            ]);
+
+            // Send request to the transcription service
+            $response = Http::post("{$transcriptionServiceUrl}/process", [
+                'job_id' => (string) $videoId
+            ]);
+
+            if ($response->successful()) {
+                Log::info('Successfully triggered transcription service', [
+                    'video_id' => $videoId,
+                    'response' => $response->json()
+                ]);
+                return true;
+            } else {
+                $errorMessage = 'Failed to trigger transcription service: ' . $response->body();
+                Log::error($errorMessage, [
+                    'video_id' => $videoId,
+                    'error' => $response->body()
+                ]);
+                // Set status to failed with error message
+                $video->update([
+                    'status' => 'failed',
+                    'error_message' => $errorMessage
+                ]);
+                return false;
+            }
+        } catch (\Exception $e) {
+            $errorMessage = 'Exception when triggering transcription service: ' . $e->getMessage();
+            Log::error($errorMessage, [
+                'video_id' => $videoId,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Try to update status to failed on exception
+            try {
+                $video = Video::find($videoId);
+                if ($video) {
+                    $video->update([
+                        'status' => 'failed',
+                        'error_message' => $errorMessage
+                    ]);
+                }
+            } catch (\Exception $innerEx) {
+                Log::error('Failed to update error status', [
+                    'video_id' => $videoId,
+                    'error' => $innerEx->getMessage()
+                ]);
+            }
+            
+            return false;
+        }
     }
 
     /**

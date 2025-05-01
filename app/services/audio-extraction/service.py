@@ -6,7 +6,6 @@ import json
 import logging
 import subprocess
 from datetime import datetime
-from moviepy.editor import VideoFileClip
 import tempfile
 import uuid
 
@@ -23,7 +22,6 @@ S3_JOBS_DIR = os.path.join(S3_BASE_DIR, 'jobs')
 
 # Get environment variables
 LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://laravel/api')
-TRANSCRIPTION_SERVICE_URL = os.environ.get('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000')
 
 # Ensure base directory exists
 os.makedirs(S3_JOBS_DIR, exist_ok=True)
@@ -55,151 +53,6 @@ def convert_to_wav(input_path, output_path):
         logger.error(f"Conversion failed: {str(e)}")
         raise
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint."""
-    return jsonify({
-        'status': 'healthy',
-        'service': 'audio-extraction-service',
-        'timestamp': datetime.now().isoformat()
-    })
-
-@app.route('/connectivity-test', methods=['GET'])
-def connectivity_test():
-    """Test connectivity to other services."""
-    results = {
-        'laravel_api': test_laravel_connectivity(),
-        'transcription_service': test_transcription_connectivity(),
-        'shared_directories': {
-            'jobs_dir': os.path.exists(S3_JOBS_DIR) and os.access(S3_JOBS_DIR, os.W_OK),
-        }
-    }
-    
-    return jsonify({
-        'success': all(results.values()) if isinstance(results, dict) else False,
-        'results': results,
-        'timestamp': datetime.now().isoformat()
-    })
-
-@app.route('/process', methods=['POST'])
-def process_audio_extraction():
-    """Extract audio from a video file."""
-    data = request.json
-    
-    if not data or 'job_id' not in data or 'video_path' not in data:
-        return jsonify({
-            'success': False,
-            'message': 'Invalid request data. job_id and video_path are required.'
-        }), 400
-    
-    job_id = data['job_id']
-    video_path = data['video_path']
-    
-    logger.info(f"Processing job {job_id} with video path: {video_path}")
-    
-    # Create job directory if it doesn't exist
-    job_dir = os.path.join(S3_JOBS_DIR, job_id)
-    os.makedirs(job_dir, exist_ok=True)
-    
-    # Standardize path handling
-    if video_path.startswith('s3/'):
-        local_path = os.path.join('/var/www/storage/app/public', video_path)
-    else:
-        # Assume it's a full path already
-        local_path = video_path
-    
-    logger.info(f"Resolved video path: {local_path}")
-    
-    # Define output paths with standardized filenames
-    audio_path = os.path.join(job_dir, 'audio.wav')
-    
-    # Basic directory structure check for debugging
-    try:
-        if os.path.exists(job_dir):
-            dir_contents = os.listdir(job_dir)
-            logger.info(f"Job directory contents: {dir_contents}")
-        else:
-            logger.error(f"Job directory {job_dir} does not exist")
-            logger.info(f"Creating job directory: {job_dir}")
-            os.makedirs(job_dir, exist_ok=True)
-    except Exception as e:
-        logger.error(f"Error with job directory: {str(e)}")
-    
-    try:
-        # Check if the video file exists
-        if not os.path.exists(local_path):
-            error_msg = f"Video file not found at path: {local_path}"
-            logger.error(error_msg)
-            
-            # Additional file access troubleshooting
-            try:
-                # Check parent directories
-                parent_exists = os.path.exists(os.path.dirname(local_path))
-                logger.error(f"Parent directory exists: {parent_exists}")
-                
-                # Check permissions
-                if parent_exists:
-                    stats = os.stat(os.path.dirname(local_path))
-                    logger.error(f"Parent directory permissions: {oct(stats.st_mode)}")
-                    logger.error(f"Parent directory owner/group: {stats.st_uid}/{stats.st_gid}")
-            except Exception as perm_error:
-                logger.error(f"Permission check error: {str(perm_error)}")
-            
-            update_job_status(job_id, 'failed', None, error_msg)
-            return jsonify({
-                'success': False,
-                'message': error_msg
-            }), 404
-            
-        # Extract audio using ffmpeg
-        convert_to_wav(local_path, audio_path)
-        
-        # Get file size and other metadata
-        audio_size = os.path.getsize(audio_path)
-        duration = get_audio_duration(audio_path)
-        
-        # Prepare response data
-        response_data = {
-            'message': 'Audio extraction completed successfully',
-            'service_timestamp': datetime.now().isoformat(),
-            'audio_path': audio_path,
-            'audio_size_bytes': audio_size,
-            'duration_seconds': duration,
-            'metadata': {
-                'service': 'audio-extraction-service',
-                'processed_by': 'FFmpeg audio extraction',
-                'format': 'WAV',
-                'sample_rate': '16000 Hz',
-                'channels': '1 (Mono)',
-                'codec': 'PCM 16-bit'
-            }
-        }
-        
-        # Update job status in Laravel
-        update_job_status(job_id, 'processing', response_data)
-        
-        # Forward to transcription service
-        forward_to_transcription(job_id, audio_path)
-        
-        return jsonify({
-            'success': True,
-            'job_id': job_id,
-            'message': 'Audio extraction processed successfully, forwarded to transcription service',
-            'data': response_data
-        })
-        
-    except Exception as e:
-        logger.error(f"Error processing job {job_id}: {str(e)}")
-        
-        # Update job status in Laravel
-        update_job_status(job_id, 'failed', None, str(e))
-        
-        return jsonify({
-            'success': False,
-            'job_id': job_id,
-            'message': f'Audio extraction failed: {str(e)}'
-        }), 500
-
 def get_audio_duration(audio_path):
     """Get audio duration using ffprobe."""
     try:
@@ -222,29 +75,6 @@ def get_audio_duration(audio_path):
     except Exception as e:
         logger.warning(f"Error getting duration: {str(e)}")
         return None
-
-def forward_to_transcription(job_id, audio_path):
-    """Forward the job to the transcription service."""
-    try:
-        logger.info(f"Forwarding job {job_id} to transcription service")
-        
-        response = requests.post(f"{TRANSCRIPTION_SERVICE_URL}/process", json={
-            'job_id': job_id,
-            'audio_path': audio_path
-        })
-        
-        if response.status_code == 200:
-            logger.info(f"Successfully forwarded job {job_id} to transcription service")
-            return True
-        else:
-            logger.error(f"Failed to forward job {job_id} to transcription service: {response.text}")
-            update_job_status(job_id, 'failed', None, f"Failed to forward to transcription service: {response.text}")
-            return False
-    
-    except Exception as e:
-        logger.error(f"Error forwarding job {job_id} to transcription service: {str(e)}")
-        update_job_status(job_id, 'failed', None, f"Error forwarding to transcription service: {str(e)}")
-        return False
 
 def update_job_status(job_id, status, response_data=None, error_message=None):
     """Update the job status in Laravel."""
@@ -269,6 +99,31 @@ def update_job_status(job_id, status, response_data=None, error_message=None):
     except Exception as e:
         logger.error(f"Error updating job status in Laravel: {str(e)}")
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'audio-extraction-service',
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/connectivity-test', methods=['GET'])
+def connectivity_test():
+    """Test connectivity to other services."""
+    results = {
+        'laravel_api': test_laravel_connectivity(),
+        'shared_directories': {
+            'jobs_dir': os.path.exists(S3_JOBS_DIR) and os.access(S3_JOBS_DIR, os.W_OK),
+        }
+    }
+    
+    return jsonify({
+        'success': all(results.values()) if isinstance(results, dict) else False,
+        'results': results,
+        'timestamp': datetime.now().isoformat()
+    })
+
 def test_laravel_connectivity():
     """Test connectivity to Laravel API."""
     try:
@@ -278,14 +133,102 @@ def test_laravel_connectivity():
         logger.error(f"Error connecting to Laravel API: {str(e)}")
         return False
 
-def test_transcription_connectivity():
-    """Test connectivity to Transcription Service."""
+@app.route('/process', methods=['POST'])
+def process_audio_extraction():
+    """Extract audio from a video file."""
+    data = request.json
+    
+    if not data or 'job_id' not in data:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid request data. job_id is required.'
+        }), 400
+    
+    job_id = data['job_id']
+    
+    logger.info(f"Processing job {job_id}")
+    
+    # Create job directory if it doesn't exist
+    job_dir = os.path.join(S3_JOBS_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    
+    # Standardized paths
+    video_path = os.path.join(job_dir, 'video.mp4')
+    audio_path = os.path.join(job_dir, 'audio.wav')
+    
+    # Basic directory structure check for debugging
     try:
-        response = requests.get(f"{TRANSCRIPTION_SERVICE_URL}/health")
-        return response.status_code == 200
+        if os.path.exists(job_dir):
+            dir_contents = os.listdir(job_dir)
+            logger.info(f"Job directory contents: {dir_contents}")
+        else:
+            logger.error(f"Job directory {job_dir} does not exist")
+            logger.info(f"Creating job directory: {job_dir}")
+            os.makedirs(job_dir, exist_ok=True)
     except Exception as e:
-        logger.error(f"Error connecting to Transcription Service: {str(e)}")
-        return False
+        logger.error(f"Error with job directory: {str(e)}")
+    
+    try:
+        # Check if the video file exists
+        if not os.path.exists(video_path):
+            error_msg = f"Video file not found at path: {video_path}"
+            logger.error(error_msg)
+            
+            # Report error to Laravel
+            update_job_status(job_id, 'failed', None, error_msg)
+            return jsonify({
+                'success': False,
+                'message': error_msg
+            }), 404
+            
+        # Update status to extracting_audio
+        update_job_status(job_id, 'extracting_audio')
+        
+        # Extract audio using ffmpeg
+        convert_to_wav(video_path, audio_path)
+        
+        # Get file size and other metadata
+        audio_size = os.path.getsize(audio_path)
+        duration = get_audio_duration(audio_path)
+        
+        # Prepare response data
+        response_data = {
+            'message': 'Audio extraction completed successfully',
+            'service_timestamp': datetime.now().isoformat(),
+            'audio_path': audio_path,
+            'audio_size_bytes': audio_size,
+            'duration_seconds': duration,
+            'metadata': {
+                'service': 'audio-extraction-service',
+                'processed_by': 'FFmpeg audio extraction',
+                'format': 'WAV',
+                'sample_rate': '16000 Hz',
+                'channels': '1 (Mono)',
+                'codec': 'PCM 16-bit'
+            }
+        }
+        
+        # Update job status in Laravel - Laravel will initiate transcription
+        update_job_status(job_id, 'processing', response_data)
+        
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'message': 'Audio extraction processed successfully',
+            'data': response_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing job {job_id}: {str(e)}")
+        
+        # Update job status in Laravel
+        update_job_status(job_id, 'failed', None, str(e))
+        
+        return jsonify({
+            'success': False,
+            'job_id': job_id,
+            'message': f'Audio extraction failed: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 

@@ -48,6 +48,10 @@ When videos are deleted through the system, all associated files (original video
    ```bash
    docker-compose up -d
    ```
+4. Start the Laravel queue worker (required for asynchronous processing):
+   ```bash
+   docker exec -it hydra-laravel-1 php /var/www/artisan queue:work --tries=3
+   ```
 
 ### Accessing the Application
 - **Web Interface**: Access through your browser at `http://localhost:8080`

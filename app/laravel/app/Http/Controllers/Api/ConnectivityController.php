@@ -24,7 +24,7 @@ class ConnectivityController extends Controller
         // Test Audio Extraction Service
         try {
             $audioServiceUrl = env('AUDIO_SERVICE_URL', 'http://audio-extraction-service:5000');
-            $response = Http::get("{$audioServiceUrl}/connectivity-test");
+            $response = Http::timeout(120)->get("{$audioServiceUrl}/connectivity-test");
             
             if ($response->successful()) {
                 $results['audio_extraction_service'] = [
@@ -53,7 +53,7 @@ class ConnectivityController extends Controller
         // Test Transcription Service
         try {
             $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
-            $response = Http::get("{$transcriptionServiceUrl}/connectivity-test");
+            $response = Http::timeout(120)->get("{$transcriptionServiceUrl}/connectivity-test");
             
             if ($response->successful()) {
                 $results['transcription_service'] = [

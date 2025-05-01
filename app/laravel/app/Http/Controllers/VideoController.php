@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\AudioExtractionJob;
 use App\Models\Video;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -95,8 +96,23 @@ class VideoController extends Controller
                 'full_path' => Storage::disk('public')->path($videoPath),
             ]);
             
+            // Automatically start audio extraction
+            // Mark video as processing
+            $video->update([
+                'status' => 'processing'
+            ]);
+
+            // Log the dispatch
+            Log::info('Auto-dispatching audio extraction job for video after upload', [
+                'video_id' => $video->id,
+                'storage_path' => $videoPath
+            ]);
+
+            // Dispatch audio extraction job to queue
+            \App\Jobs\AudioExtractionJob::dispatch($video);
+            
             return redirect()->route('videos.index')
-                ->with('success', 'Video uploaded successfully.');
+                ->with('success', 'Video uploaded successfully and processing started.');
                 
         } catch (\Exception $e) {
             // If anything goes wrong, update the status to failed
@@ -188,46 +204,17 @@ class VideoController extends Controller
                 'status' => 'processing'
             ]);
 
-            // Get the audio service URL from environment
-            $audioServiceUrl = env('AUDIO_SERVICE_URL', 'http://audio-extraction-service:5000');
-            
-            // Log the request
-            Log::info('Requesting audio extraction for video', [
+            // Log the dispatch
+            Log::info('Dispatching audio extraction job for video', [
                 'video_id' => $video->id,
-                'service_url' => $audioServiceUrl,
-                'storage_path' => $video->storage_path,
-                'exists' => Storage::disk('public')->exists($video->storage_path),
-                'full_path' => Storage::disk('public')->path($video->storage_path)
+                'storage_path' => $video->storage_path
             ]);
 
-            // Send request to the audio extraction service
-            $response = Http::post("{$audioServiceUrl}/process", [
-                'job_id' => (string) $video->id, // Video UUID as job ID
-                'video_path' => $video->storage_path // Pass the storage path
-            ]);
-
-            if ($response->successful()) {
-                Log::info('Successfully requested audio extraction', [
-                    'video_id' => $video->id,
-                    'response' => $response->json()
-                ]);
-                
-                return redirect()->route('videos.show', $video)
-                    ->with('success', 'Transcription process started. Audio extraction in progress.');
-            } else {
-                // Handle error
-                Log::error('Failed to request audio extraction', [
-                    'video_id' => $video->id,
-                    'error' => $response->body()
-                ]);
-                
-                $video->update([
-                    'status' => 'failed'
-                ]);
-                
-                return redirect()->route('videos.show', $video)
-                    ->with('error', 'Failed to start transcription process. Please try again.');
-            }
+            // Dispatch audio extraction job to queue
+            \App\Jobs\AudioExtractionJob::dispatch($video);
+            
+            return redirect()->route('videos.show', $video)
+                ->with('success', 'Transcription process started. Check back later for results.');
         } catch (\Exception $e) {
             // Handle exception
             Log::error('Exception when requesting transcription', [

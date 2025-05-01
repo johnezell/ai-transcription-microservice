@@ -37,4 +37,26 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
+Route::get('/test-audio-job/{id}', function ($id) {
+    $video = App\Models\Video::find($id);
+    
+    if (!$video) {
+        return response()->json(['error' => 'Video not found'], 404);
+    }
+    
+    try {
+        App\Jobs\AudioExtractionJob::dispatch($video);
+        return response()->json([
+            'success' => true,
+            'message' => 'Audio extraction job dispatched for video ' . $id,
+            'video' => $video
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
 require __DIR__.'/auth.php';

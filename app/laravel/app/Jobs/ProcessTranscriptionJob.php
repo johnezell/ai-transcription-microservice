@@ -52,7 +52,7 @@ class ProcessTranscriptionJob implements ShouldQueue
             ]);
 
             // Send request to the Python service
-            $response = Http::post("{$pythonServiceUrl}/process", [
+            $response = Http::timeout(120)->post("{$pythonServiceUrl}/process", [
                 'job_id' => $this->transcriptionLog->job_id,
                 'data' => $this->transcriptionLog->request_data
             ]);

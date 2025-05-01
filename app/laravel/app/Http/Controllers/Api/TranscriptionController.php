@@ -139,6 +139,9 @@ class TranscriptionController extends Controller
                 // Transcription completed
                 if (isset($responseData['transcript_path'])) {
                     $videoData['transcript_path'] = $responseData['transcript_path'];
+                    // Set status to completed when we receive transcript data
+                    $videoData['status'] = 'completed';
+                    
                     // If there's a transcript text in the response, save it
                     if (isset($responseData['transcript_text'])) {
                         $videoData['transcript_text'] = $responseData['transcript_text'];
@@ -184,45 +187,20 @@ class TranscriptionController extends Controller
     protected function triggerTranscription($videoId)
     {
         try {
-            // Update video status to transcribing
+            // Find the video
             $video = Video::findOrFail($videoId);
-            $video->update(['status' => 'transcribing']);
             
-            // Get the transcription service URL from environment
-            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            // Log that we're dispatching the job
+            Log::info('Dispatching transcription job for video', [
+                'video_id' => $videoId
+            ]);
             
-            // Log the request
-            Log::info('Triggering transcription service for video', [
-                'video_id' => $videoId,
-                'service_url' => $transcriptionServiceUrl
-            ]);
-
-            // Send request to the transcription service
-            $response = Http::post("{$transcriptionServiceUrl}/process", [
-                'job_id' => (string) $videoId
-            ]);
-
-            if ($response->successful()) {
-                Log::info('Successfully triggered transcription service', [
-                    'video_id' => $videoId,
-                    'response' => $response->json()
-                ]);
-                return true;
-            } else {
-                $errorMessage = 'Failed to trigger transcription service: ' . $response->body();
-                Log::error($errorMessage, [
-                    'video_id' => $videoId,
-                    'error' => $response->body()
-                ]);
-                // Set status to failed with error message
-                $video->update([
-                    'status' => 'failed',
-                    'error_message' => $errorMessage
-                ]);
-                return false;
-            }
+            // Dispatch transcription job to the queue
+            \App\Jobs\TranscriptionJob::dispatch($video);
+            
+            return true;
         } catch (\Exception $e) {
-            $errorMessage = 'Exception when triggering transcription service: ' . $e->getMessage();
+            $errorMessage = 'Exception when dispatching transcription job: ' . $e->getMessage();
             Log::error($errorMessage, [
                 'video_id' => $videoId,
                 'error' => $e->getMessage()
@@ -259,7 +237,7 @@ class TranscriptionController extends Controller
             $pythonServiceUrl = env('PYTHON_SERVICE_URL', 'http://transcription-service:5000');
             $healthUrl = "{$pythonServiceUrl}/health";
             
-            $response = Http::get($healthUrl);
+            $response = Http::timeout(120)->get($healthUrl);
             
             if ($response->successful()) {
                 return response()->json([

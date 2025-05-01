@@ -1,2 +1,5 @@
 .sandbox
 .env
+sample_course
+source_videos/*.mp4
+extracted_audios/*.wav

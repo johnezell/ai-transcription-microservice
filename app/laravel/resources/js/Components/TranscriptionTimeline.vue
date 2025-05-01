@@ -127,6 +127,16 @@ export default {
           )
         },
         {
+          id: 'music_term_recognition',
+          label: 'Music Term Analysis',
+          status: this.getStepStatus('music_term_recognition'),
+          timing: this.formatTiming(
+            timing.music_term_recognition_started_at, 
+            timing.music_term_recognition_completed_at,
+            timing.music_term_recognition_duration_seconds
+          )
+        },
+        {
           id: 'complete',
           label: 'Complete',
           status: this.status === 'completed' ? 'completed' : 
@@ -148,8 +158,10 @@ export default {
           return 'Extracting audio from video...';
         case 'transcribing':
           return 'Transcribing audio...';
+        case 'processing_music_terms':
+          return 'Analyzing music terminology...';
         case 'completed':
-          return 'Transcription completed successfully';
+          return 'Processing completed successfully';
         case 'failed':
           return 'Processing failed';
         default:
@@ -163,6 +175,7 @@ export default {
           return 'bg-gray-100 text-gray-800';
         case 'processing':
         case 'transcribing':
+        case 'processing_music_terms':
           return 'bg-blue-50 text-blue-800';
         case 'completed':
           return 'bg-green-50 text-green-800';
@@ -174,7 +187,7 @@ export default {
     },
     
     estimatedCompletion() {
-      if (this.status !== 'processing' && this.status !== 'transcribing') {
+      if (this.status !== 'processing' && this.status !== 'transcribing' && this.status !== 'processing_music_terms') {
         return null;
       }
       
@@ -191,6 +204,9 @@ export default {
       } else if (this.status === 'transcribing') {
         // Transcription typically takes ~2x media duration
         estimatedRemainingSeconds = this.mediaDuration * 2;
+      } else if (this.status === 'processing_music_terms') {
+        // Music term recognition typically takes ~20% of media duration
+        estimatedRemainingSeconds = this.mediaDuration * 0.2;
       }
       
       if (estimatedRemainingSeconds < 60) {
@@ -218,7 +234,7 @@ export default {
         if (this.status === 'processing') {
           return 'active';
         }
-        if (['transcribing', 'completed'].includes(this.status)) {
+        if (['transcribing', 'processing_music_terms', 'completed'].includes(this.status)) {
           return 'completed';
         }
       }
@@ -227,14 +243,27 @@ export default {
         if (this.status === 'transcribing') {
           return 'active';
         }
+        if (['processing_music_terms', 'completed'].includes(this.status)) {
+          return 'completed';
+        }
+      }
+      
+      if (stepId === 'music_term_recognition') {
+        if (this.status === 'processing_music_terms') {
+          return 'active';
+        }
         if (this.status === 'completed') {
+          return 'completed';
+        }
+        // Also mark as completed if we have a completed timestamp for it
+        if (this.timing && this.timing.music_term_recognition_completed_at) {
           return 'completed';
         }
       }
       
       // Default status based on current position in workflow
-      const workflowOrder = ['uploaded', 'processing', 'transcribing', 'completed'];
-      const stepOrder = ['upload', 'audio_extraction', 'transcription', 'complete'];
+      const workflowOrder = ['uploaded', 'processing', 'transcribing', 'processing_music_terms', 'completed'];
+      const stepOrder = ['upload', 'audio_extraction', 'transcription', 'music_term_recognition', 'complete'];
       
       const currentPosition = workflowOrder.indexOf(this.status);
       const stepPosition = stepOrder.indexOf(stepId);
@@ -271,8 +300,8 @@ export default {
       if (start && end) {
         display = `${start} - ${end}`;
         
-        // If we have duration in seconds
-        if (durationSeconds) {
+        // If we have duration in seconds and it's a valid positive number
+        if (durationSeconds && durationSeconds > 0 && !isNaN(durationSeconds)) {
           // Format as m:ss
           const minutes = Math.floor(durationSeconds / 60);
           const seconds = Math.floor(durationSeconds % 60);
@@ -281,7 +310,25 @@ export default {
           display = `${formattedDuration}`;
           full = `Started: ${start}, Completed: ${end}, Duration: ${formattedDuration}`;
         } else {
-          full = `Started: ${start}, Completed: ${end}`;
+          // Try to calculate duration from timestamps if we don't have a valid duration
+          try {
+            const startDate = new Date(startTime);
+            const endDate = new Date(endTime);
+            const calculatedDuration = (endDate - startDate) / 1000; // in seconds
+            
+            if (calculatedDuration > 0) {
+              const minutes = Math.floor(calculatedDuration / 60);
+              const seconds = Math.floor(calculatedDuration % 60);
+              const formattedDuration = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+              
+              display = `${formattedDuration}`;
+              full = `Started: ${start}, Completed: ${end}, Duration: ${formattedDuration}`;
+            } else {
+              full = `Started: ${start}, Completed: ${end}`;
+            }
+          } catch (e) {
+            full = `Started: ${start}, Completed: ${end}`;
+          }
         }
       } else if (start) {
         display = `Started ${start}`;

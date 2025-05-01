@@ -8,12 +8,6 @@
         Synchronized Transcript
       </h3>
       <div class="flex items-center space-x-2 text-sm">
-        <a :href="srtUrl" v-if="srtUrl" target="_blank" class="text-blue-600 hover:underline flex items-center">
-          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-          </svg>
-          Download SRT
-        </a>
         <button 
           @click="autoScroll = !autoScroll" 
           class="flex items-center px-2 py-1 rounded"

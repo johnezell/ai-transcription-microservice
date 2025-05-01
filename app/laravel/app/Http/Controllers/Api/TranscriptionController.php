@@ -103,7 +103,7 @@ class TranscriptionController extends Controller
 
         // Validate request
         $request->validate([
-            'status' => 'required|string|in:processing,completed,failed,extracting_audio,transcribing',
+            'status' => 'required|string|in:processing,completed,failed,extracting_audio,transcribing,processing_music_terms',
             'completed_at' => 'nullable|date',
             'response_data' => 'nullable',
             'error_message' => 'nullable|string',
@@ -222,6 +222,64 @@ class TranscriptionController extends Controller
                         
                         $log->update($logUpdateData);
                     }
+                    
+                    // If we have transcript data, also trigger music term recognition
+                    if (isset($responseData['transcript_text']) || 
+                        (isset($responseData['transcript_path']) && file_exists($responseData['transcript_path']))) {
+                        // Trigger music term recognition in the background
+                        try {
+                            Log::info('Automatically triggering music term recognition after transcription', [
+                                'video_id' => $video->id
+                            ]);
+                            
+                            $this->triggerMusicTermRecognition($video->id);
+                        } catch (\Exception $e) {
+                            // Just log the error but don't fail the whole process
+                            Log::error('Failed to trigger music term recognition: ' . $e->getMessage(), [
+                                'video_id' => $video->id
+                            ]);
+                        }
+                    }
+                }
+                
+                // Music term recognition completed
+                if (isset($responseData['music_terms_json_path'])) {
+                    $videoData['music_terms_path'] = $responseData['music_terms_json_path'];
+                    $videoData['music_terms_count'] = $responseData['term_count'] ?? 0;
+                    $videoData['has_music_terms'] = true;
+                    $videoData['status'] = 'completed';
+                    
+                    // Save category breakdown as metadata
+                    if (isset($responseData['categories'])) {
+                        $videoData['music_terms_metadata'] = [
+                            'categories' => $responseData['categories'],
+                            'service_timestamp' => $responseData['service_timestamp'] ?? now()->toIso8601String(),
+                        ];
+                    }
+                    
+                    // Update transcription log with completion data
+                    if ($log) {
+                        $musicTermsUpdateData = [
+                            'status' => 'completed',
+                            'music_term_recognition_completed_at' => $now,
+                            'music_term_count' => $responseData['term_count'] ?? 0,
+                            'progress_percentage' => 100
+                        ];
+                        
+                        // Calculate music term recognition duration if we have the start time
+                        if ($log->music_term_recognition_started_at) {
+                            $musicTermDuration = $now->diffInSeconds($log->music_term_recognition_started_at);
+                            $musicTermsUpdateData['music_term_recognition_duration_seconds'] = $musicTermDuration;
+                        }
+                        
+                        $log->update($musicTermsUpdateData);
+                    }
+
+                    // Log successful processing
+                    Log::info('Successfully processed music term recognition', [
+                        'video_id' => $video->id,
+                        'term_count' => $responseData['term_count'] ?? 0
+                    ]);
                 }
             }
 
@@ -289,6 +347,38 @@ class TranscriptionController extends Controller
                     'error' => $innerEx->getMessage()
                 ]);
             }
+            
+            return false;
+        }
+    }
+
+    /**
+     * Trigger the music term recognition service to process a video's transcript.
+     *
+     * @param  string  $videoId
+     * @return bool
+     */
+    protected function triggerMusicTermRecognition($videoId)
+    {
+        try {
+            // Find the video
+            $video = Video::findOrFail($videoId);
+            
+            // Log that we're dispatching the job
+            Log::info('Dispatching music term recognition job for video', [
+                'video_id' => $videoId
+            ]);
+            
+            // Dispatch music term recognition job to the queue
+            \App\Jobs\MusicTermRecognitionJob::dispatch($video);
+            
+            return true;
+        } catch (\Exception $e) {
+            $errorMessage = 'Exception when dispatching music term recognition job: ' . $e->getMessage();
+            Log::error($errorMessage, [
+                'video_id' => $videoId,
+                'error' => $e->getMessage()
+            ]);
             
             return false;
         }

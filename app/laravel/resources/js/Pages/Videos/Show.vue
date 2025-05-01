@@ -6,6 +6,7 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TranscriptionTimeline from '@/Components/TranscriptionTimeline.vue';
 import SynchronizedTranscript from '@/Components/SynchronizedTranscript.vue';
 import AdvancedSubtitles from '@/Components/AdvancedSubtitles.vue';
+import MusicTermsViewer from '@/Components/MusicTermsViewer.vue';
 
 const props = defineProps({
     video: Object,
@@ -23,6 +24,9 @@ const videoElement = ref(null);
 const isLoading = ref(false);
 const lastPolled = ref(Date.now());
 const manualTranscriptUrl = ref('');
+const transcriptData = ref(null);
+const overallConfidence = ref(null);
+const processingMusicTerms = ref(false);
 
 // Check if this is a newly uploaded video that needs monitoring
 const isNewVideo = computed(() => {
@@ -71,7 +75,9 @@ async function fetchStatus() {
         
         if (data.success) {
             // Check if status changed from processing/transcribing to completed
-            const wasProcessing = videoData.value.status === 'processing' || videoData.value.status === 'transcribing';
+            const wasProcessing = videoData.value.status === 'processing' || 
+                                  videoData.value.status === 'transcribing' || 
+                                  videoData.value.status === 'processing_music_terms';
             const nowCompleted = data.video.status === 'completed';
             
             // Update the video data
@@ -89,7 +95,8 @@ async function fetchStatus() {
                 if (isNewVideo.value && 
                     (data.video.status === 'completed' || 
                      data.video.has_audio || 
-                     data.video.has_transcript)) {
+                     data.video.has_transcript ||
+                     data.video.has_music_terms)) {
                     window.location.reload();
                     return;
                 }
@@ -100,7 +107,15 @@ async function fetchStatus() {
                 // Copy standard properties
                 videoData.value.error_message = data.video.error_message;
                 videoData.value.is_processing = data.video.is_processing || 
-                    ['processing', 'transcribing'].includes(data.video.status);
+                    ['processing', 'transcribing', 'processing_music_terms'].includes(data.video.status);
+                
+                // Update music terms properties if they exist
+                if (data.video.has_music_terms) {
+                    videoData.value.has_music_terms = true;
+                    videoData.value.music_terms_url = data.video.music_terms_url;
+                    videoData.value.music_terms_count = data.video.music_terms_count;
+                    videoData.value.music_terms_metadata = data.video.music_terms_metadata;
+                }
                 
                 // Copy URLs if they exist
                 if (data.video.url) videoData.value.url = data.video.url;
@@ -108,13 +123,25 @@ async function fetchStatus() {
                 if (data.video.transcript_url) videoData.value.transcript_url = data.video.transcript_url;
                 if (data.video.subtitles_url) videoData.value.subtitles_url = data.video.subtitles_url;
                 if (data.video.transcript_json_url) {
+                    const oldUrl = videoData.value.transcript_json_url;
                     videoData.value.transcript_json_url = data.video.transcript_json_url;
+                    
+                    // If transcript_json_url is new or changed, fetch the data
+                    if (!oldUrl || oldUrl !== data.video.transcript_json_url) {
+                        fetchTranscriptData();
+                    }
                 }
             }
             
             // Also check if transcript info is in the separate transcript property
             if (data.transcript && data.transcript.transcript_json_url) {
+                const oldUrl = videoData.value.transcript_json_url;
                 videoData.value.transcript_json_url = data.transcript.transcript_json_url;
+                
+                // If transcript_json_url is new or changed, fetch the data
+                if (!oldUrl || oldUrl !== data.transcript.transcript_json_url) {
+                    fetchTranscriptData();
+                }
             }
             
             // Instead of reloading the page, update the local data
@@ -173,6 +200,12 @@ async function fetchVideoDetails() {
         if (data.success) {
             // Update our local data with the full video details
             Object.assign(videoData.value, data.video);
+            
+            // After updating the video data, try to fetch the transcript JSON
+            // if the transcript_json_url is now available
+            if (videoData.value.transcript_json_url) {
+                await fetchTranscriptData();
+            }
         } else {
             console.error('API returned error:', data.message || 'Unknown error');
         }
@@ -203,9 +236,110 @@ function applyManualTranscriptUrl() {
     videoData.value.transcript_json_url = manualTranscriptUrl.value;
 }
 
+// Add a function to fetch and process transcript JSON data
+async function fetchTranscriptData() {
+    if (!videoData.value.transcript_json_url) {
+        return;
+    }
+    
+    try {
+        let url = videoData.value.transcript_json_url;
+        
+        // If it's an absolute URL, convert to a relative path
+        if (url.startsWith('http')) {
+            try {
+                const parsedUrl = new URL(url);
+                const pathMatch = parsedUrl.pathname.match(/\/storage\/(.+)/);
+                if (pathMatch && pathMatch[1]) {
+                    url = `/storage/${pathMatch[1]}`;
+                }
+            } catch (e) {
+                // Handle URL parsing errors
+            }
+        }
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch transcript data');
+        }
+        
+        transcriptData.value = await response.json();
+        calculateOverallConfidence();
+    } catch (error) {
+        console.error('Error fetching transcript data:', error);
+    }
+}
+
+// Calculate overall confidence from transcript data
+function calculateOverallConfidence() {
+    if (!transcriptData.value || !transcriptData.value.segments) {
+        return;
+    }
+    
+    let totalWords = 0;
+    let confidenceSum = 0;
+    
+    // Go through all segments and words to sum up confidence values
+    transcriptData.value.segments.forEach(segment => {
+        if (Array.isArray(segment.words)) {
+            segment.words.forEach(word => {
+                if (word.probability !== undefined) {
+                    confidenceSum += parseFloat(word.probability);
+                    totalWords++;
+                }
+            });
+        }
+    });
+    
+    // Calculate average confidence if we have words
+    if (totalWords > 0) {
+        overallConfidence.value = confidenceSum / totalWords;
+    }
+}
+
+// Add the music term recognition trigger method
+async function triggerMusicTermRecognition() {
+    if (!videoData.value || !videoData.value.id) {
+        console.error('No video data available');
+        return;
+    }
+    
+    processingMusicTerms.value = true;
+    
+    try {
+        const response = await fetch(`/api/videos/${videoData.value.id}/music-terms`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            console.log('Music term recognition triggered successfully');
+            // Start polling for video status to show processing indicator
+            startPolling();
+        } else {
+            console.error('Failed to trigger music term recognition:', data.message);
+            alert('Failed to start music term recognition: ' + (data.message || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error triggering music term recognition:', error);
+        alert('Error: ' + (error.message || 'Failed to communicate with server'));
+    } finally {
+        processingMusicTerms.value = false;
+    }
+}
+
 onMounted(() => {
     // Get initial status immediately
     fetchStatus();
+    
+    // Fetch transcript data if available
+    fetchTranscriptData();
     
     // Then start polling after a short delay to ensure backend has time to update
     setTimeout(() => {
@@ -288,6 +422,44 @@ onBeforeUnmount(() => {
                                         :transcript-text="videoData.transcript_text"
                                     />
                                 </div>
+                                
+                                <!-- Music Terms Viewer (moved below transcript) -->
+                                <div v-if="videoData.has_music_terms" class="mt-8">
+                                    <MusicTermsViewer 
+                                        :music-terms-url="videoData.music_terms_url"
+                                        :music-terms-metadata="videoData.music_terms_metadata"
+                                        :music-term-count="videoData.music_terms_count"
+                                    />
+                                </div>
+                                
+                                <!-- Music Terms Recognition Trigger (moved below transcript) -->
+                                <div v-else-if="videoData.transcript_path && !videoData.has_music_terms" class="mt-8">
+                                    <div class="bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200">
+                                        <h3 class="text-lg font-medium mb-4 flex items-center">
+                                            <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                            </svg>
+                                            Term Recognition
+                                        </h3>
+                                        <p class="text-gray-600 mb-4">
+                                            Identify terminology in the transcript to help analyze the content.
+                                        </p>
+                                        <button 
+                                            @click="triggerMusicTermRecognition" 
+                                            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition shadow-sm"
+                                            :disabled="processingMusicTerms"
+                                        >
+                                            <span v-if="processingMusicTerms" class="flex items-center">
+                                                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Processing...
+                                            </span>
+                                            <span v-else>Identify Music Terms</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             
                             <div class="md:w-1/3 mt-6 md:mt-0">
@@ -340,6 +512,23 @@ onBeforeUnmount(() => {
                                         <div>
                                             <div class="text-gray-500 text-sm mb-1">Uploaded</div>
                                             <div class="font-medium">{{ new Date(videoData.created_at).toLocaleString() }}</div>
+                                        </div>
+                                        
+                                        <!-- Add the overall confidence display in the Video Information section -->
+                                        <div v-if="overallConfidence !== null">
+                                            <div class="text-gray-500 text-sm mb-1">Transcript Confidence</div>
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-full h-3 bg-gray-300 rounded-full overflow-hidden">
+                                                    <div 
+                                                        class="h-full" 
+                                                        :style="{
+                                                            width: `${(overallConfidence * 100).toFixed(0)}%`,
+                                                            backgroundColor: getConfidenceColor(overallConfidence)
+                                                        }"
+                                                    ></div>
+                                                </div>
+                                                <span class="font-medium whitespace-nowrap">{{ (overallConfidence * 100).toFixed(0) }}%</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -431,6 +620,11 @@ export default {
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        },
+        getConfidenceColor(confidence) {
+            if (confidence >= 0.8) return '#10b981'; // green-500
+            if (confidence >= 0.5) return '#f59e0b'; // yellow-500
+            return '#ef4444'; // red-500
         }
     }
 }

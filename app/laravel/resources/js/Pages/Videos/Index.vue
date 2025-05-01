@@ -52,6 +52,22 @@ defineProps({
                                     <div class="text-sm text-gray-500 mt-2">
                                         <p>{{ formatFileSize(video.size_bytes) }}</p>
                                         <p>{{ new Date(video.created_at).toLocaleString() }}</p>
+                                        
+                                        <!-- Features badges -->
+                                        <div class="flex flex-wrap gap-2 mt-2">
+                                            <span v-if="video.transcript_path" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-50 text-blue-700">
+                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                                                </svg>
+                                                Transcript
+                                            </span>
+                                            <span v-if="video.has_music_terms" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
+                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                                </svg>
+                                                Music Terms ({{ video.music_terms_count || 0 }})
+                                            </span>
+                                        </div>
                                     </div>
                                     
                                     <div class="flex mt-4 space-x-2">

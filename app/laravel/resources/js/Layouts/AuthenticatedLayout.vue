@@ -37,6 +37,12 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Videos
                                 </NavLink>
+                                <NavLink
+                                    :href="route('admin.terminology.index')"
+                                    :active="route().current('admin.terminology.*')"
+                                >
+                                    Terminology
+                                </NavLink>
                             </div>
                         </div>
 
@@ -97,6 +103,12 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('videos.*')"
                         >
                             Videos
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('admin.terminology.index')"
+                            :active="route().current('admin.terminology.*')"
+                        >
+                            Terminology
                         </ResponsiveNavLink>
                     </div>
                 </div>

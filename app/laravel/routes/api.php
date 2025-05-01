@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ConnectivityController;
 use App\Http\Controllers\Api\HelloController;
+use App\Http\Controllers\Api\MusicTermController;
 use App\Http\Controllers\Api\TranscriptionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -36,6 +37,10 @@ Route::get('/transcription/{jobId}', [TranscriptionController::class, 'getJobSta
 Route::post('/transcription/{jobId}/status', [TranscriptionController::class, 'updateJobStatus']);
 Route::get('/test-python-service', [TranscriptionController::class, 'testPythonService']);
 
+// Music term recognition endpoints
+Route::get('/videos/{id}/music-terms', [MusicTermController::class, 'show'])->name('api.music-terms.show');
+Route::post('/videos/{id}/music-terms', [MusicTermController::class, 'process'])->name('api.music-terms.process');
+
 // Status polling endpoint for video processing
 Route::get('/videos/{id}/status', function($id) {
     $video = Video::find($id);
@@ -58,6 +63,8 @@ Route::get('/videos/{id}/status', function($id) {
         $progressPercentage = 25; // Audio extraction in progress
     } elseif ($video->status === 'transcribing') {
         $progressPercentage = 75; // Transcription in progress
+    } elseif ($video->status === 'processing_music_terms') {
+        $progressPercentage = 85; // Music term recognition in progress
     } elseif ($video->status === 'completed') {
         $progressPercentage = 100;
     }
@@ -74,6 +81,7 @@ Route::get('/videos/{id}/status', function($id) {
             'updated_at' => $video->updated_at,
             'has_audio' => !empty($video->audio_path),
             'has_transcript' => !empty($video->transcript_path),
+            'has_music_terms' => $video->has_music_terms,
             'error_message' => $video->error_message,
         ]
     ];
@@ -86,9 +94,12 @@ Route::get('/videos/{id}/status', function($id) {
             'audio_extraction_completed_at' => $log->audio_extraction_completed_at,
             'transcription_started_at' => $log->transcription_started_at,
             'transcription_completed_at' => $log->transcription_completed_at,
+            'music_term_recognition_started_at' => $log->music_term_recognition_started_at,
+            'music_term_recognition_completed_at' => $log->music_term_recognition_completed_at,
             'completed_at' => $log->completed_at,
             'audio_extraction_duration_seconds' => $log->audio_extraction_duration_seconds,
             'transcription_duration_seconds' => $log->transcription_duration_seconds,
+            'music_term_recognition_duration_seconds' => $log->music_term_recognition_duration_seconds,
             'total_processing_duration_seconds' => $log->total_processing_duration_seconds,
         ];
         
@@ -116,12 +127,24 @@ Route::get('/videos/{id}/status', function($id) {
         ];
     }
     
+    // Add music terms details if available
+    if ($video->has_music_terms) {
+        $response['music_terms'] = [
+            'music_terms_url' => $video->music_terms_url,
+            'music_terms_count' => $video->music_terms_count,
+            'music_terms_metadata' => $video->music_terms_metadata,
+        ];
+    }
+    
     // Add direct paths to the important video data
     $response['video']['url'] = $video->url;
     $response['video']['audio_url'] = $video->audio_url;
     $response['video']['transcript_url'] = $video->transcript_url;
     $response['video']['subtitles_url'] = $video->subtitles_url;
     $response['video']['transcript_json_url'] = $video->transcript_json_url;
+    $response['video']['music_terms_url'] = $video->music_terms_url;
+    $response['video']['music_terms_count'] = $video->music_terms_count;
+    $response['video']['music_terms_metadata'] = $video->music_terms_metadata;
     $response['video']['formatted_duration'] = $video->formatted_duration;
     $response['video']['is_processing'] = $video->is_processing;
     

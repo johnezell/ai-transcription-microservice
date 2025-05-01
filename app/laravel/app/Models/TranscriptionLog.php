@@ -23,6 +23,20 @@ class TranscriptionLog extends Model
         'error_message',
         'started_at',
         'completed_at',
+        'audio_extraction_started_at',
+        'audio_extraction_completed_at',
+        'transcription_started_at',
+        'transcription_completed_at',
+        'music_term_recognition_started_at',
+        'music_term_recognition_completed_at',
+        'audio_extraction_duration_seconds',
+        'transcription_duration_seconds',
+        'music_term_recognition_duration_seconds',
+        'total_processing_duration_seconds',
+        'audio_file_size',
+        'audio_duration_seconds',
+        'progress_percentage',
+        'music_term_count',
     ];
 
     /**
@@ -35,6 +49,20 @@ class TranscriptionLog extends Model
         'response_data' => 'array',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
+        'audio_extraction_started_at' => 'datetime',
+        'audio_extraction_completed_at' => 'datetime',
+        'transcription_started_at' => 'datetime',
+        'transcription_completed_at' => 'datetime',
+        'music_term_recognition_started_at' => 'datetime',
+        'music_term_recognition_completed_at' => 'datetime',
+        'audio_extraction_duration_seconds' => 'float',
+        'transcription_duration_seconds' => 'float',
+        'music_term_recognition_duration_seconds' => 'float',
+        'total_processing_duration_seconds' => 'float',
+        'audio_file_size' => 'integer',
+        'audio_duration_seconds' => 'float',
+        'progress_percentage' => 'integer',
+        'music_term_count' => 'integer',
     ];
     
     /**

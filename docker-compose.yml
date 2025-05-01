@@ -20,6 +20,7 @@ services:
       - DB_DATABASE=/var/www/database/database.sqlite
       - AUDIO_SERVICE_URL=http://audio-extraction-service:5000
       - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
+      - MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000
       - QUEUE_CONNECTION=database
 
   audio-extraction-service:
@@ -57,6 +58,25 @@ services:
       - LARAVEL_API_URL=http://laravel/api
     ports:
       - "5051:5000"
+
+  music-term-recognition-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.music-service
+    container_name: aws-music-term-recognition
+    restart: unless-stopped
+    volumes:
+      - ./app/services/music-term-recognition:/app
+      - ./app/shared:/var/www/storage/app/public/s3:delegated
+    depends_on:
+      - laravel
+      - transcription-service
+    networks:
+      - app-network
+    environment:
+      - LARAVEL_API_URL=http://laravel/api
+    ports:
+      - "5052:5000"
 
 networks:
   app-network:

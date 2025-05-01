@@ -29,6 +29,10 @@ class Video extends Model
         'audio_size',
         'transcript_path',
         'transcript_text',
+        'music_terms_path',
+        'music_terms_count',
+        'music_terms_metadata',
+        'has_music_terms',
     ];
     
     /**
@@ -41,6 +45,9 @@ class Video extends Model
         'size_bytes' => 'integer',
         'audio_size' => 'integer',
         'audio_duration' => 'float',
+        'music_terms_count' => 'integer',
+        'music_terms_metadata' => 'array',
+        'has_music_terms' => 'boolean',
     ];
     
     /**
@@ -130,6 +137,32 @@ class Video extends Model
     }
     
     /**
+     * Get the URL for the music terms JSON file if it exists.
+     * 
+     * @return string|null
+     */
+    public function getMusicTermsUrlAttribute()
+    {
+        if (empty($this->music_terms_path)) {
+            return null;
+        }
+        
+        // If it's a relative path within the public disk
+        if (str_starts_with($this->music_terms_path, 's3/')) {
+            return asset('storage/' . $this->music_terms_path);
+        }
+        
+        // Convert absolute path to relative URL
+        if (str_starts_with($this->music_terms_path, '/var/www/storage/app/public/')) {
+            $path = str_replace('/var/www/storage/app/public/', '', $this->music_terms_path);
+            return asset('storage/' . $path);
+        }
+        
+        // Default fallback - just return the path as-is
+        return $this->music_terms_path;
+    }
+    
+    /**
      * Format the audio duration as a readable string.
      * 
      * @return string|null
@@ -153,7 +186,7 @@ class Video extends Model
      */
     public function getIsProcessingAttribute()
     {
-        return in_array($this->status, ['processing', 'extracting_audio', 'transcribing']);
+        return in_array($this->status, ['processing', 'extracting_audio', 'transcribing', 'processing_music_terms']);
     }
     
     /**
@@ -241,5 +274,17 @@ class Video extends Model
         }
         
         return null;
+    }
+    
+    /**
+     * Check if music terms are available for this video.
+     * 
+     * @return bool
+     */
+    public function getHasMusicTermsAttribute()
+    {
+        return !empty($this->music_terms_path) || 
+               !empty($this->music_terms_metadata) || 
+               ($this->music_terms_count ?? 0) > 0;
     }
 }

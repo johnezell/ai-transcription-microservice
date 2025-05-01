@@ -259,90 +259,34 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
                                 
-                                <!-- Advanced Subtitles component (moved outside video container for better positioning) -->
-                                <AdvancedSubtitles
-                                    v-if="videoData.transcript_json_url && videoElement"
-                                    :video-ref="videoElement"
-                                    :transcript-json-url="videoData.transcript_json_url"
-                                    class="mt-4"
-                                />
-                                
-                                <!-- Transcript Tabs -->
-                                <div v-if="videoData.transcript_text" class="mt-6 border-b border-gray-200">
-                                    <div class="flex items-center justify-between mb-2">
+                                <!-- Advanced Subtitles component with proper heading -->
+                                <div v-if="videoData.transcript_json_url && videoElement" class="mt-6">
+                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
                                         <h3 class="text-lg font-medium flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
                                             </svg>
-                                            Transcript
+                                            Interactive Transcript
                                         </h3>
                                     </div>
+                                    <AdvancedSubtitles
+                                        :video-ref="videoElement"
+                                        :transcript-json-url="videoData.transcript_json_url"
+                                    />
                                 </div>
                                 
-                                <!-- Synchronized Transcript (original implementation) -->
-                                <SynchronizedTranscript
-                                    v-if="videoData.transcript_text"
-                                    :video-ref="$refs.videoElement"
-                                    :srt-url="videoData.subtitles_url"
-                                    :transcript-json-url="videoData.transcript_json_url"
-                                    :transcript-text="videoData.transcript_text"
-                                />
-                                
-                                <!-- Actions -->
-                                <div class="mt-6 flex space-x-3">
-                                    <Link
-                                        :href="route('videos.destroy', videoData.id)"
-                                        method="delete"
-                                        as="button"
-                                        class="inline-flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition shadow-sm"
-                                        onclick="return confirm('Are you sure you want to delete this video?')"
-                                    >
-                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                        </svg>
-                                        Delete Video
-                                    </Link>
-                                </div>
-                                
-                                <!-- Error message -->
-                                <div v-if="videoData.error_message" class="mt-4 p-3 bg-red-50 text-red-800 rounded-md border border-red-200">
-                                    <div class="font-medium flex items-center">
-                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        Error
+                                <!-- Full Transcript Text -->
+                                <div v-if="videoData.transcript_text" class="mt-6">
+                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
                                     </div>
-                                    <div class="mt-1">{{ videoData.error_message }}</div>
-                                </div>
-                                
-                                <!-- Audio Player (if audio extraction is complete) -->
-                                <div v-if="videoData.audio_url" class="mt-8">
-                                    <h3 class="text-lg font-medium mb-4 flex items-center">
-                                        <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
-                                        </svg>
-                                        Extracted Audio
-                                    </h3>
-                                    <div class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200">
-                                        <audio controls class="w-full">
-                                            <source :src="videoData.audio_url" type="audio/wav">
-                                            Your browser does not support the audio element.
-                                        </audio>
-                                        <div class="mt-2 flex space-x-4 text-sm text-gray-600">
-                                            <div v-if="videoData.formatted_duration" class="flex items-center">
-                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                </svg>
-                                                {{ videoData.formatted_duration }}
-                                            </div>
-                                            <div v-if="videoData.audio_size" class="flex items-center">
-                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
-                                                </svg>
-                                                {{ formatFileSize(videoData.audio_size) }}
-                                            </div>
-                                        </div>
-                                    </div>
+                                    
+                                    <!-- Synchronized Transcript (improved implementation) -->
+                                    <SynchronizedTranscript
+                                        :video-ref="videoElement"
+                                        :srt-url="videoData.subtitles_url"
+                                        :transcript-json-url="videoData.transcript_json_url"
+                                        :transcript-text="videoData.transcript_text"
+                                    />
                                 </div>
                             </div>
                             
@@ -409,6 +353,63 @@ onBeforeUnmount(() => {
                                         :error="videoData.error_message"
                                         :media-duration="videoData.audio_duration"
                                     />
+                                </div>
+                                
+                                <!-- Actions -->
+                                <div class="mt-6 flex space-x-3">
+                                    <Link
+                                        :href="route('videos.destroy', videoData.id)"
+                                        method="delete"
+                                        as="button"
+                                        class="inline-flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition shadow-sm"
+                                        onclick="return confirm('Are you sure you want to delete this video?')"
+                                    >
+                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        Delete Video
+                                    </Link>
+                                </div>
+                                
+                                <!-- Error message -->
+                                <div v-if="videoData.error_message" class="mt-4 p-3 bg-red-50 text-red-800 rounded-md border border-red-200">
+                                    <div class="font-medium flex items-center">
+                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        Error
+                                    </div>
+                                    <div class="mt-1">{{ videoData.error_message }}</div>
+                                </div>
+                                
+                                <!-- Audio Player (if audio extraction is complete) -->
+                                <div v-if="videoData.audio_url" class="mt-8">
+                                    <h3 class="text-lg font-medium mb-4 flex items-center">
+                                        <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                        </svg>
+                                        Extracted Audio
+                                    </h3>
+                                    <div class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200">
+                                        <audio controls class="w-full">
+                                            <source :src="videoData.audio_url" type="audio/wav">
+                                            Your browser does not support the audio element.
+                                        </audio>
+                                        <div class="mt-2 flex space-x-4 text-sm text-gray-600">
+                                            <div v-if="videoData.formatted_duration" class="flex items-center">
+                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                                {{ videoData.formatted_duration }}
+                                            </div>
+                                            <div v-if="videoData.audio_size" class="flex items-center">
+                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                                                </svg>
+                                                {{ formatFileSize(videoData.audio_size) }}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

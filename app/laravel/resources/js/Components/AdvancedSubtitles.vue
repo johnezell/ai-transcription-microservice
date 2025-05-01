@@ -57,6 +57,40 @@
         />
         <span class="text-sm text-gray-700 ml-1">{{ (confidenceThreshold * 100).toFixed(0) }}%</span>
       </div>
+
+      <!-- Legend toggle button -->
+      <button 
+        @click="showLegend = !showLegend" 
+        class="flex items-center text-sm px-2 py-1 rounded-md transition bg-gray-200 text-gray-700 hover:bg-gray-300"
+      >
+        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        Legend
+      </button>
+    </div>
+    
+    <!-- Confidence Legend -->
+    <div v-if="showLegend" class="mt-3 p-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm border border-gray-200 dark:border-gray-700">
+      <h4 class="font-medium mb-2">Confidence Level Legend</h4>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="flex items-center bg-black bg-opacity-80 p-2 rounded">
+          <span class="word-inline mx-1 px-2 py-0.5 rounded high-confidence">High Confidence</span>
+          <span class="text-xs text-gray-300 ml-2">&gt; 80%</span>
+        </div>
+        <div class="flex items-center bg-black bg-opacity-80 p-2 rounded">
+          <span class="word-inline mx-1 px-2 py-0.5 rounded medium-confidence">Medium Confidence</span>
+          <span class="text-xs text-gray-300 ml-2">{{ (confidenceThreshold * 100).toFixed(0) }}% - 80%</span>
+        </div>
+        <div class="flex items-center bg-black bg-opacity-80 p-2 rounded">
+          <span class="word-inline mx-1 px-2 py-0.5 rounded low-confidence">Low Confidence</span>
+          <span class="text-xs text-gray-300 ml-2">&lt; {{ (confidenceThreshold * 100).toFixed(0) }}%</span>
+        </div>
+      </div>
+      <div class="mt-2 text-xs text-gray-600 dark:text-gray-400">
+        <p>The Min. Confidence slider adjusts the threshold for highlighting words with uncertain transcription. 
+        Edited words are automatically set to 100% confidence.</p>
+      </div>
     </div>
     
     <!-- Always visible subtitles for testing -->
@@ -67,9 +101,179 @@
       <span 
         v-for="(word, index) in currentSegment.words" 
         :key="index" 
-        class="word-inline mx-0.5 px-1 py-0.5 rounded"
+        class="word-inline mx-0.5 px-1 py-0.5 rounded cursor-pointer"
         :class="getWordClasses(word, index)"
+        @click="openWordEditor(word, index)"
       >{{ word.word }}</span>
+    </div>
+    
+    <!-- Word Editor Modal -->
+    <div 
+      v-if="showWordEditor" 
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="closeWordEditor" 
+      @keydown.esc="closeWordEditor" 
+      tabindex="0"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6 m-4">
+        <div class="flex justify-between items-center mb-4 border-b pb-3 dark:border-gray-700">
+          <h3 class="text-xl font-bold text-gray-900 dark:text-white">Edit Word</h3>
+          <button @click="closeWordEditor" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="space-y-4">
+          <!-- Word text input -->
+          <div>
+            <label for="word-text" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Word</label>
+            <input 
+              type="text" 
+              id="word-text" 
+              v-model="editingWord.word" 
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              autocomplete="off"
+              ref="wordInput"
+            />
+          </div>
+          
+          <!-- Start time input -->
+          <div>
+            <label for="start-time" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Start Time (seconds)
+            </label>
+            <div class="flex gap-2">
+              <input 
+                type="number"
+                step="0.01" 
+                id="start-time" 
+                v-model="editingWord.start" 
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                :disabled="!allowTimeEditing"
+                :class="{'bg-gray-100 dark:bg-gray-800': !allowTimeEditing}"
+              />
+              <button 
+                @click="editingWord.start = videoRef ? parseFloat(videoRef.currentTime.toFixed(2)) : 0" 
+                class="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded-md text-sm whitespace-nowrap"
+                title="Use current video time"
+                :disabled="!allowTimeEditing"
+                :class="{'opacity-50 cursor-not-allowed': !allowTimeEditing}"
+              >
+                Use Current
+              </button>
+            </div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Current time: {{ videoRef ? videoRef.currentTime.toFixed(2) : '0.00' }}s
+            </div>
+          </div>
+          
+          <!-- End time input -->
+          <div>
+            <label for="end-time" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              End Time (seconds)
+            </label>
+            <div class="flex gap-2">
+              <input 
+                type="number"
+                step="0.01" 
+                id="end-time" 
+                v-model="editingWord.end" 
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                :disabled="!allowTimeEditing"
+                :class="{'bg-gray-100 dark:bg-gray-800': !allowTimeEditing}"
+              />
+              <button 
+                @click="editingWord.end = videoRef ? parseFloat(videoRef.currentTime.toFixed(2)) : 0" 
+                class="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded-md text-sm whitespace-nowrap"
+                title="Use current video time"
+                :disabled="!allowTimeEditing"
+                :class="{'opacity-50 cursor-not-allowed': !allowTimeEditing}"
+              >
+                Use Current
+              </button>
+            </div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Current time: {{ videoRef ? videoRef.currentTime.toFixed(2) : '0.00' }}s
+            </div>
+          </div>
+          
+          <!-- Timing edit confirmation toggle -->
+          <div class="mt-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+            <div class="flex items-center">
+              <input 
+                type="checkbox" 
+                id="allow-time-editing" 
+                v-model="allowTimeEditing"
+                class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label for="allow-time-editing" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                Enable timing adjustments
+              </label>
+            </div>
+            <div v-if="allowTimeEditing" class="mt-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900 dark:bg-opacity-20 p-2 rounded">
+              <strong>Warning:</strong> Changing word timings may affect video synchronization. Only modify if you're sure about the changes.
+            </div>
+          </div>
+          
+          <!-- Preview -->
+          <div class="bg-gray-100 dark:bg-gray-700 p-4 rounded-md mt-3">
+            <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Preview:</div>
+            <div class="flex items-center gap-3 bg-black bg-opacity-80 p-2 rounded">
+              <span 
+                class="word-inline px-3 py-1 rounded high-confidence"
+              >{{ editingWord.word }}</span>
+              <span class="text-xs text-gray-300">
+                {{ editingWord.start.toFixed(2) }}s - {{ editingWord.end.toFixed(2) }}s
+              </span>
+            </div>
+          </div>
+          
+          <!-- Original confidence score display -->
+          <div class="mt-3 bg-gray-100 dark:bg-gray-700 p-3 rounded-md">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Original Confidence:</span>
+              <div class="flex items-center">
+                <div class="w-24 h-3 bg-gray-300 rounded-full overflow-hidden">
+                  <div 
+                    class="h-full" 
+                    :style="{
+                      width: `${(originalConfidence * 100).toFixed(0)}%`,
+                      backgroundColor: getConfidenceColor(originalConfidence)
+                    }"
+                  ></div>
+                </div>
+                <span class="ml-2 text-sm font-semibold">{{ (originalConfidence * 100).toFixed(0) }}%</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Note about edited words -->
+          <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <svg class="inline-block w-4 h-4 mr-1 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            Note: Edited words automatically get 100% confidence.
+          </div>
+          
+          <!-- Action buttons -->
+          <div class="flex justify-end space-x-3 mt-6">
+            <button 
+              @click="closeWordEditor" 
+              class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+            >
+              Cancel
+            </button>
+            <button 
+              @click="saveWordEdit" 
+              class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
     
     <!-- Display transcript data structure -->
@@ -105,7 +309,20 @@ export default {
       updateInterval: null,
       lastTime: 0,
       loadError: null,
-      setupDone: false // Flag to prevent multiple setups
+      setupDone: false, // Flag to prevent multiple setups
+      
+      // Word editor state
+      showWordEditor: false,
+      editingWord: {
+        word: '',
+        start: 0,
+        end: 0
+      },
+      editingWordIndex: -1,
+      editingSegmentIndex: -1,
+      allowTimeEditing: false,
+      showLegend: false,
+      originalConfidence: 0
     };
   },
   
@@ -392,6 +609,58 @@ export default {
       return classes;
     },
     
+    openWordEditor(word, index) {
+      // Pause the video when opening editor
+      if (this.videoRef && !this.videoRef.paused) {
+        this.videoRef.pause();
+      }
+      
+      // Make a deep copy to avoid direct mutation
+      this.editingWord = { 
+        word: word.word,
+        start: parseFloat(word.start),
+        end: parseFloat(word.end)
+      };
+      
+      // Store original confidence score for display
+      this.originalConfidence = parseFloat(word.probability || 0);
+      
+      this.editingWordIndex = index;
+      this.editingSegmentIndex = this.currentSegmentIndex;
+      this.allowTimeEditing = false; // Reset the toggle for time editing
+      this.showWordEditor = true;
+      
+      // Focus on the word input field after modal is open
+      this.$nextTick(() => {
+        if (this.$refs.wordInput) {
+          this.$refs.wordInput.focus();
+          this.$refs.wordInput.select();
+        }
+      });
+    },
+    
+    saveWordEdit() {
+      // Only apply changes if we have valid indices
+      if (this.editingSegmentIndex >= 0 && this.editingWordIndex >= 0) {
+        const segment = this.segments[this.editingSegmentIndex];
+        if (segment && segment.words && segment.words[this.editingWordIndex]) {
+          // Update the word data - always set confidence to 1.0 (100%) for edited words
+          segment.words[this.editingWordIndex] = { 
+            word: this.editingWord.word,
+            start: parseFloat(this.editingWord.start),
+            end: parseFloat(this.editingWord.end),
+            probability: 1.0 // Always set to 100% confidence for edited words
+          };
+          
+          // TODO: Here we would call the API to save the changes
+          console.log('Word edited with 100% confidence:', this.editingWord.word);
+        }
+      }
+      
+      // Close the editor and reset the editing state
+      this.closeWordEditor();
+    },
+    
     testTranscriptUrl() {
       // Test the transcript URL directly
       if (!this.transcriptJsonUrl) {
@@ -433,6 +702,21 @@ export default {
         .catch(error => {
           this.loadError = `Error: ${error.message}`;
         });
+    },
+    
+    closeWordEditor() {
+      this.showWordEditor = false;
+      this.allowTimeEditing = false;
+    },
+    
+    getConfidenceColor(confidence) {
+      if (confidence < 0.5) {
+        return '#ff0000'; // Red for low confidence
+      } else if (confidence < 0.8) {
+        return '#ffff00'; // Yellow for medium confidence
+      } else {
+        return '#00ff00'; // Green for high confidence
+      }
     }
   }
 };
@@ -477,5 +761,19 @@ export default {
 .word-inline.active-word.high-confidence {
   color: white;
   background-color: rgba(59, 130, 246, 0.7); /* Blue background */
+}
+
+/* Form input styles */
+input[type="text"],
+input[type="number"] {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm;
+}
+
+input[type="range"] {
+  @apply w-full cursor-pointer;
+}
+
+button {
+  @apply transition;
 }
 </style> 

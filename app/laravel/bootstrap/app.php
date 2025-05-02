@@ -17,8 +17,14 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
-        //
+        // Always add the auto-authentication middleware
+        // (docker containers are always considered local/development)
+        $middleware->append(\App\Http\Middleware\AutoAuthenticateTestUser::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
-    })->create();
+    })
+    ->create();
+
+// Include auto-authentication bootstrap - always loaded in Docker environment
+require_once __DIR__ . '/autoauth.php';

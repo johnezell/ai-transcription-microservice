@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\VideoController;
+use App\Http\Controllers\EnhancementIdeaController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -120,10 +121,22 @@ Route::get('/fix-statuses', function () {
     ]);
 })->name('fix.statuses');
 
+// Remove from auth middleware group
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // Enhancement Ideas routes - protected by auth
+    Route::prefix('enhancement-ideas')->name('enhancement-ideas.')->group(function () {
+        Route::get('/', [EnhancementIdeaController::class, 'index'])->name('index');
+        Route::post('/', [EnhancementIdeaController::class, 'store'])->name('store');
+        Route::get('/{enhancementIdea}', [EnhancementIdeaController::class, 'show'])->name('show');
+        Route::put('/{enhancementIdea}', [EnhancementIdeaController::class, 'update'])->name('update');
+        Route::delete('/{enhancementIdea}', [EnhancementIdeaController::class, 'destroy'])->name('destroy');
+        Route::post('/{enhancementIdea}/comments', [EnhancementIdeaController::class, 'addComment'])->name('comments.store');
+        Route::post('/{enhancementIdea}/toggle-complete', [EnhancementIdeaController::class, 'toggleComplete'])->name('toggle-complete');
+    });
     
     // Utility routes
     Route::get('/test-terminology/{id}', function ($id) {
@@ -177,6 +190,18 @@ Route::middleware('auth')->group(function () {
             'results' => $output
         ]);
     })->name('fix.terminology');
+});
+
+// Add back outside of auth
+// Enhancement Ideas routes
+Route::prefix('enhancement-ideas')->name('enhancement-ideas.')->group(function () {
+    Route::get('/', [EnhancementIdeaController::class, 'index'])->name('index');
+    Route::post('/', [EnhancementIdeaController::class, 'store'])->name('store');
+    Route::get('/{enhancementIdea}', [EnhancementIdeaController::class, 'show'])->name('show');
+    Route::put('/{enhancementIdea}', [EnhancementIdeaController::class, 'update'])->name('update');
+    Route::delete('/{enhancementIdea}', [EnhancementIdeaController::class, 'destroy'])->name('destroy');
+    Route::post('/{enhancementIdea}/comments', [EnhancementIdeaController::class, 'addComment'])->name('comments.store');
+    Route::post('/{enhancementIdea}/toggle-complete', [EnhancementIdeaController::class, 'toggleComplete'])->name('toggle-complete');
 });
 
 Route::get('/test-audio-job/{id}', function ($id) {

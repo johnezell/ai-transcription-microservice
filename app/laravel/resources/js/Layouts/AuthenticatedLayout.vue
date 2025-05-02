@@ -44,6 +44,12 @@ const showingNavigationDropdown = ref(false);
                                     Courses
                                 </NavLink>
                                 <NavLink
+                                    :href="route('enhancement-ideas.index')"
+                                    :active="route().current('enhancement-ideas.*')"
+                                >
+                                    Enhancement Ideas
+                                </NavLink>
+                                <NavLink
                                     :href="route('admin.terminology.index')"
                                     :active="route().current('admin.terminology.*')"
                                 >
@@ -115,6 +121,12 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('courses.*')"
                         >
                             Courses
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('enhancement-ideas.index')"
+                            :active="route().current('enhancement-ideas.*')"
+                        >
+                            Enhancement Ideas
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
                             :href="route('admin.terminology.index')"

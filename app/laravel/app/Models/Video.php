@@ -38,6 +38,10 @@ class Video extends Model
         'has_terminology',
         'course_id',
         'lesson_number',
+        'music_terms_path',
+        'music_terms_count',
+        'music_terms_metadata',
+        'has_music_terms',
     ];
     
     /**
@@ -55,6 +59,7 @@ class Video extends Model
         'transcript_json' => 'array',
         'terminology_json' => 'array',
         'has_terminology' => 'boolean',
+        'has_music_terms' => 'boolean',
     ];
     
     /**
@@ -476,5 +481,40 @@ class Video extends Model
             ->where('lesson_number', '<', $this->lesson_number)
             ->orderBy('lesson_number', 'desc')
             ->first();
+    }
+
+    public function getTerminologyPathAttribute()
+    {
+        return $this->music_terms_path;
+    }
+
+    public function setTerminologyPathAttribute($value)
+    {
+        $this->attributes['music_terms_path'] = $value;
+    }
+
+    public function getTerminologyCountAttribute()
+    {
+        return $this->music_terms_count;
+    }
+
+    public function setTerminologyCountAttribute($value)
+    {
+        $this->attributes['music_terms_count'] = $value;
+    }
+
+    public function getTerminologyMetadataAttribute()
+    {
+        return $this->music_terms_metadata;
+    }
+
+    public function setTerminologyMetadataAttribute($value)
+    {
+        $this->attributes['music_terms_metadata'] = $value;
+    }
+
+    public function setHasTerminologyAttribute($value)
+    {
+        $this->attributes['has_music_terms'] = $value;
     }
 }

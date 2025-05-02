@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\MusicTermCategory;
-use App\Models\MusicTerm;
+use App\Models\TermCategory;
+use App\Models\Term;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -108,12 +108,12 @@ class MusicTermSeeder extends Seeder
 
         // Create categories
         foreach ($categories as $categoryData) {
-            $category = MusicTermCategory::create($categoryData);
+            $category = TermCategory::create($categoryData);
             
             // Create terms for this category
             if (isset($termsByCategory[$category->slug])) {
                 foreach ($termsByCategory[$category->slug] as $term) {
-                    MusicTerm::create([
+                    Term::create([
                         'category_id' => $category->id,
                         'term' => $term,
                         'active' => true,

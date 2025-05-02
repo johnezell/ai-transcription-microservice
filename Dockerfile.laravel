@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y \
     unzip \
     nginx \
     supervisor \
-    gnupg
+    gnupg \
+    default-mysql-client
 
 # Install Node.js and npm
 RUN curl -sL https://deb.nodesource.com/setup_18.x | bash - \
@@ -39,6 +40,10 @@ COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # Copy existing application directory
 COPY ./app/laravel .
 
+# Copy entrypoint script
+COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Create required directories and set permissions
 RUN mkdir -p /var/www/storage/app/public/s3/jobs \
     && mkdir -p /var/www/bootstrap/cache \
@@ -48,5 +53,5 @@ RUN mkdir -p /var/www/storage/app/public/s3/jobs \
 # Expose port 80
 EXPOSE 80
 
-# Start Supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"] 
+# Use our custom entrypoint script
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"] 

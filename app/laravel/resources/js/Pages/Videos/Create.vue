@@ -1,33 +1,64 @@
 <script setup>
-import { Head, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, useForm, Link } from '@inertiajs/vue3';
+import { ref, onMounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 
+const props = defineProps({
+    courses: Array
+});
+
 const form = useForm({
-    video: null,
+    videos: [],
+    course_id: '',
+    lesson_number_start: 1
 });
 
 const fileInput = ref(null);
-const previewUrl = ref(null);
+const previews = ref([]);
 const isDragging = ref(false);
 const uploadProgress = ref(0);
 const isUploading = ref(false);
 
+// Compute total file size
+const totalSize = ref(0);
+const updateTotalSize = () => {
+    totalSize.value = form.videos.reduce((sum, file) => sum + file.size, 0);
+};
+
 const submit = () => {
     isUploading.value = true;
+    
+    // Create form data to append multiple files
+    const formData = new FormData();
+    
+    // Add each video file
+    form.videos.forEach((file, index) => {
+        formData.append(`videos[${index}]`, file);
+    });
+    
+    // Add course and lesson info if applicable
+    if (form.course_id) {
+        formData.append('course_id', form.course_id);
+        formData.append('lesson_number_start', form.lesson_number_start);
+    }
+    
+    // Use Inertia's post method but with FormData
     form.post(route('videos.store'), {
         preserveScroll: true,
+        forceFormData: true,
+        data: formData,
         onProgress: (progress) => {
             uploadProgress.value = progress.percentage;
         },
         onSuccess: () => {
             form.reset();
-            previewUrl.value = null;
+            previews.value = [];
             isUploading.value = false;
             uploadProgress.value = 0;
+            totalSize.value = 0;
         },
         onError: () => {
             isUploading.value = false;
@@ -36,23 +67,29 @@ const submit = () => {
 };
 
 const handleFileInput = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-        handleFile(file);
+    const files = Array.from(e.target.files);
+    if (files.length > 0) {
+        handleFiles(files);
     }
 };
 
-const handleFile = (file) => {
-    // Check if it's a video file
-    if (file.type.match('video.*')) {
-        form.video = file;
-        
-        // Create a preview
-        previewUrl.value = URL.createObjectURL(file);
-    } else {
-        alert('Please select a video file.');
-        resetFile();
-    }
+const handleFiles = (files) => {
+    // Check if they're video files and add them
+    files.forEach(file => {
+        if (file.type.match('video.*')) {
+            form.videos.push(file);
+            
+            // Create a preview
+            previews.value.push({
+                url: URL.createObjectURL(file),
+                name: file.name,
+                size: file.size
+            });
+        }
+    });
+    
+    // Update total size
+    updateTotalSize();
 };
 
 const onDrop = (e) => {
@@ -60,7 +97,7 @@ const onDrop = (e) => {
     isDragging.value = false;
     
     if (e.dataTransfer.files.length > 0) {
-        handleFile(e.dataTransfer.files[0]);
+        handleFiles(Array.from(e.dataTransfer.files));
     }
 };
 
@@ -73,24 +110,58 @@ const onDragLeave = () => {
     isDragging.value = false;
 };
 
-const resetFile = () => {
-    form.video = null;
+const removeFile = (index) => {
+    // Revoke object URL to prevent memory leaks
+    URL.revokeObjectURL(previews.value[index].url);
+    
+    // Remove from arrays
+    previews.value.splice(index, 1);
+    form.videos.splice(index, 1);
+    
+    // Update total size
+    updateTotalSize();
+};
+
+const resetAll = () => {
+    // Revoke all object URLs
+    previews.value.forEach(preview => {
+        URL.revokeObjectURL(preview.url);
+    });
+    
+    // Reset form and previews
+    form.reset();
+    previews.value = [];
+    totalSize.value = 0;
+    
+    // Reset the file input
     if (fileInput.value) {
         fileInput.value.value = '';
     }
-    if (previewUrl.value) {
-        URL.revokeObjectURL(previewUrl.value);
-        previewUrl.value = null;
-    }
+};
+
+// Format file sizes
+const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 </script>
 
 <template>
-    <Head title="Upload Video" />
+    <Head title="Upload Videos" />
 
     <AuthenticatedLayout>
         <template #header>
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Upload Video</h2>
+            <div class="flex justify-between">
+                <h2 class="font-semibold text-xl text-gray-800 leading-tight">Upload Videos</h2>
+                <Link :href="route('videos.index')" class="px-4 py-2 bg-gray-800 text-white rounded-md">
+                    Back to Videos
+                </Link>
+            </div>
         </template>
 
         <div class="py-12">
@@ -99,20 +170,20 @@ const resetFile = () => {
                     <div class="p-6 text-gray-900">
                         <form @submit.prevent="submit" class="max-w-2xl mx-auto">
                             <div>
-                                <InputLabel for="video" value="Video File" />
+                                <InputLabel for="videos" value="Video Files" />
                                 
                                 <div
                                     class="mt-2 flex justify-center rounded-md border-2 border-dashed px-6 pt-5 pb-6"
                                     :class="[
                                         isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300',
-                                        form.errors.video ? 'border-red-300' : ''
+                                        form.errors.videos ? 'border-red-300' : ''
                                     ]"
                                     @dragover="onDragOver"
                                     @dragleave="onDragLeave"
                                     @drop="onDrop"
                                 >
                                     <div class="space-y-1 text-center">
-                                        <div v-if="!form.video && !previewUrl">
+                                        <div v-if="form.videos.length === 0">
                                             <svg
                                                 class="mx-auto h-12 w-12 text-gray-400"
                                                 stroke="currentColor"
@@ -128,55 +199,126 @@ const resetFile = () => {
                                             </svg>
                                             <div class="flex text-sm text-gray-600">
                                                 <label
-                                                    for="video"
+                                                    for="videos"
                                                     class="relative cursor-pointer rounded-md font-medium text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:text-indigo-500"
                                                 >
-                                                    <span>Upload a file</span>
+                                                    <span>Upload files</span>
                                                     <input
-                                                        id="video"
+                                                        id="videos"
                                                         ref="fileInput"
-                                                        name="video"
+                                                        name="videos"
                                                         type="file"
                                                         class="sr-only"
                                                         accept="video/*"
+                                                        multiple
                                                         @change="handleFileInput"
                                                     />
                                                 </label>
                                                 <p class="pl-1">or drag and drop</p>
                                             </div>
                                             <p class="text-xs text-gray-500">
-                                                MP4, MOV, or MPEG files
+                                                MP4, MOV, or MPEG files. Multiple files allowed.
                                             </p>
                                         </div>
                                         
                                         <div v-else class="w-full">
-                                            <video 
-                                                v-if="previewUrl" 
-                                                :src="previewUrl" 
-                                                controls 
-                                                class="mx-auto max-h-60"
-                                            ></video>
+                                            <div class="mb-4 text-center">
+                                                <span class="text-sm font-medium text-gray-700">{{ form.videos.length }} videos selected</span>
+                                                <span class="ml-2 text-xs text-gray-500">({{ formatFileSize(totalSize) }} total)</span>
+                                            </div>
                                             
-                                            <div class="mt-3 flex items-center justify-between">
-                                                <div class="text-sm text-gray-500">
-                                                    {{ form.video ? form.video.name : '' }}
-                                                    <span v-if="form.video">
-                                                        ({{ formatFileSize(form.video.size) }})
-                                                    </span>
+                                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                                <div 
+                                                    v-for="(preview, index) in previews" 
+                                                    :key="index"
+                                                    class="border rounded p-2"
+                                                >
+                                                    <video 
+                                                        :src="preview.url" 
+                                                        controls 
+                                                        class="w-full h-24 object-cover"
+                                                    ></video>
+                                                    
+                                                    <div class="mt-2 text-xs text-gray-700 truncate" :title="preview.name">
+                                                        {{ preview.name }}
+                                                    </div>
+                                                    
+                                                    <div class="flex items-center justify-between mt-1">
+                                                        <span class="text-xs text-gray-500">{{ formatFileSize(preview.size) }}</span>
+                                                        <button 
+                                                            type="button" 
+                                                            class="text-xs text-red-600" 
+                                                            @click="removeFile(index)"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
                                                 </div>
+                                            </div>
+                                            
+                                            <div class="flex justify-center">
+                                                <label
+                                                    for="add-more"
+                                                    class="cursor-pointer rounded-md px-3 py-1 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50"
+                                                >
+                                                    Add More Files
+                                                    <input
+                                                        id="add-more"
+                                                        type="file"
+                                                        class="sr-only"
+                                                        accept="video/*"
+                                                        multiple
+                                                        @change="handleFileInput"
+                                                    />
+                                                </label>
+                                                
                                                 <button 
                                                     type="button" 
-                                                    class="text-sm text-red-600" 
-                                                    @click="resetFile"
+                                                    class="ml-3 px-3 py-1 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50" 
+                                                    @click="resetAll"
                                                 >
-                                                    Remove
+                                                    Remove All
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <InputError :message="form.errors.video" class="mt-2" />
+                                <InputError :message="form.errors.videos" class="mt-2" />
+                            </div>
+                            
+                            <!-- Course selection -->
+                            <div class="mt-6" v-if="courses && courses.length > 0">
+                                <InputLabel for="course_id" value="Assign to Course (Optional)" />
+                                
+                                <div class="mt-2">
+                                    <select
+                                        id="course_id"
+                                        v-model="form.course_id"
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    >
+                                        <option value="">No course (select later)</option>
+                                        <option v-for="course in courses" :key="course.id" :value="course.id">
+                                            {{ course.name }}
+                                        </option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mt-4" v-if="form.course_id">
+                                    <InputLabel for="lesson_number_start" value="Starting Lesson Number" />
+                                    <input
+                                        id="lesson_number_start"
+                                        v-model="form.lesson_number_start"
+                                        type="number"
+                                        min="1"
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    />
+                                    <p class="mt-1 text-xs text-gray-500">
+                                        Multiple videos will be assigned sequential lesson numbers starting from this value.
+                                    </p>
+                                </div>
+                                
+                                <InputError :message="form.errors.course_id" class="mt-2" />
                             </div>
                             
                             <div v-if="isUploading" class="mt-6">
@@ -189,9 +331,9 @@ const resetFile = () => {
                             <div class="flex items-center justify-end mt-6">
                                 <PrimaryButton
                                     class="ml-4"
-                                    :disabled="!form.video || isUploading || form.processing"
+                                    :disabled="form.videos.length === 0 || isUploading || form.processing"
                                 >
-                                    Upload
+                                    {{ form.videos.length > 1 ? 'Upload Videos' : 'Upload Video' }}
                                 </PrimaryButton>
                             </div>
                         </form>
@@ -200,20 +342,4 @@ const resetFile = () => {
             </div>
         </div>
     </AuthenticatedLayout>
-</template>
-
-<script>
-export default {
-    methods: {
-        formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-    }
-}
-</script> 
+</template> 

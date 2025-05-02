@@ -255,3 +255,18 @@ Route::get('/videos/{id}/terminology-json', function($id) {
     
     return response()->json($video->terminology_json);
 });
+
+// Course Analysis API
+Route::prefix('courses')->group(function() {
+    // Get all terminology across the course
+    Route::get('/{course}/terminology', [\App\Http\Controllers\Api\CourseAnalysisController::class, 'getTerminology']);
+    
+    // Get terminology frequency analysis
+    Route::get('/{course}/terminology-frequency', [\App\Http\Controllers\Api\CourseAnalysisController::class, 'getTerminologyFrequency']);
+    
+    // Get combined transcripts 
+    Route::get('/{course}/transcripts', [\App\Http\Controllers\Api\CourseAnalysisController::class, 'getCombinedTranscripts']);
+    
+    // Search across all transcripts in the course
+    Route::post('/{course}/search', [\App\Http\Controllers\Api\CourseAnalysisController::class, 'searchTranscripts']);
+});

@@ -1,0 +1,107 @@
+<script setup>
+import { Head, Link, useForm } from '@inertiajs/vue3';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { ref } from 'vue';
+
+const props = defineProps({
+    course: Object,
+});
+
+const form = useForm({
+    name: props.course.name,
+    description: props.course.description || '',
+    subject_area: props.course.subject_area || '',
+});
+
+const errors = ref({});
+const isProcessing = ref(false);
+
+const submit = () => {
+    isProcessing.value = true;
+    form.put(route('courses.update', props.course.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            isProcessing.value = false;
+        },
+        onError: (e) => {
+            errors.value = e;
+            isProcessing.value = false;
+        },
+    });
+};
+</script>
+
+<template>
+    <Head title="Edit Course" />
+
+    <AuthenticatedLayout>
+        <template #header>
+            <div class="flex justify-between">
+                <h2 class="font-semibold text-xl text-gray-800 leading-tight">Edit Course</h2>
+                <div class="flex space-x-2">
+                    <Link :href="route('courses.show', course.id)" class="px-4 py-2 bg-blue-600 text-white rounded-md">
+                        View Course
+                    </Link>
+                    <Link :href="route('courses.index')" class="px-4 py-2 bg-gray-800 text-white rounded-md">
+                        Back to Courses
+                    </Link>
+                </div>
+            </div>
+        </template>
+
+        <div class="py-12">
+            <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6 text-gray-900">
+                        <form @submit.prevent="submit" class="space-y-6">
+                            <div>
+                                <label for="name" class="block text-sm font-medium text-gray-700">Course Name</label>
+                                <input
+                                    id="name"
+                                    v-model="form.name"
+                                    type="text"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    required
+                                />
+                                <div v-if="form.errors.name" class="text-red-500 text-sm mt-1">{{ form.errors.name }}</div>
+                            </div>
+
+                            <div>
+                                <label for="subject_area" class="block text-sm font-medium text-gray-700">Subject Area</label>
+                                <input
+                                    id="subject_area"
+                                    v-model="form.subject_area"
+                                    type="text"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                />
+                                <div v-if="form.errors.subject_area" class="text-red-500 text-sm mt-1">{{ form.errors.subject_area }}</div>
+                            </div>
+
+                            <div>
+                                <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
+                                <textarea
+                                    id="description"
+                                    v-model="form.description"
+                                    rows="4"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                ></textarea>
+                                <div v-if="form.errors.description" class="text-red-500 text-sm mt-1">{{ form.errors.description }}</div>
+                            </div>
+
+                            <div class="flex justify-end">
+                                <button
+                                    type="submit"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                    :disabled="isProcessing"
+                                >
+                                    <span v-if="isProcessing">Saving...</span>
+                                    <span v-else>Save Changes</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </AuthenticatedLayout>
+</template> 

@@ -5,6 +5,17 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 defineProps({
     videos: Array,
 });
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 </script>
 
 <template>
@@ -14,9 +25,14 @@ defineProps({
         <template #header>
             <div class="flex justify-between">
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">Videos</h2>
-                <Link :href="route('videos.create')" class="px-4 py-2 bg-gray-800 text-white rounded-md">
-                    Upload New Video
-                </Link>
+                <div class="flex space-x-2">
+                    <Link :href="route('courses.index')" class="px-4 py-2 bg-purple-600 text-white rounded-md">
+                        Courses
+                    </Link>
+                    <Link :href="route('videos.create')" class="px-4 py-2 bg-gray-800 text-white rounded-md">
+                        Upload New Video
+                    </Link>
+                </div>
             </div>
         </template>
 
@@ -40,8 +56,8 @@ defineProps({
                                         </h3>
                                         <span class="px-2 py-1 text-xs rounded-full" 
                                             :class="{
-                                                'bg-green-100 text-green-800': video.status === 'processed',
-                                                'bg-yellow-100 text-yellow-800': video.status === 'processing',
+                                                'bg-green-100 text-green-800': video.status === 'completed',
+                                                'bg-yellow-100 text-yellow-800': video.is_processing,
                                                 'bg-blue-100 text-blue-800': video.status === 'uploaded',
                                                 'bg-red-100 text-red-800': video.status === 'failed',
                                             }">
@@ -53,6 +69,19 @@ defineProps({
                                         <p>{{ formatFileSize(video.size_bytes) }}</p>
                                         <p>{{ new Date(video.created_at).toLocaleString() }}</p>
                                         
+                                        <!-- Course information if available -->
+                                        <div v-if="video.course" class="mt-2 bg-indigo-50 p-2 rounded">
+                                            <p class="text-xs text-indigo-800 font-medium">
+                                                <span>Course: </span>
+                                                <Link :href="route('courses.show', video.course.id)" class="underline hover:text-indigo-600">
+                                                    {{ video.course.name }}
+                                                </Link>
+                                            </p>
+                                            <p class="text-xs text-indigo-700">
+                                                Lesson {{ video.lesson_number }}
+                                            </p>
+                                        </div>
+                                        
                                         <!-- Features badges -->
                                         <div class="flex flex-wrap gap-2 mt-2">
                                             <span v-if="video.transcript_path" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-50 text-blue-700">
@@ -61,11 +90,11 @@ defineProps({
                                                 </svg>
                                                 Transcript
                                             </span>
-                                            <span v-if="video.has_music_terms" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
+                                            <span v-if="video.has_terminology" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
                                                 <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                                                 </svg>
-                                                Music Terms ({{ video.music_terms_count || 0 }})
+                                                Terminology ({{ video.terminology_count || 0 }})
                                             </span>
                                         </div>
                                     </div>
@@ -90,20 +119,4 @@ defineProps({
             </div>
         </div>
     </AuthenticatedLayout>
-</template>
-
-<script>
-export default {
-    methods: {
-        formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-    }
-}
-</script> 
+</template> 

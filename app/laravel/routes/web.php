@@ -30,6 +30,17 @@ Route::resource('videos', VideoController::class);
 Route::post('/videos/{video}/transcription', [VideoController::class, 'requestTranscription'])
     ->name('videos.transcription.request');
 
+// Course management routes
+Route::resource('courses', \App\Http\Controllers\CourseController::class);
+Route::post('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'addVideo'])
+    ->name('courses.videos.add');
+Route::delete('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'removeVideo'])
+    ->name('courses.videos.remove');
+Route::put('/courses/{course}/videos/order', [\App\Http\Controllers\CourseController::class, 'updateVideoOrder'])
+    ->name('courses.videos.order');
+Route::get('/courses/{course}/analysis', [\App\Http\Controllers\CourseController::class, 'analysis'])
+    ->name('courses.analysis');
+
 // Terminology Management (admin routes)
 Route::prefix('admin')->name('admin.')->group(function () {
     // Main terminology management page

@@ -18,7 +18,7 @@ class VideoController extends Controller
      */
     public function index()
     {
-        $videos = Video::latest()->get();
+        $videos = Video::with('course')->latest()->get();
         
         return Inertia::render('Videos/Index', [
             'videos' => $videos,
@@ -30,7 +30,11 @@ class VideoController extends Controller
      */
     public function create()
     {
-        return Inertia::render('Videos/Create');
+        $courses = \App\Models\Course::all();
+        
+        return Inertia::render('Videos/Create', [
+            'courses' => $courses,
+        ]);
     }
     
     /**
@@ -38,94 +42,124 @@ class VideoController extends Controller
      */
     public function store(Request $request)
     {
+        // Validate the request
         $request->validate([
-            'video' => 'required|file|mimetypes:video/mp4,video/mpeg,video/quicktime', // No size limit
+            'videos' => 'required|array',
+            'videos.*' => 'required|file|mimetypes:video/mp4,video/mpeg,video/quicktime',
+            'course_id' => 'nullable|exists:courses,id',
+            'lesson_number_start' => 'required_with:course_id|numeric|min:1',
         ]);
         
-        $file = $request->file('video');
-        $originalFilename = $file->getClientOriginalName();
-        $extension = $file->getClientOriginalExtension();
+        $videos = $request->file('videos');
+        $courseId = $request->input('course_id');
+        $lessonStart = $request->input('lesson_number_start', 1);
         
-        // Create a new video record first to get its UUID
-        $video = Video::create([
-            'original_filename' => $originalFilename,
-            'mime_type' => $file->getMimeType(),
-            'size_bytes' => $file->getSize(),
-            'status' => 'uploading',
-            'metadata' => [
-                'uploaded_at' => now()->toIso8601String(),
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-            ],
-        ]);
+        $createdVideos = [];
         
-        try {
-            // Use the video UUID as the job ID for consistent folder structure
-            $jobId = $video->id;
-            
-            // Create job directory structure
-            $s3JobPath = "s3/jobs/{$jobId}";
-            Storage::disk('public')->makeDirectory($s3JobPath);
-            
-            // Store the video with a standardized filename
-            $videoFilename = "video.{$extension}";
-            $videoPath = "{$s3JobPath}/{$videoFilename}";
-            
-            // Store the file
-            $result = Storage::disk('public')->putFileAs($s3JobPath, $file, $videoFilename);
-            
-            if (!$result) {
-                throw new \Exception("Failed to store video file");
-            }
-            
-            // Update the video record with the storage path
-            $video->update([
-                'storage_path' => $videoPath,
-                's3_key' => $videoFilename,
-                'status' => 'uploaded',
-            ]);
-            
-            // Log the file storage details for debugging
-            Log::info('Video file upload', [
-                'job_id' => $jobId,
-                'original_filename' => $originalFilename,
-                'storage_path' => $videoPath,
-                'file_size' => $file->getSize(),
-                'storage_result' => $result,
-                'exists' => Storage::disk('public')->exists($videoPath),
-                'full_path' => Storage::disk('public')->path($videoPath),
-            ]);
-            
-            // Automatically start audio extraction
-            // Mark video as processing
-            $video->update([
-                'status' => 'processing'
-            ]);
-
-            // Log the dispatch
-            Log::info('Auto-dispatching audio extraction job for video after upload', [
-                'video_id' => $video->id,
-                'storage_path' => $videoPath
-            ]);
-
-            // Dispatch audio extraction job to queue
-            \App\Jobs\AudioExtractionJob::dispatch($video);
-            
-            // Redirect to the video's detail page instead of index
-            return redirect()->route('videos.show', $video)
-                ->with('success', 'Video uploaded successfully and processing started.');
+        // Determine highest lesson number if course_id is provided
+        $currentLessonNumber = $lessonStart;
+        if ($courseId) {
+            // Get the highest current lesson number in the course
+            $highestLesson = \App\Models\Video::where('course_id', $courseId)
+                ->max('lesson_number');
                 
-        } catch (\Exception $e) {
-            // If anything goes wrong, update the status to failed
-            $video->update(['status' => 'failed']);
+            // If there are existing lessons, make sure we start after them
+            if ($highestLesson && $currentLessonNumber <= $highestLesson) {
+                $currentLessonNumber = $highestLesson + 1;
+            }
+        }
+        
+        // Process each video file
+        foreach ($videos as $index => $file) {
+            $originalFilename = $file->getClientOriginalName();
+            $extension = $file->getClientOriginalExtension();
             
-            Log::error('Video upload failed', [
-                'error' => $e->getMessage(),
-                'video_id' => $video->id
+            // Create a new video record
+            $video = \App\Models\Video::create([
+                'original_filename' => $originalFilename,
+                'mime_type' => $file->getMimeType(),
+                'size_bytes' => $file->getSize(),
+                'status' => 'uploading',
+                'course_id' => $courseId,
+                'lesson_number' => $courseId ? $currentLessonNumber + $index : null,
+                'metadata' => [
+                    'uploaded_at' => now()->toIso8601String(),
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'batch_upload' => true,
+                    'batch_index' => $index,
+                ],
             ]);
             
+            try {
+                // Use the video UUID as the job ID for consistent folder structure
+                $jobId = $video->id;
+                
+                // Create job directory structure
+                $s3JobPath = "s3/jobs/{$jobId}";
+                Storage::disk('public')->makeDirectory($s3JobPath);
+                
+                // Store the video with a standardized filename
+                $videoFilename = "video.{$extension}";
+                $videoPath = "{$s3JobPath}/{$videoFilename}";
+                
+                // Store the file
+                $result = Storage::disk('public')->putFileAs($s3JobPath, $file, $videoFilename);
+                
+                if (!$result) {
+                    throw new \Exception("Failed to store video file: {$originalFilename}");
+                }
+                
+                // Update the video record with the storage path
+                $video->update([
+                    'storage_path' => $videoPath,
+                    's3_key' => $videoFilename,
+                    'status' => 'uploaded',
+                ]);
+                
+                // Log success
+                Log::info('Video file upload', [
+                    'video_id' => $video->id,
+                    'original_filename' => $originalFilename,
+                    'storage_path' => $videoPath,
+                    'file_size' => $file->getSize(),
+                    'batch_index' => $index,
+                ]);
+                
+                // Automatically start audio extraction
+                $video->update(['status' => 'processing']);
+                
+                // Dispatch audio extraction job to queue
+                \App\Jobs\AudioExtractionJob::dispatch($video);
+                
+                $createdVideos[] = $video;
+                
+            } catch (\Exception $e) {
+                // If anything goes wrong, update the status to failed
+                $video->update(['status' => 'failed']);
+                
+                Log::error('Video upload failed', [
+                    'error' => $e->getMessage(),
+                    'video_id' => $video->id,
+                    'original_filename' => $originalFilename,
+                    'batch_index' => $index,
+                ]);
+            }
+        }
+        
+        // Determine the redirect based on number of videos and course
+        if (count($createdVideos) === 1) {
+            // If only one video, redirect to its detail page
+            return redirect()->route('videos.show', $createdVideos[0])
+                ->with('success', 'Video uploaded successfully and processing started.');
+        } else if ($courseId) {
+            // If multiple videos with a course, redirect to the course page
+            return redirect()->route('courses.show', $courseId)
+                ->with('success', count($createdVideos) . ' videos uploaded successfully to the course and processing started.');
+        } else {
+            // Otherwise redirect to the videos index
             return redirect()->route('videos.index')
-                ->with('error', 'Failed to upload video: ' . $e->getMessage());
+                ->with('success', count($createdVideos) . ' videos uploaded successfully and processing started.');
         }
     }
     
@@ -134,6 +168,22 @@ class VideoController extends Controller
      */
     public function show(Video $video)
     {
+        // Load the course relationship if available
+        if ($video->course_id) {
+            $video->load('course');
+            
+            // Get next and previous lessons in the course
+            $nextLesson = $video->nextLesson;
+            $previousLesson = $video->previousLesson;
+            
+            return Inertia::render('Videos/Show', [
+                'video' => $video,
+                'course' => $video->course,
+                'nextLesson' => $nextLesson,
+                'previousLesson' => $previousLesson,
+            ]);
+        }
+        
         return Inertia::render('Videos/Show', [
             'video' => $video,
         ]);

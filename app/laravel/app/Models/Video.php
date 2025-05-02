@@ -36,6 +36,8 @@ class Video extends Model
         'terminology_metadata',
         'terminology_json',
         'has_terminology',
+        'course_id',
+        'lesson_number',
     ];
     
     /**
@@ -418,5 +420,55 @@ class Video extends Model
         }
         
         return url('/api/videos/' . $this->id . '/terminology-json');
+    }
+
+    /**
+     * Get the course this video belongs to.
+     */
+    public function course()
+    {
+        return $this->belongsTo(Course::class);
+    }
+    
+    /**
+     * Get the lesson title, which combines the lesson number with original filename.
+     */
+    public function getLessonTitleAttribute()
+    {
+        if ($this->course_id && $this->lesson_number) {
+            return "Lesson {$this->lesson_number}: {$this->original_filename}";
+        }
+        
+        return $this->original_filename;
+    }
+
+    /**
+     * Get the next video in the course sequence, if any.
+     */
+    public function getNextLessonAttribute()
+    {
+        if (!$this->course_id) {
+            return null;
+        }
+        
+        return Video::where('course_id', $this->course_id)
+            ->where('lesson_number', '>', $this->lesson_number)
+            ->orderBy('lesson_number', 'asc')
+            ->first();
+    }
+    
+    /**
+     * Get the previous video in the course sequence, if any.
+     */
+    public function getPreviousLessonAttribute()
+    {
+        if (!$this->course_id) {
+            return null;
+        }
+        
+        return Video::where('course_id', $this->course_id)
+            ->where('lesson_number', '<', $this->lesson_number)
+            ->orderBy('lesson_number', 'desc')
+            ->first();
     }
 }

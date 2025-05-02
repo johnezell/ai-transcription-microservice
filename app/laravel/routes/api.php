@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 use App\Models\Video;
 use App\Models\TranscriptionLog;
 use Illuminate\Support\Str;
+use App\Http\Controllers\Api\TerminologyController;
 
 /*
 |--------------------------------------------------------------------------
@@ -44,8 +45,9 @@ Route::post('/videos/{id}/music-terms', [MusicTermController::class, 'process'])
 // Trigger music term recognition (keep for backward compatibility)
 Route::post('/videos/{id}/music-terms', [MusicTermController::class, 'triggerRecognition']);
 
-// New terminology route (replaces music-terms for general terminology)
-Route::post('/videos/{id}/terminology', [MusicTermController::class, 'triggerRecognition']);
+// New terminology routes (using the new controller)
+Route::get('/videos/{id}/terminology', [TerminologyController::class, 'show'])->name('api.terminology.show');
+Route::post('/videos/{id}/terminology', [TerminologyController::class, 'triggerRecognition'])->name('api.terminology.process');
 
 // Status polling endpoint for video processing
 Route::get('/videos/{id}/status', function($id) {

@@ -1,10 +1,22 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import DeleteConfirmModal from './Components/DeleteConfirmModal.vue';
+import { ref } from 'vue';
 
 defineProps({
     courses: Array,
 });
+
+// Modal state
+const showDeleteModal = ref(false);
+const selectedCourse = ref(null);
+
+// Show delete confirmation modal
+const confirmDelete = (course) => {
+    selectedCourse.value = course;
+    showDeleteModal.value = true;
+};
 </script>
 
 <template>
@@ -59,10 +71,11 @@ defineProps({
                                         <Link :href="route('courses.edit', course.id)" class="px-3 py-1 bg-gray-600 text-white rounded-md text-sm">
                                             Edit
                                         </Link>
-                                        <Link :href="route('courses.destroy', course.id)" method="delete" as="button" class="px-3 py-1 bg-red-600 text-white rounded-md text-sm" 
-                                            onclick="return confirm('Are you sure you want to delete this course? Videos will be preserved.')">
+                                        <button
+                                            @click="confirmDelete(course)"
+                                            class="px-3 py-1 bg-red-600 text-white rounded-md text-sm">
                                             Delete
-                                        </Link>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -71,5 +84,12 @@ defineProps({
                 </div>
             </div>
         </div>
+        
+        <!-- Delete Confirmation Modal -->
+        <DeleteConfirmModal
+            :course="selectedCourse"
+            :show="showDeleteModal"
+            @close="showDeleteModal = false"
+        />
     </AuthenticatedLayout>
 </template> 

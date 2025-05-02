@@ -40,6 +40,8 @@ Route::put('/courses/{course}/videos/order', [\App\Http\Controllers\CourseContro
     ->name('courses.videos.order');
 Route::get('/courses/{course}/analysis', [\App\Http\Controllers\CourseController::class, 'analysis'])
     ->name('courses.analysis');
+Route::delete('/courses/{course}/destroy-with-videos', [\App\Http\Controllers\CourseController::class, 'destroyWithVideos'])
+    ->name('courses.destroy-with-videos');
 
 // Terminology Management (admin routes)
 Route::prefix('admin')->name('admin.')->group(function () {

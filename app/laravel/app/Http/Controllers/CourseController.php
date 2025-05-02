@@ -6,6 +6,8 @@ use App\Models\Course;
 use App\Models\Video;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class CourseController extends Controller
 {
@@ -105,6 +107,59 @@ class CourseController extends Controller
         
         return redirect()->route('courses.index')
             ->with('success', 'Course deleted successfully. Associated videos were preserved.');
+    }
+    
+    /**
+     * Remove the specified course and all its videos from storage.
+     */
+    public function destroyWithVideos(Request $request, Course $course)
+    {
+        // Get all videos associated with this course
+        $videos = $course->videos()->get();
+        $videoCount = $videos->count();
+        
+        // Delete each video and its files
+        foreach ($videos as $video) {
+            try {
+                // Get job directory path based on video ID
+                $jobPath = "s3/jobs/{$video->id}";
+                
+                // Check if the job directory exists
+                if (Storage::disk('public')->exists($jobPath)) {
+                    // Delete the entire job directory with all its contents
+                    Storage::disk('public')->deleteDirectory($jobPath);
+                    Log::info('Deleted job directory for video', [
+                        'video_id' => $video->id,
+                        'job_path' => $jobPath
+                    ]);
+                } else {
+                    // Fallback to just deleting the video file if job directory doesn't exist
+                    if ($video->storage_path && Storage::disk('public')->exists($video->storage_path)) {
+                        Storage::disk('public')->delete($video->storage_path);
+                        Log::info('Deleted video file only', [
+                            'video_id' => $video->id,
+                            'storage_path' => $video->storage_path
+                        ]);
+                    }
+                }
+                
+                // Delete the video record
+                $video->delete();
+                
+            } catch (\Exception $e) {
+                Log::error('Error deleting video during course deletion', [
+                    'video_id' => $video->id,
+                    'course_id' => $course->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+        
+        // Delete the course
+        $course->delete();
+        
+        return redirect()->route('courses.index')
+            ->with('success', "Course and all {$videoCount} videos deleted successfully.");
     }
     
     /**

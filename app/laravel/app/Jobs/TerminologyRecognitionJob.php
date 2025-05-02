@@ -11,7 +11,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class MusicTermRecognitionJob implements ShouldQueue
+class TerminologyRecognitionJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -52,7 +52,7 @@ class MusicTermRecognitionJob implements ShouldQueue
             
             // Update status to indicate we're processing terminology
             $this->video->update([
-                'status' => 'processing_music_terms'
+                'status' => 'processing_music_terms' // Using the old status name for backward compatibility
             ]);
             
             // Get or create transcription log
@@ -68,7 +68,7 @@ class MusicTermRecognitionJob implements ShouldQueue
             // Update terminology recognition start time
             $termStartTime = now();
             $log->update([
-                'music_term_recognition_started_at' => $termStartTime,
+                'music_term_recognition_started_at' => $termStartTime, // Using the old column name for backward compatibility
                 'status' => 'processing_music_terms',
                 'progress_percentage' => 85 // Terminology recognition started, about 85% through whole process
             ]);
@@ -76,11 +76,12 @@ class MusicTermRecognitionJob implements ShouldQueue
             // Get the terminology service URL from environment
             $serviceUrl = env('MUSIC_TERM_SERVICE_URL', 'http://music-term-recognition-service:5000');
             
-            // Log the request
+            // Log the request with additional context
             Log::info('Dispatching terminology recognition request to service', [
                 'video_id' => $this->video->id,
                 'service_url' => $serviceUrl,
-                'transcript_path' => $this->video->transcript_path
+                'transcript_path' => $this->video->transcript_path,
+                'job_class' => 'TerminologyRecognitionJob'
             ]);
 
             // Send request to the terminology recognition service
@@ -124,7 +125,8 @@ class MusicTermRecognitionJob implements ShouldQueue
             $errorMessage = 'Exception in terminology recognition job: ' . $e->getMessage();
             Log::error($errorMessage, [
                 'video_id' => $this->video->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             
             // Update video to completed status since terminology recognition is optional

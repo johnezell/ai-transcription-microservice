@@ -244,20 +244,22 @@ class TranscriptionController extends Controller
                         $log->update($logUpdateData);
                     }
                     
-                    // If we have transcript data, also trigger music term recognition
+                    // If we have transcript data, also trigger terminology recognition
                     if (isset($responseData['transcript_text']) || 
                         (isset($responseData['transcript_path']) && file_exists($responseData['transcript_path']))) {
-                        // Trigger music term recognition in the background
+                        // Trigger terminology recognition in the background
                         try {
-                            Log::info('Automatically triggering music term recognition after transcription', [
-                                'video_id' => $video->id
+                            Log::info('Automatically triggering terminology recognition after transcription', [
+                                'video_id' => $video->id,
+                                'transcript_path' => $responseData['transcript_path'] ?? null
                             ]);
                             
-                            $this->triggerMusicTermRecognition($video->id);
+                            $this->triggerTerminologyRecognition($video->id);
                         } catch (\Exception $e) {
                             // Just log the error but don't fail the whole process
-                            Log::error('Failed to trigger music term recognition: ' . $e->getMessage(), [
-                                'video_id' => $video->id
+                            Log::error('Failed to trigger terminology recognition: ' . $e->getMessage(), [
+                                'video_id' => $video->id,
+                                'error' => $e->getMessage()
                             ]);
                         }
                     }
@@ -384,32 +386,71 @@ class TranscriptionController extends Controller
     }
 
     /**
-     * Trigger the music term recognition service to process a video's transcript.
+     * Trigger the terminology recognition service to process a video's transcript.
+     * This method replaces triggerMusicTermRecognition for a more general terminology approach.
      *
      * @param  string  $videoId
      * @return bool
      */
-    protected function triggerMusicTermRecognition($videoId)
+    protected function triggerTerminologyRecognition($videoId)
     {
         try {
             // Find the video
             $video = Video::findOrFail($videoId);
             
-            // Log that we're dispatching the job
-            Log::info('Dispatching music term recognition job for video', [
-                'video_id' => $videoId
+            // Check if the video has a transcript before proceeding
+            if (empty($video->transcript_path)) {
+                Log::warning('Cannot trigger terminology recognition: No transcript available', [
+                    'video_id' => $videoId
+                ]);
+                return false;
+            }
+            
+            // Update status to indicate we're processing terminology
+            $video->update([
+                'status' => 'processing_music_terms' // Keep this for backward compatibility
             ]);
             
-            // Dispatch music term recognition job to the queue
-            \App\Jobs\MusicTermRecognitionJob::dispatch($video);
+            // Log that we're dispatching the job
+            Log::info('Dispatching terminology recognition job for video', [
+                'video_id' => $videoId,
+                'transcript_path' => $video->transcript_path,
+                'batch_upload' => $video->metadata['batch_upload'] ?? false,
+                'batch_index' => $video->metadata['batch_index'] ?? null
+            ]);
+            
+            // Dispatch with higher priority for batch uploads
+            if (isset($video->metadata['batch_upload']) && $video->metadata['batch_upload']) {
+                \App\Jobs\TerminologyRecognitionJob::dispatch($video)->onQueue('high');
+            } else {
+                // Dispatch terminology recognition job to the queue
+                \App\Jobs\TerminologyRecognitionJob::dispatch($video);
+            }
             
             return true;
         } catch (\Exception $e) {
-            $errorMessage = 'Exception when dispatching music term recognition job: ' . $e->getMessage();
+            $errorMessage = 'Exception when dispatching terminology recognition job: ' . $e->getMessage();
             Log::error($errorMessage, [
                 'video_id' => $videoId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
+            
+            // Try to update the video status but don't fail if we can't
+            try {
+                $video = Video::find($videoId);
+                if ($video) {
+                    $video->update([
+                        'status' => 'completed',
+                        'error_message' => 'Terminology recognition failed: ' . $e->getMessage()
+                    ]);
+                }
+            } catch (\Exception $innerEx) {
+                Log::error('Failed to update video after terminology recognition error', [
+                    'video_id' => $videoId,
+                    'error' => $innerEx->getMessage()
+                ]);
+            }
             
             return false;
         }

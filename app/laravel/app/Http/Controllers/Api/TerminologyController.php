@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
-class MusicTermController extends Controller
+class TerminologyController extends Controller
 {
     /**
-     * Get music term recognition data for a video
+     * Get terminology data for a video
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  string  $id
@@ -24,17 +24,27 @@ class MusicTermController extends Controller
             // Find the video
             $video = Video::findOrFail($id);
             
-            if (!$video->has_music_terms) {
+            if (!$video->has_terminology) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No music terms available for this video'
+                    'message' => 'No terminology available for this video'
                 ], 404);
             }
             
-            // If we have a music terms path, try to get the data from the file
-            if ($video->music_terms_path) {
+            // Try to get the data from the database first
+            if (!empty($video->terminology_json)) {
+                return response()->json([
+                    'success' => true,
+                    'terminology' => $video->terminology_json,
+                    'metadata' => $video->terminology_metadata,
+                    'count' => $video->terminology_count
+                ]);
+            }
+            
+            // If we have a terminology path, try to get the data from the file
+            if ($video->terminology_path) {
                 // First determine if the path is absolute or relative
-                $path = $video->music_terms_path;
+                $path = $video->terminology_path;
                 
                 // In case of absolute path within the container
                 if (str_starts_with($path, '/var/www/storage/app/public/')) {
@@ -43,40 +53,40 @@ class MusicTermController extends Controller
                 
                 // Check if the file exists in storage
                 if (Storage::disk('public')->exists($path)) {
-                    $musicTermsData = json_decode(Storage::disk('public')->get($path), true);
+                    $terminologyData = json_decode(Storage::disk('public')->get($path), true);
                     
                     return response()->json([
                         'success' => true,
-                        'music_terms' => $musicTermsData,
-                        'metadata' => $video->music_terms_metadata,
-                        'count' => $video->music_terms_count
+                        'terminology' => $terminologyData,
+                        'metadata' => $video->terminology_metadata,
+                        'count' => $video->terminology_count
                     ]);
                 }
             }
             
-            // If we get here, we have has_music_terms but couldn't load the data
+            // If we get here, we have has_terminology but couldn't load the data
             return response()->json([
                 'success' => false,
-                'message' => 'Music terms file not found',
-                'metadata' => $video->music_terms_metadata,
-                'count' => $video->music_terms_count
+                'message' => 'Terminology file not found',
+                'metadata' => $video->terminology_metadata,
+                'count' => $video->terminology_count
             ], 404);
             
         } catch (\Exception $e) {
-            Log::error('Error retrieving music terms data: ' . $e->getMessage(), [
+            Log::error('Error retrieving terminology data: ' . $e->getMessage(), [
                 'video_id' => $id,
                 'exception' => $e
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Error retrieving music terms data: ' . $e->getMessage()
+                'message' => 'Error retrieving terminology data: ' . $e->getMessage()
             ], 500);
         }
     }
     
     /**
-     * Manually trigger music term recognition for a video
+     * Manually trigger terminology recognition for a video
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  string  $id
@@ -92,27 +102,32 @@ class MusicTermController extends Controller
             if (empty($video->transcript_path)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Video must have a transcript before identifying music terms'
+                    'message' => 'Video must have a transcript before identifying terminology'
                 ], 400);
             }
             
-            // Update the video status to processing music terms
+            // Update the video status to processing terminology
             $video->update([
-                'status' => 'processing_music_terms'
+                'status' => 'processing_music_terms' // Keep this name for backward compatibility
             ]);
             
-            // Get the music term service URL
-            $musicTermServiceUrl = env('MUSIC_TERM_SERVICE_URL', 'http://music-term-recognition-service:5000');
+            // Get the terminology service URL
+            $serviceUrl = env('MUSIC_TERM_SERVICE_URL', 'http://music-term-recognition-service:5000');
             
-            // Send request to the music term recognition service
-            $response = Http::timeout(5)->post("{$musicTermServiceUrl}/process", [
+            Log::info('Starting terminology recognition for video', [
+                'video_id' => $id,
+                'service_url' => $serviceUrl
+            ]);
+            
+            // Send request to the terminology recognition service
+            $response = Http::timeout(10)->post("{$serviceUrl}/process", [
                 'job_id' => (string) $video->id
             ]);
             
             if ($response->successful()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'Music term recognition started successfully',
+                    'message' => 'Terminology recognition started successfully',
                     'data' => $response->json()
                 ]);
             } else {
@@ -123,12 +138,12 @@ class MusicTermController extends Controller
                 
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to start music term recognition: ' . $response->body()
+                    'message' => 'Failed to start terminology recognition: ' . $response->body()
                 ], 500);
             }
             
         } catch (\Exception $e) {
-            Log::error('Error starting music term recognition: ' . $e->getMessage(), [
+            Log::error('Error starting terminology recognition: ' . $e->getMessage(), [
                 'video_id' => $id,
                 'exception' => $e
             ]);
@@ -145,14 +160,13 @@ class MusicTermController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Error starting music term recognition: ' . $e->getMessage()
+                'message' => 'Error starting terminology recognition: ' . $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Trigger music term recognition for a video.
-     * This is an alias for process() to maintain API compatibility.
+     * Trigger terminology recognition for a video.
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  string  $id
@@ -160,7 +174,7 @@ class MusicTermController extends Controller
      */
     public function triggerRecognition(Request $request, $id)
     {
-        Log::info('Terminology recognition triggered via triggerRecognition method', [
+        Log::info('Terminology recognition triggered', [
             'video_id' => $id
         ]);
         

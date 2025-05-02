@@ -46,6 +46,8 @@ function startPolling() {
         videoData.value.status === 'processing' || 
         videoData.value.is_processing || 
         videoData.value.status === 'transcribing' ||
+        videoData.value.status === 'transcribed' ||
+        videoData.value.status === 'processing_music_terms' ||
         isNewVideo.value;
     
     // Only poll if the video is being processed or newly uploaded
@@ -79,6 +81,7 @@ async function fetchStatus() {
             // Check if status changed from processing/transcribing to completed
             const wasProcessing = videoData.value.status === 'processing' || 
                                   videoData.value.status === 'transcribing' || 
+                                  videoData.value.status === 'transcribed' ||
                                   videoData.value.status === 'processing_music_terms';
             const nowCompleted = data.video.status === 'completed';
             
@@ -109,7 +112,7 @@ async function fetchStatus() {
                 // Copy standard properties
                 videoData.value.error_message = data.video.error_message;
                 videoData.value.is_processing = data.video.is_processing || 
-                    ['processing', 'transcribing', 'processing_music_terms'].includes(data.video.status);
+                    ['processing', 'transcribing', 'transcribed', 'processing_music_terms'].includes(data.video.status);
                 
                 // Update music terms properties if they exist
                 if (data.video.has_music_terms) {
@@ -488,6 +491,8 @@ onBeforeUnmount(() => {
                                                     'bg-green-100 text-green-800': videoData.status === 'completed',
                                                     'bg-blue-100 text-blue-800': videoData.status === 'processing',
                                                     'bg-purple-100 text-purple-800': videoData.status === 'transcribing',
+                                                    'bg-indigo-100 text-indigo-800': videoData.status === 'transcribed',
+                                                    'bg-orange-100 text-orange-800': videoData.status === 'processing_music_terms',
                                                     'bg-yellow-100 text-yellow-800': videoData.status === 'uploaded',
                                                     'bg-red-100 text-red-800': videoData.status === 'failed',
                                                 }">

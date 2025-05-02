@@ -70,9 +70,11 @@ Route::get('/videos/{id}/status', function($id) {
     } elseif ($video->status === 'processing') {
         $progressPercentage = 25; // Audio extraction in progress
     } elseif ($video->status === 'transcribing') {
-        $progressPercentage = 75; // Transcription in progress
+        $progressPercentage = 50; // Transcription in progress
+    } elseif ($video->status === 'transcribed') {
+        $progressPercentage = 75; // Transcription complete, waiting for terminology
     } elseif ($video->status === 'processing_music_terms') {
-        $progressPercentage = 85; // Music term recognition in progress
+        $progressPercentage = 85; // Terminology recognition in progress
     } elseif ($video->status === 'completed') {
         $progressPercentage = 100;
     }

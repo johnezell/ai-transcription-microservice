@@ -158,6 +158,8 @@ export default {
           return 'Extracting audio from video...';
         case 'transcribing':
           return 'Transcribing audio...';
+        case 'transcribed':
+          return 'Transcription completed, waiting for terminology analysis...';
         case 'processing_music_terms':
           return 'Analyzing terminology...';
         case 'completed':
@@ -175,6 +177,7 @@ export default {
           return 'bg-gray-100 text-gray-800';
         case 'processing':
         case 'transcribing':
+        case 'transcribed':
         case 'processing_music_terms':
           return 'bg-blue-50 text-blue-800';
         case 'completed':
@@ -187,7 +190,10 @@ export default {
     },
     
     estimatedCompletion() {
-      if (this.status !== 'processing' && this.status !== 'transcribing' && this.status !== 'processing_music_terms') {
+      if (this.status !== 'processing' && 
+          this.status !== 'transcribing' && 
+          this.status !== 'transcribed' && 
+          this.status !== 'processing_music_terms') {
         return null;
       }
       
@@ -204,6 +210,9 @@ export default {
       } else if (this.status === 'transcribing') {
         // Transcription typically takes ~2x media duration
         estimatedRemainingSeconds = this.mediaDuration * 2;
+      } else if (this.status === 'transcribed') {
+        // Waiting for terminology to start
+        estimatedRemainingSeconds = 10; // Usually quick to start
       } else if (this.status === 'processing_music_terms') {
         // Music term recognition typically takes ~20% of media duration
         estimatedRemainingSeconds = this.mediaDuration * 0.2;
@@ -234,7 +243,7 @@ export default {
         if (this.status === 'processing') {
           return 'active';
         }
-        if (['transcribing', 'processing_music_terms', 'completed'].includes(this.status)) {
+        if (['transcribing', 'transcribed', 'processing_music_terms', 'completed'].includes(this.status)) {
           return 'completed';
         }
       }
@@ -243,12 +252,15 @@ export default {
         if (this.status === 'transcribing') {
           return 'active';
         }
-        if (['processing_music_terms', 'completed'].includes(this.status)) {
+        if (['transcribed', 'processing_music_terms', 'completed'].includes(this.status)) {
           return 'completed';
         }
       }
       
       if (stepId === 'term_analysis') {
+        if (this.status === 'transcribed') {
+          return 'active'; // Waiting for terminology analysis to start
+        }
         if (this.status === 'processing_music_terms') {
           return 'active';
         }
@@ -262,7 +274,7 @@ export default {
       }
       
       // Default status based on current position in workflow
-      const workflowOrder = ['uploaded', 'processing', 'transcribing', 'processing_music_terms', 'completed'];
+      const workflowOrder = ['uploaded', 'processing', 'transcribing', 'transcribed', 'processing_music_terms', 'completed'];
       const stepOrder = ['upload', 'audio_extraction', 'transcription', 'term_analysis', 'complete'];
       
       const currentPosition = workflowOrder.indexOf(this.status);

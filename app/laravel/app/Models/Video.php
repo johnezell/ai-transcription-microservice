@@ -204,7 +204,13 @@ class Video extends Model
      */
     public function getIsProcessingAttribute()
     {
-        return in_array($this->status, ['processing', 'extracting_audio', 'transcribing', 'processing_music_terms']);
+        return in_array($this->status, [
+            'processing', 
+            'extracting_audio', 
+            'transcribing', 
+            'transcribed',
+            'processing_music_terms'
+        ]);
     }
     
     /**

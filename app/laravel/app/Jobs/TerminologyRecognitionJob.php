@@ -99,26 +99,41 @@ class TerminologyRecognitionJob implements ShouldQueue
                 $log->update([
                     'progress_percentage' => 90 // Terminology recognition in progress
                 ]);
+                
+                // NOTE: The actual terminology processing happens asynchronously
+                // and updates will come through the callback endpoint
+                // The video will be marked as 'completed' when the callback is received
+                // from the terminology service
+                
             } else {
                 $errorMessage = 'Terminology recognition service returned error: ' . $response->body();
                 Log::error($errorMessage, [
                     'video_id' => $this->video->id
                 ]);
                 
-                // Update video with failure
+                // Mark video as completed since terminology is optional
                 $this->video->update([
-                    'status' => 'completed', // Still mark as completed since this is optional
+                    'status' => 'completed', 
                     'error_message' => $errorMessage
                 ]);
                 
                 $termEndTime = now();
                 $termDuration = $termEndTime->diffInSeconds($termStartTime);
                 
+                // Calculate total duration from start
+                $totalDuration = 0;
+                if ($log->started_at) {
+                    $totalDuration = $termEndTime->diffInSeconds($log->started_at);
+                }
+                
                 $log->update([
-                    'status' => 'completed', // Still mark as completed since this is optional
+                    'status' => 'completed',
                     'error_message' => $errorMessage,
                     'music_term_recognition_completed_at' => $termEndTime,
-                    'music_term_recognition_duration_seconds' => $termDuration
+                    'music_term_recognition_duration_seconds' => $termDuration,
+                    'completed_at' => $termEndTime,
+                    'total_processing_duration_seconds' => $totalDuration,
+                    'progress_percentage' => 100
                 ]);
             }
         } catch (\Exception $e) {
@@ -143,11 +158,20 @@ class TerminologyRecognitionJob implements ShouldQueue
                     $startTime = $log->music_term_recognition_started_at ?? $log->started_at ?? $endTime;
                     $duration = $endTime->diffInSeconds($startTime);
                     
+                    // Calculate total duration from start
+                    $totalDuration = 0;
+                    if ($log->started_at) {
+                        $totalDuration = $endTime->diffInSeconds($log->started_at);
+                    }
+                    
                     $log->update([
                         'status' => 'completed',
                         'error_message' => $errorMessage,
                         'music_term_recognition_completed_at' => $endTime,
-                        'music_term_recognition_duration_seconds' => $duration
+                        'music_term_recognition_duration_seconds' => $duration,
+                        'completed_at' => $endTime,
+                        'total_processing_duration_seconds' => $totalDuration,
+                        'progress_percentage' => 100
                     ]);
                 }
             } catch (\Exception $logEx) {

@@ -125,10 +125,40 @@ class TerminologyController extends Controller
             ]);
             
             if ($response->successful()) {
+                // Get the response data
+                $responseData = $response->json();
+                
+                // If the response already contains the music_terms_json_path, it means the service
+                // has processed the request synchronously. In this case, immediately mark as completed.
+                if (isset($responseData['data']) && isset($responseData['data']['music_terms_json_path'])) {
+                    Log::info('Received synchronous terminology result - forcing status update to completed', [
+                        'video_id' => $id,
+                        'music_terms_json_path' => $responseData['data']['music_terms_json_path']
+                    ]);
+                    
+                    // Update the video with terminology data and completed status
+                    $video->update([
+                        'terminology_path' => $responseData['data']['music_terms_json_path'],
+                        'terminology_count' => $responseData['data']['term_count'] ?? 0,
+                        'has_terminology' => true,
+                        'status' => 'completed' // Force status to completed
+                    ]);
+                    
+                    // If categories are available, save them as metadata
+                    if (isset($responseData['data']['categories'])) {
+                        $video->update([
+                            'terminology_metadata' => [
+                                'categories' => $responseData['data']['categories'],
+                                'service_timestamp' => $responseData['data']['service_timestamp'] ?? now()->toIso8601String(),
+                            ]
+                        ]);
+                    }
+                }
+                
                 return response()->json([
                     'success' => true,
                     'message' => 'Terminology recognition started successfully',
-                    'data' => $response->json()
+                    'data' => $responseData
                 ]);
             } else {
                 // Reset status if failed to start

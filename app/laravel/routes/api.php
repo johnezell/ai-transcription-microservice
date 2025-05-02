@@ -10,6 +10,7 @@ use App\Models\Video;
 use App\Models\TranscriptionLog;
 use Illuminate\Support\Str;
 use App\Http\Controllers\Api\TerminologyController;
+use Illuminate\Support\Facades\Log;
 
 /*
 |--------------------------------------------------------------------------
@@ -63,6 +64,19 @@ Route::get('/videos/{id}/status', function($id) {
     // Get the transcription log if available
     $log = TranscriptionLog::where('video_id', $id)->first();
     
+    // Force a status update if the video is stuck in transcribed but has terminology
+    $status = $video->status;
+    if ($status === 'transcribed' && $video->has_terminology) {
+        $status = 'completed';
+        Log::info('Frontend status check: Video has terminology but status is transcribed - reporting as completed', [
+            'video_id' => $video->id,
+            'actual_status' => $video->status,
+            'reported_status' => $status,
+            'has_terminology' => $video->has_terminology,
+            'terminology_path' => $video->terminology_path
+        ]);
+    }
+    
     // Calculate progress percentage based on status
     $progressPercentage = 0;
     if ($video->status === 'uploaded') {
@@ -75,18 +89,18 @@ Route::get('/videos/{id}/status', function($id) {
         $progressPercentage = 75; // Transcription complete, waiting for terminology
     } elseif ($video->status === 'processing_music_terms') {
         $progressPercentage = 85; // Terminology recognition in progress
-    } elseif ($video->status === 'completed') {
+    } elseif ($video->status === 'completed' || $status === 'completed') {
         $progressPercentage = 100;
     }
     
     $response = [
         'success' => true,
-        'status' => $video->status,
+        'status' => $status,
         'progress_percentage' => $progressPercentage,
         'video' => [
             'id' => $video->id,
             'original_filename' => $video->original_filename,
-            'status' => $video->status,
+            'status' => $status,
             'created_at' => $video->created_at,
             'updated_at' => $video->updated_at,
             'has_audio' => !empty($video->audio_path),
@@ -273,4 +287,152 @@ Route::prefix('courses')->group(function() {
     
     // Search across all transcripts in the course
     Route::post('/{course}/search', [\App\Http\Controllers\Api\CourseAnalysisController::class, 'searchTranscripts']);
+});
+
+// Debugging endpoints
+Route::post('/test-terminology-callback/{id}', function($id) {
+    try {
+        // Find the video
+        $video = \App\Models\Video::findOrFail($id);
+        
+        // Get current timestamp
+        $now = now();
+        
+        // Create mock response data similar to what the python service would send
+        $responseData = [
+            'message' => 'Music term recognition completed successfully',
+            'service_timestamp' => now()->toIso8601String(),
+            'music_terms_json_path' => '/var/www/storage/app/public/s3/jobs/' . $id . '/music_terms.json',
+            'term_count' => 10,
+            'categories' => [
+                'guitar_parts' => 3,
+                'music_theory' => 7
+            ],
+            'metadata' => [
+                'service' => 'music-term-recognition-service',
+                'processed_by' => 'test-api-callback'
+            ]
+        ];
+        
+        // Create a request to the updateJobStatus method
+        $request = new \Illuminate\Http\Request();
+        $request->merge([
+            'status' => 'completed',
+            'completed_at' => now()->toIso8601String(),
+            'response_data' => $responseData
+        ]);
+        
+        // Create a transcription controller and call the updateJobStatus method
+        $controller = new \App\Http\Controllers\Api\TranscriptionController();
+        $response = $controller->updateJobStatus($id, $request);
+        
+        // Return the response with additional debug info
+        return response()->json([
+            'success' => true,
+            'message' => 'Test callback executed',
+            'video_before' => $video->toArray(),
+            'controller_response' => json_decode($response->getContent()),
+            'status' => \App\Models\Video::find($id)->status
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// New endpoint to debug and fix terminology processing
+Route::post('/videos/{id}/debug-terminology', function($id) {
+    try {
+        // Find the video
+        $video = \App\Models\Video::findOrFail($id);
+        
+        $originalStatus = $video->status;
+        $hasTerminologyPath = !empty($video->terminology_path);
+        $hasTerminologyFlag = $video->has_terminology;
+        $hasTranscript = !empty($video->transcript_path);
+        
+        // Collect additional diagnostic information
+        $diagnostics = [
+            'video_id' => $video->id,
+            'status' => $originalStatus,
+            'has_terminology_path' => $hasTerminologyPath,
+            'has_terminology_flag' => $hasTerminologyFlag,
+            'has_transcript' => $hasTranscript,
+            'transcript_path' => $video->transcript_path,
+            'transcript_exists' => $hasTranscript ? file_exists($video->transcript_path) : false,
+            'terminology_path' => $video->terminology_path,
+            'terminology_exists' => $hasTerminologyPath ? file_exists($video->terminology_path) : false,
+            'updated_at' => $video->updated_at
+        ];
+        
+        // Log diagnostic information
+        \Illuminate\Support\Facades\Log::info('Terminology processing debug diagnostics', $diagnostics);
+        
+        // If the video is stuck in transcribed state but should have terminology, attempt to fix it
+        if ($video->status === 'transcribed' && $hasTranscript) {
+            // Get the terminology controller
+            $controller = new \App\Http\Controllers\Api\TerminologyController();
+            $request = new \Illuminate\Http\Request();
+            
+            // Dispatch the job manually to trigger terminology processing
+            \App\Jobs\ProcessTerminologyJob::dispatch($video);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Terminology processing debug initiated',
+                'action_taken' => 'Dispatched ProcessTerminologyJob',
+                'diagnostics' => $diagnostics
+            ]);
+        }
+        
+        // Return the diagnostics without taking any action
+        return response()->json([
+            'success' => true,
+            'message' => 'Terminology processing debug completed',
+            'action_taken' => 'None - video in correct state or cannot be fixed',
+            'diagnostics' => $diagnostics
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error debugging terminology processing: ' . $e->getMessage(),
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// Direct status update API endpoint
+Route::put('/videos/{id}/status', function($id) {
+    try {
+        $video = Video::findOrFail($id);
+        
+        // Record previous status for logging
+        $previousStatus = $video->status;
+        
+        // Force update to completed
+        $video->update([
+            'status' => 'completed'
+        ]);
+        
+        // Log the status change
+        Log::info('Status manually updated via API', [
+            'video_id' => $id,
+            'from_status' => $previousStatus,
+            'to_status' => 'completed'
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Video status updated to completed',
+            'previous_status' => $previousStatus,
+            'current_status' => 'completed'
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error updating video status: ' . $e->getMessage()
+        ], 500);
+    }
 });

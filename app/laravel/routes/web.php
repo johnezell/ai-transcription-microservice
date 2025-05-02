@@ -85,11 +85,98 @@ Route::prefix('admin')->name('admin.')->group(function () {
     })->name('music-terms.index');
 });
 
-// Auth routes kept for reference but not used
+Route::get('/fix-statuses', function () {
+    // Find all videos that are in 'transcribed' state but have terminology data
+    $videos = \App\Models\Video::where('status', 'transcribed')
+        ->where(function($query) {
+            $query->whereNotNull('terminology_path')
+                  ->orWhereNotNull('music_terms_path')
+                  ->orWhere('has_terminology', true)
+                  ->orWhere('has_music_terms', true);
+        })
+        ->get();
+    
+    $updated = 0;
+    $details = [];
+    
+    foreach ($videos as $video) {
+        $details[] = [
+            'id' => $video->id,
+            'original_filename' => $video->original_filename,
+            'old_status' => $video->status,
+            'has_terminology' => $video->has_terminology,
+            'has_music_terms' => $video->has_music_terms,
+        ];
+        
+        $video->update(['status' => 'completed']);
+        $updated++;
+    }
+    
+    return response()->json([
+        'success' => true,
+        'videos_found' => $videos->count(),
+        'videos_updated' => $updated,
+        'details' => $details
+    ]);
+})->name('fix.statuses');
+
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // Utility routes
+    Route::get('/test-terminology/{id}', function ($id) {
+        // Find the video
+        $video = \App\Models\Video::findOrFail($id);
+        
+        // Create a controller instance
+        $controller = new \App\Http\Controllers\Api\TerminologyController();
+        
+        // Call the process method
+        $response = $controller->process(new \Illuminate\Http\Request(), $id);
+        
+        // Return the response
+        return $response;
+    })->name('test.terminology');
+    
+    Route::get('/fix-terminology', function () {
+        // Find all videos in 'transcribed' state
+        $videos = \App\Models\Video::where('status', 'transcribed')->get();
+        
+        $output = [];
+        $count = 0;
+        
+        // For each video, trigger terminology recognition
+        foreach ($videos as $video) {
+            // Create a controller instance
+            $controller = new \App\Http\Controllers\Api\TerminologyController();
+            
+            // Call the process method
+            $response = $controller->process(new \Illuminate\Http\Request(), $video->id);
+            
+            // Process the response
+            $responseData = json_decode($response->getContent(), true);
+            $success = $responseData['success'] ?? false;
+            
+            $output[] = [
+                'id' => $video->id,
+                'name' => $video->original_filename,
+                'success' => $success,
+                'message' => $responseData['message'] ?? 'Unknown response'
+            ];
+            
+            if ($success) {
+                $count++;
+            }
+        }
+        
+        return response()->json([
+            'total_videos' => $videos->count(),
+            'processed_successfully' => $count,
+            'results' => $output
+        ]);
+    })->name('fix.terminology');
 });
 
 Route::get('/test-audio-job/{id}', function ($id) {
@@ -114,101 +201,30 @@ Route::get('/test-audio-job/{id}', function ($id) {
     }
 });
 
-Route::get('/test-terminology/{id}', function ($id) {
-    $video = App\Models\Video::find($id);
-    
-    if (!$video) {
-        return response()->json(['error' => 'Video not found'], 404);
-    }
-    
-    // Check if video has a transcript but no terminology
-    if (empty($video->transcript_path)) {
-        return response()->json([
-            'error' => 'Video has no transcript',
-            'video' => $video
-        ], 400);
-    }
-    
-    if (!file_exists($video->transcript_path)) {
-        return response()->json([
-            'error' => 'Transcript file not found',
-            'path' => $video->transcript_path
-        ], 400);
-    }
-    
+Route::get('/fix-status-immediate/{id}', function ($id) {
     try {
-        // Mark the video for terminology processing
-        $video->update(['status' => 'transcribed']);
+        // Find the video
+        $video = \App\Models\Video::findOrFail($id);
         
-        // Dispatch the terminology job
-        \App\Jobs\TerminologyRecognitionJob::dispatch($video);
+        // Force update the status to completed immediately
+        $video->update([
+            'status' => 'completed'
+        ]);
         
         return response()->json([
             'success' => true,
-            'message' => 'Terminology recognition job dispatched for video ' . $id,
-            'video' => $video
+            'message' => 'Video status force-updated to completed',
+            'video_id' => $id,
+            'old_status' => $video->getOriginal('status'),
+            'new_status' => 'completed'
         ]);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
+            'message' => 'Error updating video status',
             'error' => $e->getMessage()
         ], 500);
     }
-});
-
-Route::get('/fix-terminology', function () {
-    // Find all videos that have transcripts but no terminology
-    $videos = App\Models\Video::whereNotNull('transcript_path')
-        ->where(function($query) {
-            $query->whereNull('terminology_path')
-                  ->orWhere('terminology_count', 0)
-                  ->orWhere('has_terminology', false);
-        })
-        ->where('status', 'completed')
-        ->get();
-    
-    if ($videos->isEmpty()) {
-        return response()->json([
-            'message' => 'No videos found that need terminology processing'
-        ]);
-    }
-    
-    $processed = [];
-    $skipped = [];
-    
-    foreach ($videos as $video) {
-        // Check if transcript file exists
-        if (!file_exists($video->transcript_path)) {
-            $skipped[] = [
-                'id' => $video->id,
-                'reason' => 'Transcript file not found',
-                'path' => $video->transcript_path
-            ];
-            continue;
-        }
-        
-        try {
-            // Mark the video for terminology processing
-            $video->update(['status' => 'transcribed']);
-            
-            // Dispatch the terminology job
-            \App\Jobs\TerminologyRecognitionJob::dispatch($video);
-            
-            $processed[] = $video->id;
-        } catch (\Exception $e) {
-            $skipped[] = [
-                'id' => $video->id,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-    
-    return response()->json([
-        'success' => true,
-        'total_videos' => $videos->count(),
-        'processed' => $processed,
-        'skipped' => $skipped
-    ]);
 });
 
 require __DIR__.'/auth.php';

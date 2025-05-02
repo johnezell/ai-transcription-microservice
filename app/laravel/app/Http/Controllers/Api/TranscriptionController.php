@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\TerminologyRecognitionJob;
 use App\Jobs\ProcessTranscriptionJob;
 use App\Models\TranscriptionLog;
 use App\Models\Video;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -103,301 +105,366 @@ class TranscriptionController extends Controller
 
         // Validate request
         $request->validate([
-            'status' => 'required|string|in:processing,completed,failed,extracting_audio,transcribing,processing_music_terms',
+            'status' => 'required|string|in:processing,completed,failed,extracting_audio,transcribing,transcribed,processing_music_terms',
             'completed_at' => 'nullable|date',
             'response_data' => 'nullable',
             'error_message' => 'nullable|string',
         ]);
         
-        // Update the log if it exists
-        if ($log) {
-            $logData = [
-                'status' => $request->status,
-                'error_message' => $request->error_message ?? $log->error_message,
-            ];
+        // Check if this is a music terms callback with completed status
+        $isTerminologyCallback = false;
+        $responseData = null;
+        
+        if ($request->response_data) {
+            $responseData = is_array($request->response_data) ? $request->response_data : json_decode($request->response_data, true);
             
-            // Set completion timestamp if provided or if status is completed/failed
-            if ($request->completed_at) {
-                $logData['completed_at'] = $request->completed_at;
-            } elseif (in_array($request->status, ['completed', 'failed'])) {
-                $logData['completed_at'] = $now;
+            // Check for music terms callback
+            if (isset($responseData['music_terms_json_path'])) {
+                $isTerminologyCallback = true;
+                
+                // Log for debugging
+                Log::info('Received terminology recognition callback', [
+                    'job_id' => $jobId,
+                    'requested_status' => $request->status,
+                    'response_data' => $responseData
+                ]);
             }
             
-            // Store response data if provided
-            if ($request->response_data) {
-                $logData['response_data'] = $request->response_data;
+            // If this includes transcript data but not terminology data, and status is being set to completed,
+            // intercept and change it to "transcribed" first so terminology can run
+            if (isset($responseData['transcript_path']) && !isset($responseData['music_terms_json_path']) && $request->status === 'completed') {
+                Log::info('Intercepting completed status from transcription service and changing to transcribed first', [
+                    'job_id' => $jobId,
+                    'original_status' => $request->status,
+                    'new_status' => 'transcribed',
+                    'has_transcript' => true
+                ]);
+                
+                // Modify the request to use "transcribed" status instead
+                $request->merge(['status' => 'transcribed']);
             }
-            
-            $log->update($logData);
         }
 
-        // Update the video if it exists
-        if ($video) {
-            $videoData = [
-                'status' => $request->status
-            ];
-
-            // If we have response data and it includes audio information
-            if ($request->response_data) {
-                $responseData = is_array($request->response_data) ? $request->response_data : json_decode($request->response_data, true);
+        // Wrap the entire operation in a database transaction to prevent race conditions
+        return DB::transaction(function() use ($log, $video, $request, $now, $jobId, $responseData, $isTerminologyCallback) {
+            
+            // Update the log if it exists
+            if ($log) {
+                $logData = [
+                    'status' => $request->status,
+                    'error_message' => $request->error_message ?? $log->error_message,
+                ];
                 
-                // Audio extraction completed
-                if (isset($responseData['audio_path'])) {
-                    $videoData['audio_path'] = $responseData['audio_path'];
-                    $videoData['audio_size'] = $responseData['audio_size_bytes'] ?? null;
-                    $videoData['audio_duration'] = $responseData['duration_seconds'] ?? null;
-                    
-                    // Find or create transcription log
-                    if (!$log) {
-                        $log = TranscriptionLog::firstOrCreate(
-                            ['video_id' => $video->id],
-                            [
-                                'job_id' => $video->id,
-                                'status' => 'processing',
-                                'started_at' => $now,
-                            ]
-                        );
-                    }
-                    
-                    // Update timing information for audio extraction
-                    $log->update([
-                        'audio_extraction_completed_at' => $now,
-                        'audio_file_size' => $responseData['audio_size_bytes'] ?? null,
-                        'audio_duration_seconds' => $responseData['duration_seconds'] ?? null,
-                        'progress_percentage' => 50, // Audio extraction complete, now 50% done
-                    ]);
-                    
-                    // Calculate audio extraction duration if we have the start time
-                    if ($log->audio_extraction_started_at) {
-                        $extractionDuration = $now->diffInSeconds($log->audio_extraction_started_at);
-                        $log->update([
-                            'audio_extraction_duration_seconds' => $extractionDuration
-                        ]);
-                    }
-                    
-                    // Audio extraction is complete, trigger transcription service
-                    $this->triggerTranscription($video->id);
+                // Set completion timestamp if provided or if status is completed/failed
+                if ($request->completed_at) {
+                    $logData['completed_at'] = $request->completed_at;
+                } elseif (in_array($request->status, ['completed', 'failed'])) {
+                    $logData['completed_at'] = $now;
                 }
                 
-                // Transcription completed
-                if (isset($responseData['transcript_path'])) {
-                    $videoData['transcript_path'] = $responseData['transcript_path'];
+                // Store response data if provided
+                if ($request->response_data) {
+                    $logData['response_data'] = $request->response_data;
+                }
+                
+                $log->update($logData);
+            }
+
+            // Update the video if it exists - process this inside the transaction
+            if ($video) {
+                // Reload the video to get the latest status - essential to prevent race conditions
+                $video = Video::lockForUpdate()->find($video->id);
+                
+                $videoData = [
+                    'status' => $request->status
+                ];
+
+                // Special handling for terminology callbacks with completed status - highest priority
+                if ($isTerminologyCallback && $request->status === 'completed') {
+                    Log::info('Terminology callback with completed status - prioritizing completion status', [
+                        'video_id' => $video->id, 
+                        'current_status' => $video->status,
+                        'requested_status' => $request->status
+                    ]);
                     
-                    // If there's a transcript text in the response, save it
-                    if (isset($responseData['transcript_text'])) {
-                        $videoData['transcript_text'] = $responseData['transcript_text'];
-                    } else if (isset($responseData['transcript_path']) && file_exists($responseData['transcript_path'])) {
-                        // Try to read the transcript file if it exists
-                        try {
-                            $videoData['transcript_text'] = file_get_contents($responseData['transcript_path']);
-                        } catch (\Exception $e) {
-                            // Log error but continue
-                            Log::error('Failed to read transcript file: ' . $e->getMessage());
-                        }
-                    }
+                    // This is a critical callback that must update the status to completed
+                    $videoData['status'] = 'completed';
+                }
+
+                // NEVER overwrite a 'completed' status with 'transcribed'
+                if ($video->status === 'completed' && $request->status === 'transcribed') {
+                    Log::info('Preventing completed status from being overwritten with transcribed', [
+                        'video_id' => $video->id,
+                        'current_status' => $video->status,
+                        'requested_status' => $request->status
+                    ]);
                     
-                    // If there's a transcript.json file, save its contents to the database
-                    $jsonPath = dirname($responseData['transcript_path']) . '/transcript.json';
-                    if (file_exists($jsonPath)) {
-                        try {
-                            $jsonContent = file_get_contents($jsonPath);
-                            $videoData['transcript_json'] = json_decode($jsonContent, true);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to read transcript JSON file: ' . $e->getMessage());
-                        }
-                    }
+                    // Keep the status as completed
+                    $videoData['status'] = 'completed';
+                }
+
+                // If we have response data and it includes audio information
+                if ($request->response_data) {
+                    $responseData = is_array($request->response_data) ? $request->response_data : json_decode($request->response_data, true);
                     
-                    // If there's a transcript.srt file, save its contents to the database
-                    $srtPath = dirname($responseData['transcript_path']) . '/transcript.srt';
-                    if (file_exists($srtPath)) {
-                        try {
-                            $videoData['transcript_srt'] = file_get_contents($srtPath);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to read transcript SRT file: ' . $e->getMessage());
-                        }
-                    }
-                    
-                    // Set status to an intermediate state - transcribed but waiting for terminology
-                    $videoData['status'] = 'transcribed';
-                    
-                    // Update transcription log with completion data
-                    if ($log) {
-                        $logUpdateData = [
-                            'status' => 'transcribed', // Use the same intermediate status
-                            'transcription_completed_at' => $now,
-                            'progress_percentage' => 75 // Transcription done, waiting for terminology (75%)
-                        ];
+                    // Audio extraction completed
+                    if (isset($responseData['audio_path'])) {
+                        $videoData['audio_path'] = $responseData['audio_path'];
+                        $videoData['audio_size'] = $responseData['audio_size_bytes'] ?? null;
+                        $videoData['audio_duration'] = $responseData['duration_seconds'] ?? null;
                         
-                        // Calculate transcription duration if we have the start time
-                        if ($log->transcription_started_at) {
-                            $transcriptionDuration = $now->diffInSeconds($log->transcription_started_at);
-                            $logUpdateData['transcription_duration_seconds'] = $transcriptionDuration;
+                        // Find or create transcription log
+                        if (!$log) {
+                            $log = TranscriptionLog::firstOrCreate(
+                                ['video_id' => $video->id],
+                                [
+                                    'job_id' => $video->id,
+                                    'status' => 'processing',
+                                    'started_at' => $now,
+                                ]
+                            );
                         }
                         
-                        $log->update($logUpdateData);
-                    }
-                    
-                    // If we have transcript data, also trigger terminology recognition
-                    if (isset($responseData['transcript_text']) || 
-                        (isset($responseData['transcript_path']) && file_exists($responseData['transcript_path']))) {
+                        // Update timing information for audio extraction
+                        $log->update([
+                            'audio_extraction_completed_at' => $now,
+                            'audio_file_size' => $responseData['audio_size_bytes'] ?? null,
+                            'audio_duration_seconds' => $responseData['duration_seconds'] ?? null,
+                            'progress_percentage' => 50, // Audio extraction complete, now 50% done
+                        ]);
                         
-                        // Double-check that the transcript path has been saved to the database
-                        // and the file actually exists before triggering terminology
-                        $refreshedVideo = Video::find($video->id);
-                        
-                        if (empty($refreshedVideo->transcript_path)) {
-                            Log::warning('Skipping automatic terminology recognition - transcript_path not saved in database yet', [
-                                'video_id' => $video->id,
-                                'transcript_path_in_response' => $responseData['transcript_path'] ?? null,
-                                'file_exists' => isset($responseData['transcript_path']) ? file_exists($responseData['transcript_path']) : false
+                        // Calculate audio extraction duration if we have the start time
+                        if ($log->audio_extraction_started_at) {
+                            $extractionDuration = $now->diffInSeconds($log->audio_extraction_started_at);
+                            $log->update([
+                                'audio_extraction_duration_seconds' => $extractionDuration
                             ]);
-                            
-                            // Make sure transcript_path is updated in the database
-                            if (isset($responseData['transcript_path']) && file_exists($responseData['transcript_path'])) {
-                                $refreshedVideo->update([
-                                    'transcript_path' => $responseData['transcript_path']
-                                ]);
-                                
-                                Log::info('Updated transcript_path in database before terminology recognition', [
-                                    'video_id' => $video->id,
-                                    'transcript_path' => $responseData['transcript_path']
-                                ]);
+                        }
+                        
+                        // Audio extraction is complete, trigger transcription service
+                        $this->triggerTranscription($video->id);
+                    }
+                    
+                    // Transcription completed
+                    if (isset($responseData['transcript_path'])) {
+                        $videoData['transcript_path'] = $responseData['transcript_path'];
+                        
+                        // If there's a transcript text in the response, save it
+                        if (isset($responseData['transcript_text'])) {
+                            $videoData['transcript_text'] = $responseData['transcript_text'];
+                        } else if (isset($responseData['transcript_path']) && file_exists($responseData['transcript_path'])) {
+                            // Try to read the transcript file if it exists
+                            try {
+                                $videoData['transcript_text'] = file_get_contents($responseData['transcript_path']);
+                            } catch (\Exception $e) {
+                                // Log error but continue
+                                Log::error('Failed to read transcript file: ' . $e->getMessage());
                             }
                         }
                         
+                        // If there's a transcript.json file, save its contents to the database
+                        $jsonPath = dirname($responseData['transcript_path']) . '/transcript.json';
+                        if (file_exists($jsonPath)) {
+                            try {
+                                $jsonContent = file_get_contents($jsonPath);
+                                $videoData['transcript_json'] = json_decode($jsonContent, true);
+                            } catch (\Exception $e) {
+                                Log::error('Failed to read transcript JSON file: ' . $e->getMessage());
+                            }
+                        }
+                        
+                        // If there's a transcript.srt file, save its contents to the database
+                        $srtPath = dirname($responseData['transcript_path']) . '/transcript.srt';
+                        if (file_exists($srtPath)) {
+                            try {
+                                $videoData['transcript_srt'] = file_get_contents($srtPath);
+                            } catch (\Exception $e) {
+                                Log::error('Failed to read transcript SRT file: ' . $e->getMessage());
+                            }
+                        }
+                        
+                        // Always set to 'transcribed' when transcript is processed, so terminology can run
+                        // Unless this is a terminology callback that's trying to mark it completed
+                        if (!$isTerminologyCallback && $request->status !== 'completed') {
+                            $videoData['status'] = 'transcribed';
+                            Log::info('Setting status to transcribed to enable terminology processing', [
+                                'video_id' => $video->id,
+                                'previous_status' => $video->status,
+                                'has_transcript' => true,
+                                'transcript_path' => $responseData['transcript_path']
+                            ]);
+                        }
+                        
+                        // Update transcription log with completion data
+                        if ($log) {
+                            $logUpdateData = [
+                                'status' => $videoData['status'], // Use the same status we're setting on the video
+                                'transcription_completed_at' => $now,
+                                'progress_percentage' => 75 // Transcription done, waiting for terminology (75%)
+                            ];
+                            
+                            // Calculate transcription duration if we have the start time
+                            if ($log->transcription_started_at) {
+                                $transcriptionDuration = $now->diffInSeconds($log->transcription_started_at);
+                                $logUpdateData['transcription_duration_seconds'] = $transcriptionDuration;
+                            }
+                            
+                            $log->update($logUpdateData);
+                        }
+                    }
+                    
+                    // Music term recognition completed (update to use terminology fields)
+                    if (isset($responseData['music_terms_json_path'])) {
+                        $videoData['terminology_path'] = $responseData['music_terms_json_path'];
+                        $videoData['terminology_count'] = $responseData['term_count'] ?? 0;
+                        $videoData['has_terminology'] = true;
+                        $videoData['status'] = 'completed'; // Now it's safe to mark as completed
+                        
+                        // Add detailed log to debug terminology callback processing
+                        Log::info('Processing terminology recognition callback', [
+                            'video_id' => $video->id,
+                            'previous_status' => $video->status,
+                            'new_status' => 'completed',
+                            'has_terminology' => true,
+                            'term_count' => $responseData['term_count'] ?? 0,
+                            'terminology_path' => $responseData['music_terms_json_path'],
+                            'response_data' => $responseData
+                        ]);
+                        
+                        // Save category breakdown as metadata
+                        if (isset($responseData['categories'])) {
+                            $videoData['terminology_metadata'] = [
+                                'categories' => $responseData['categories'],
+                                'service_timestamp' => $responseData['service_timestamp'] ?? now()->toIso8601String(),
+                            ];
+                        }
+                        
+                        // Save the terminology JSON file content to database
+                        if (file_exists($responseData['music_terms_json_path'])) {
+                            try {
+                                $jsonContent = file_get_contents($responseData['music_terms_json_path']);
+                                $videoData['terminology_json'] = json_decode($jsonContent, true);
+                            } catch (\Exception $e) {
+                                Log::error('Failed to read terminology JSON file: ' . $e->getMessage());
+                            }
+                        }
+                        
+                        // Update transcription log with completion data
+                        if ($log) {
+                            $musicTermsUpdateData = [
+                                'status' => 'completed',
+                                'music_term_recognition_completed_at' => $now,
+                                'music_term_count' => $responseData['term_count'] ?? 0,
+                                'completed_at' => $now,
+                                'progress_percentage' => 100
+                            ];
+                            
+                            // Calculate music term recognition duration if we have the start time
+                            if ($log->music_term_recognition_started_at) {
+                                $musicTermDuration = $now->diffInSeconds($log->music_term_recognition_started_at);
+                                $musicTermsUpdateData['music_term_recognition_duration_seconds'] = $musicTermDuration;
+                            }
+                            
+                            // Calculate total duration from start 
+                            if ($log->started_at) {
+                                $totalDuration = $now->diffInSeconds($log->started_at);
+                                $musicTermsUpdateData['total_processing_duration_seconds'] = $totalDuration;
+                            }
+                            
+                            $log->update($musicTermsUpdateData);
+                        }
+
+                        // Log successful processing
+                        Log::info('Successfully processed terminology recognition', [
+                            'video_id' => $video->id,
+                            'term_count' => $responseData['term_count'] ?? 0,
+                            'path' => $responseData['music_terms_json_path']
+                        ]);
+                    }
+                }
+
+                // Force 'completed' status for videos that have finished terminology processing or have terminology data
+                if (($video->status === 'transcribed' || $video->status === 'processing_music_terms') && 
+                    ((isset($videoData['has_terminology']) && $videoData['has_terminology']) || $video->has_terminology)) {
+                    $videoData['status'] = 'completed';
+                    Log::info('Forcing status update to completed after terminology recognition', [
+                        'video_id' => $video->id,
+                        'previous_status' => $video->status,
+                        'new_status' => 'completed'
+                    ]);
+                }
+
+                // Add debug logging for all videos that are in a strange state
+                if ($video->has_terminology && $video->status !== 'completed') {
+                    Log::warning('Video with terminology is not in completed state', [
+                        'video_id' => $video->id, 
+                        'status' => $video->status,
+                        'has_terminology' => $video->has_terminology,
+                        'has_music_terms' => $video->has_music_terms
+                    ]);
+                }
+
+                // Log the final status value right before saving
+                Log::info('Final status value before database update', [
+                    'video_id' => $video->id,
+                    'original_status' => $video->status,
+                    'new_status' => $videoData['status'],
+                    'is_terminology_callback' => $isTerminologyCallback,
+                    'request_status' => $request->status,
+                ]);
+
+                // Commit the database update from within the transaction
+                $video->update($videoData);
+                
+                // If there was no log but we have a video, create a log entry for it
+                if (!$log) {
+                    TranscriptionLog::create([
+                        'job_id' => $jobId,
+                        'video_id' => $video->id,
+                        'status' => $videoData['status'], // Use the same status we set on the video
+                        'response_data' => $request->response_data,
+                        'error_message' => $request->error_message,
+                        'completed_at' => $request->completed_at ?? $now,
+                    ]);
+                }
+                
+                // Only trigger terminology recognition after the transcription is finished and it's safe to do so
+                // We wait for the transaction to finish first to avoid race conditions
+                if (isset($responseData['transcript_path']) && 
+                    !$isTerminologyCallback && 
+                    $videoData['status'] === 'transcribed') {
+                    
+                    try {
                         // Fetch the video again to ensure we have the latest data
                         $videoForTerminology = Video::find($video->id);
                         
-                        // Check again if we have a transcript path
+                        // Check if we have a transcript path
                         if (!empty($videoForTerminology->transcript_path) && file_exists($videoForTerminology->transcript_path)) {
-                            // Trigger terminology recognition in the background
-                            try {
-                                Log::info('Automatically triggering terminology recognition after transcription', [
-                                    'video_id' => $video->id,
-                                    'transcript_path' => $videoForTerminology->transcript_path,
-                                    'transcript_exists' => file_exists($videoForTerminology->transcript_path)
+                            // Schedule the task to run after this transaction is committed
+                            DB::afterCommit(function () use ($video) {
+                                Log::info('Automatically triggering terminology recognition after transcription in afterCommit', [
+                                    'video_id' => $video->id
                                 ]);
                                 
-                                $this->triggerTerminologyRecognition($video->id);
-                            } catch (\Exception $e) {
-                                // Just log the error but don't fail the whole process
-                                Log::error('Failed to trigger terminology recognition: ' . $e->getMessage(), [
-                                    'video_id' => $video->id,
-                                    'error' => $e->getMessage(),
-                                    'transcript_path' => $videoForTerminology->transcript_path
-                                ]);
-                                
-                                // If terminology recognition fails, mark as completed
-                                $videoData['status'] = 'completed';
-                                
-                                if ($log) {
-                                    $log->update([
-                                        'status' => 'completed',
-                                        'completed_at' => $now,
-                                        'progress_percentage' => 100
-                                    ]);
-                                }
-                            }
-                        } else {
-                            // No transcript available, skip terminology recognition and mark as completed
-                            Log::warning('Skipping terminology recognition due to missing transcript', [
-                                'video_id' => $video->id,
-                                'transcript_path' => $videoForTerminology->transcript_path ?? null,
-                                'file_exists' => !empty($videoForTerminology->transcript_path) ? file_exists($videoForTerminology->transcript_path) : false
-                            ]);
-                            
-                            // Mark as completed since we can't do terminology
-                            $videoData['status'] = 'completed';
-                            
-                            if ($log) {
-                                $log->update([
-                                    'status' => 'completed',
-                                    'completed_at' => $now,
-                                    'progress_percentage' => 100
-                                ]);
-                            }
+                                // Use a queued job rather than direct call to avoid race conditions
+                                TerminologyRecognitionJob::dispatch($video)->delay(now()->addSeconds(2));
+                            });
                         }
+                    } catch (\Exception $e) {
+                        // Just log the error but don't fail the whole process
+                        Log::error('Failed to schedule terminology recognition: ' . $e->getMessage(), [
+                            'video_id' => $video->id,
+                            'error' => $e->getMessage()
+                        ]);
                     }
-                }
-                
-                // Music term recognition completed (update to use terminology fields)
-                if (isset($responseData['music_terms_json_path'])) {
-                    $videoData['terminology_path'] = $responseData['music_terms_json_path'];
-                    $videoData['terminology_count'] = $responseData['term_count'] ?? 0;
-                    $videoData['has_terminology'] = true;
-                    $videoData['status'] = 'completed'; // Now it's safe to mark as completed
-                    
-                    // Save category breakdown as metadata
-                    if (isset($responseData['categories'])) {
-                        $videoData['terminology_metadata'] = [
-                            'categories' => $responseData['categories'],
-                            'service_timestamp' => $responseData['service_timestamp'] ?? now()->toIso8601String(),
-                        ];
-                    }
-                    
-                    // Save the terminology JSON file content to database
-                    if (file_exists($responseData['music_terms_json_path'])) {
-                        try {
-                            $jsonContent = file_get_contents($responseData['music_terms_json_path']);
-                            $videoData['terminology_json'] = json_decode($jsonContent, true);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to read terminology JSON file: ' . $e->getMessage());
-                        }
-                    }
-                    
-                    // Update transcription log with completion data
-                    if ($log) {
-                        $musicTermsUpdateData = [
-                            'status' => 'completed',
-                            'music_term_recognition_completed_at' => $now,
-                            'music_term_count' => $responseData['term_count'] ?? 0,
-                            'completed_at' => $now,
-                            'progress_percentage' => 100
-                        ];
-                        
-                        // Calculate music term recognition duration if we have the start time
-                        if ($log->music_term_recognition_started_at) {
-                            $musicTermDuration = $now->diffInSeconds($log->music_term_recognition_started_at);
-                            $musicTermsUpdateData['music_term_recognition_duration_seconds'] = $musicTermDuration;
-                        }
-                        
-                        // Calculate total duration from start 
-                        if ($log->started_at) {
-                            $totalDuration = $now->diffInSeconds($log->started_at);
-                            $musicTermsUpdateData['total_processing_duration_seconds'] = $totalDuration;
-                        }
-                        
-                        $log->update($musicTermsUpdateData);
-                    }
-
-                    // Log successful processing
-                    Log::info('Successfully processed terminology recognition', [
-                        'video_id' => $video->id,
-                        'term_count' => $responseData['term_count'] ?? 0,
-                        'path' => $responseData['music_terms_json_path']
-                    ]);
                 }
             }
 
-            $video->update($videoData);
-            
-            // If there was no log but we have a video, create a log entry for it
-            if (!$log) {
-                TranscriptionLog::create([
-                    'job_id' => $jobId,
-                    'video_id' => $video->id,
-                    'status' => $request->status,
-                    'response_data' => $request->response_data,
-                    'error_message' => $request->error_message,
-                    'completed_at' => $request->completed_at ?? $now,
-                ]);
-            }
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Job status updated successfully',
-        ]);
+            return response()->json([
+                'success' => true,
+                'message' => 'Job status updated successfully',
+            ]);
+        });
     }
 
     /**
@@ -458,40 +525,34 @@ class TranscriptionController extends Controller
     protected function triggerTerminologyRecognition($videoId)
     {
         try {
-            // Find the video
-            $video = Video::findOrFail($videoId);
+            // Instead of duplicating logic, use the same controller as the API endpoint
+            $terminologyController = new \App\Http\Controllers\Api\TerminologyController();
+            $request = new \Illuminate\Http\Request();
             
-            // Check if the video has a transcript before proceeding
-            if (empty($video->transcript_path)) {
-                Log::warning('Cannot trigger terminology recognition: No transcript available', [
-                    'video_id' => $videoId,
-                    'status' => $video->status
+            // Call the process method directly
+            $response = $terminologyController->process($request, $videoId);
+            
+            // If the response is successful, return true
+            if ($response && $response->status() === 200) {
+                Log::info('Successfully triggered terminology recognition via controller', [
+                    'video_id' => $videoId
                 ]);
-                return false;
+                return true;
             }
             
-            // Update status to indicate we're processing terminology
-            $video->update([
-                'status' => 'processing_music_terms' // Keep this for backward compatibility
-            ]);
+            // If we get here, something went wrong
+            $responseData = [];
+            if ($response) {
+                $responseData = json_decode($response->getContent(), true);
+            }
+            $errorMessage = $responseData['message'] ?? 'Unknown error';
             
-            // Log that we're dispatching the job
-            Log::info('Dispatching terminology recognition job for video', [
+            Log::error('Failed to trigger terminology recognition: ' . $errorMessage, [
                 'video_id' => $videoId,
-                'transcript_path' => $video->transcript_path,
-                'batch_upload' => $video->metadata['batch_upload'] ?? false,
-                'batch_index' => $video->metadata['batch_index'] ?? null
+                'response' => $responseData
             ]);
             
-            // Dispatch with higher priority for batch uploads
-            if (isset($video->metadata['batch_upload']) && $video->metadata['batch_upload']) {
-                \App\Jobs\TerminologyRecognitionJob::dispatch($video)->onQueue('high');
-            } else {
-                // Dispatch terminology recognition job to the queue
-                \App\Jobs\TerminologyRecognitionJob::dispatch($video);
-            }
-            
-            return true;
+            return false;
         } catch (\Exception $e) {
             $errorMessage = 'Exception when dispatching terminology recognition job: ' . $e->getMessage();
             Log::error($errorMessage, [

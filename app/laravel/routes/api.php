@@ -39,13 +39,6 @@ Route::get('/transcription/{jobId}', [TranscriptionController::class, 'getJobSta
 Route::post('/transcription/{jobId}/status', [TranscriptionController::class, 'updateJobStatus']);
 Route::get('/test-python-service', [TranscriptionController::class, 'testPythonService']);
 
-// Music term recognition endpoints
-Route::get('/videos/{id}/music-terms', [MusicTermController::class, 'show'])->name('api.music-terms.show');
-Route::post('/videos/{id}/music-terms', [MusicTermController::class, 'process'])->name('api.music-terms.process');
-
-// Trigger music term recognition (keep for backward compatibility)
-Route::post('/videos/{id}/music-terms', [MusicTermController::class, 'triggerRecognition']);
-
 // New terminology routes (using the new controller)
 Route::get('/videos/{id}/terminology', [TerminologyController::class, 'show'])->name('api.terminology.show');
 Route::post('/videos/{id}/terminology', [TerminologyController::class, 'triggerRecognition'])->name('api.terminology.process');
@@ -273,6 +266,8 @@ Route::get('/videos/{id}/terminology-json', function($id) {
     
     return response()->json($video->terminology_json);
 });
+
+Route::get('/music-terms/export', [\App\Http\Controllers\Api\TerminologyController::class, 'export']);
 
 // Course Analysis API
 Route::prefix('courses')->group(function() {

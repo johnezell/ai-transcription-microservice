@@ -58,16 +58,7 @@ const submit = () => {
                                 <div v-if="form.errors.name" class="text-red-500 text-sm mt-1">{{ form.errors.name }}</div>
                             </div>
 
-                            <div>
-                                <label for="subject_area" class="block text-sm font-medium text-gray-700">Subject Area</label>
-                                <input
-                                    id="subject_area"
-                                    v-model="form.subject_area"
-                                    type="text"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                />
-                                <div v-if="form.errors.subject_area" class="text-red-500 text-sm mt-1">{{ form.errors.subject_area }}</div>
-                            </div>
+                           
 
                             <div>
                                 <label for="description" class="block text-sm font-medium text-gray-700">Description</label>

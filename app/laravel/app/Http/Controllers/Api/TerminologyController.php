@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use App\Models\TermCategory as Category;
+use App\Models\Term;
 
 class TerminologyController extends Controller
 {
@@ -210,4 +212,19 @@ class TerminologyController extends Controller
         
         return $this->process($request, $id);
     }
+
+    public function export(){
+        $categories = Category::with(['terms'])->get();
+
+        $result = [];
+
+        foreach ($categories as $category) {
+            $terms = $category->terms->pluck('term')->toArray();    
+            $result[$category->slug] = $terms;
+        }
+
+        return response()->json($result);
+    }
+
+    
 } 

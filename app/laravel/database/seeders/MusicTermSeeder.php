@@ -17,107 +17,82 @@ class MusicTermSeeder extends Seeder
         // Define categories with their colors
         $categories = [
             [
-                'name' => 'Guitar Techniques',
-                'slug' => 'guitar_techniques',
-                'description' => 'Techniques used for playing guitar',
+                'name' => 'Music Genres',
+                'slug' => 'music_genres',
+                'description' => 'Music genres',
                 'color_class' => 'blue',
                 'display_order' => 1,
             ],
             [
-                'name' => 'Guitar Parts',
-                'slug' => 'guitar_parts',
-                'description' => 'Parts and components of a guitar',
+                'name' => 'Musical Instruments',
+                'slug' => 'musical_instruments',
+                'description' => 'Musical instruments',
                 'color_class' => 'green',
                 'display_order' => 2,
             ],
             [
-                'name' => 'Music Theory',
-                'slug' => 'music_theory',
-                'description' => 'Music theory concepts and terminology',
+                'name' => 'Skill Levels',
+                'slug' => 'skill_levels',
+                'description' => 'Skill levels',
                 'color_class' => 'purple',
                 'display_order' => 3,
             ],
             [
-                'name' => 'Music Equipment',
-                'slug' => 'music_equipment',
-                'description' => 'Music equipment and gear',
+                'name' => 'Music Topics',
+                'slug' => 'music_topics',
+                'description' => 'Music topics / techniques',
                 'color_class' => 'orange',
                 'display_order' => 4,
             ],
             [
-                'name' => 'Performance Techniques',
-                'slug' => 'performance_techniques',
-                'description' => 'Performance techniques for various instruments',
-                'color_class' => 'pink',
-                'display_order' => 5,
-            ],
-            [
-                'name' => 'Musical Genres',
-                'slug' => 'musical_genres',
-                'description' => 'Musical styles and genres',
+                'name' => 'TrueFire Series',
+                'slug' => 'truefire_series',
+                'description' => 'TrueFire Series',
                 'color_class' => 'indigo',
                 'display_order' => 6,
-            ],
-            [
-                'name' => 'Recording Terms',
-                'slug' => 'recording_terms',
-                'description' => 'Recording and production terminology',
-                'color_class' => 'cyan',
-                'display_order' => 7,
-            ],
+            ]
         ];
 
         // Define terms by category
         $termsByCategory = [
-            'guitar_techniques' => [
-                'palm muting', 'hammer-on', 'pull-off', 'bending', 'vibrato', 
-                'slide', 'tapping', 'sweep picking', 'tremolo picking', 'harmonics',
-                'pinch harmonic', 'natural harmonic', 'artificial harmonic', 'legato', 
-                'staccato', 'bend', 'release', 'riff', 'lick', 'arpeggio', 'sweep'
+            'music_genres' => [
+                'acoustic','acoustic blues','americana','acoustic rock','fingerstyle','classical','country','country rock','blues','folk','bluegrass','classic rock','gospel','jam band','multi genre','blues-rock','rock','country blues','modern country','western swing','funk','jazz','r&b','soul','jazz blues','metal','modern rock','hard rock','latin rock','gypsy jazz','progressive rock','funk rock','surf rock','world music','brazilian','celtic','flamenco','reggae','fingerstyle blues','singer-songwriter','roots rock','chicago blues','jazz rock','modern blues','british blues','jump blues','smooth jazz','southern rock','texas blues','honky-tonk','rockabilly','jazz funk','bebop','fingerstyle jazz','modern jazz','soul jazz','latin','latin jazz','swing jazz'
             ],
-            'guitar_parts' => [
-                'bridge', 'neck', 'fretboard', 'pickup', 'humbucker', 'single-coil', 
-                'tuner', 'headstock', 'nut', 'fret', 'string', 'whammy bar', 'tremolo bar',
-                'volume knob', 'tone knob', 'pickup selector', 'input jack', 'body'
+            'musical_instruments' => [
+                'acoustic guitar','guitar','electric guitar','acoustic bass','mandolin','fiddle','violin','electric bass','bass','12-string guitar','banjo','dobro','upright bass','drums','saxophone','daw','harmonica','ukulele'
             ],
-            'music_theory' => [
-                'chord', 'scale', 'mode', 'key', 'minor', 'major', 'pentatonic', 'blues scale',
-                'dominant', 'diminished', 'augmented', 'seventh', 'ninth', 'sus4', 'sus2',
-                'lydian', 'dorian', 'mixolydian', 'phrygian', 'locrian', 'ionian', 'aeolian'
+            'skill_levels' => [
+                'late beginner','intermediate','beginner','late intermediate','advanced'
             ],
-            'music_equipment' => [
-                'amplifier', 'amp', 'cabinet', 'effects pedal', 'distortion', 'overdrive', 
-                'reverb', 'delay', 'chorus', 'flanger', 'phaser', 'wah-wah', 'looper',
-                'compressor', 'equalizer', 'EQ', 'boost', 'buffer', 'noise gate'
+            'music_topics' => [
+               'home recording','daw','chords','scales','theory','chord melody','chord progressions','songs','fingerpicking','technique','rhythm','soloing','improvisation','alternate tunings','licks','picking','slide','effects','bass grooves','bass lines','applied theory','comping','reference','songwriting','ear training','modes','accompaniment','practice','sight-reading','vocals','looping','jamming','caged system','solo guitar'
             ],
-            'performance_techniques' => [
-                'vibrato', 'bend', 'release', 'slide', 'hammer-on', 'pull-off', 
-                'muting', 'palm muting', 'articulation', 'accent', 'staccato', 'legato',
-                'glissando', 'portamento'
-            ],
-            'musical_genres' => [
-                'rock', 'blues', 'jazz', 'classical', 'country', 'folk', 'bluegrass', 
-                'metal', 'heavy metal', 'punk', 'pop', 'r&b', 'soul', 'funk', 'disco'
-            ],
-            'recording_terms' => [
-                'studio', 'recording', 'mixing', 'mastering', 'production', 'engineer',
-                'producer', 'mic', 'microphone', 'condenser', 'dynamic', 'ribbon',
-                'preamp', 'console', 'mixing desk', 'DAW'
-            ],
+            'truefire_series' => [
+                'series','none','licks you must know','song courses','song lessons','handbook','practice plan','core skills','artist series','style of','deep dive','genre study','survival guides','for beginners','flying solo','a closer look','home recording','toolkit courses','foundry','songpacks','factory','masterclasses','jump start','greatest hits','play guitar','take 5','guidebook','essentials','play with fire','my guitar heroes','on location','bootcamps','solo factory','chord studies','guitar lab','multi-track jam packs','fakebooks','in the jam: single artist','live plus','play like','in the jam: full band','practice sessions','trading solos','focus on','premium song lessons','playbook','indie','guitar gym','jam night','JamPlay'
+            ]
         ];
 
         // Create categories
         foreach ($categories as $categoryData) {
-            $category = TermCategory::create($categoryData);
+            // Use firstOrCreate to prevent duplicate entries
+            $category = TermCategory::firstOrCreate(
+                ['slug' => $categoryData['slug']],
+                $categoryData
+            );
             
             // Create terms for this category
             if (isset($termsByCategory[$category->slug])) {
                 foreach ($termsByCategory[$category->slug] as $term) {
-                    Term::create([
-                        'category_id' => $category->id,
-                        'term' => $term,
-                        'active' => true,
-                    ]);
+                    // Use firstOrCreate for terms too
+                    Term::firstOrCreate(
+                        [
+                            'category_id' => $category->id,
+                            'term' => $term
+                        ],
+                        [
+                            'active' => true
+                        ]
+                    );
                 }
             }
         }

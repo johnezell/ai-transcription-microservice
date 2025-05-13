@@ -22,6 +22,22 @@ services:
       timeout: 5s
       retries: 20
 
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: aws-transcription-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+      - MYSQL_ROOT_PASSWORD=password
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-network
+
   laravel:
     build:
       context: .

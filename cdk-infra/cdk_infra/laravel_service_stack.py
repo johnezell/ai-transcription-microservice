@@ -97,8 +97,7 @@ class LaravelServiceStack(Stack):
             assign_public_ip=False, # No public IP needed as per plan (VPN access)
             desired_count=1, # Start with one task
             service_name=f"{app_name}-laravel-service",
-            # Enable ECS Exec for debugging if needed (requires SSM agent permissions in task role)
-            # enable_execute_command=True 
+            enable_execute_command=True # Enable ECS Exec
         )
 
         # Add any outputs if needed, e.g., service name

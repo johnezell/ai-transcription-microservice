@@ -95,25 +95,41 @@ class VideoController extends Controller
                 // Use the video UUID as the job ID for consistent folder structure
                 $jobId = $video->id;
                 
-                // Create job directory structure
                 $s3JobPath = "s3/jobs/{$jobId}";
-                Storage::disk('public')->makeDirectory($s3JobPath);
+                // Removing explicit makeDirectory for S3, as prefixes are created with object puts.
+                // Storage::disk('s3')->makeDirectory($s3JobPath); 
                 
                 // Store the video with a standardized filename
                 $videoFilename = "video.{$extension}";
-                $videoPath = "{$s3JobPath}/{$videoFilename}";
-                
-                // Store the file
-                $result = Storage::disk('public')->putFileAs($s3JobPath, $file, $videoFilename);
-                
-                if (!$result) {
-                    throw new \Exception("Failed to store video file: {$originalFilename}");
+                $fullS3Key = "{$s3JobPath}/{$videoFilename}"; // Explicit S3 key for the object
+
+                // Get a stream from the uploaded file
+                $fileStream = fopen($file->getRealPath(), 'r');
+
+                if (!$fileStream) {
+                    throw new \Exception("Failed to open stream for uploaded file: {$originalFilename}");
+                }
+
+                // Store the file stream to S3 using put()
+                $result = Storage::disk('s3')->put(
+                    $fullS3Key,
+                    $fileStream,
+                    ['ACL' => 'bucket-owner-full-control'] // Explicitly set ACL for bucket owner again
+                );
+
+                // Close the stream if it was opened
+                if (is_resource($fileStream)) {
+                    fclose($fileStream);
                 }
                 
-                // Update the video record with the storage path
+                if (!$result) { // Storage::put() returns true on success, false on failure
+                    throw new \Exception("Failed to store video file to S3 (using put method): {$originalFilename}");
+                }
+                
+                // Update the video record with the S3 storage path (key)
                 $video->update([
-                    'storage_path' => $videoPath,
-                    's3_key' => $videoFilename,
+                    'storage_path' => $fullS3Key, // Use the explicit S3 key
+                    's3_key' => $videoFilename, 
                     'status' => 'uploaded',
                 ]);
                 
@@ -121,7 +137,7 @@ class VideoController extends Controller
                 Log::info('Video file upload', [
                     'video_id' => $video->id,
                     'original_filename' => $originalFilename,
-                    'storage_path' => $videoPath,
+                    'storage_path' => $fullS3Key,
                     'file_size' => $file->getSize(),
                     'batch_index' => $index,
                 ]);
@@ -198,19 +214,24 @@ class VideoController extends Controller
             // Get job directory path based on video ID
             $jobPath = "s3/jobs/{$video->id}";
             
-            // Check if the job directory exists
-            if (Storage::disk('public')->exists($jobPath)) {
-                // Delete the entire job directory with all its contents
-                Storage::disk('public')->deleteDirectory($jobPath);
-                Log::info('Deleted job directory for video', [
+            // Check if the job directory exists on S3
+            // Note: S3 doesn't have true directories. deleteDirectory will delete objects under the prefix.
+            // We can check if any files exist under that prefix as a proxy for the directory existing.
+            $filesInJobPath = Storage::disk('s3')->files($jobPath);
+
+            if (!empty($filesInJobPath)) {
+                // Delete the entire job directory (all objects under the prefix) from S3
+                Storage::disk('s3')->deleteDirectory($jobPath);
+                Log::info('Deleted job directory from S3 for video', [
                     'video_id' => $video->id,
                     'job_path' => $jobPath
                 ]);
             } else {
-                // Fallback to just deleting the video file if job directory doesn't exist
-                if ($video->storage_path && Storage::disk('public')->exists($video->storage_path)) {
-                    Storage::disk('public')->delete($video->storage_path);
-                    Log::info('Deleted video file only', [
+                // Fallback to just deleting the video file if job directory doesn't exist or is empty
+                // This check might be redundant if storage_path is always within jobPath
+                if ($video->storage_path && Storage::disk('s3')->exists($video->storage_path)) {
+                    Storage::disk('s3')->delete($video->storage_path);
+                    Log::info('Deleted video file only from S3', [
                         'video_id' => $video->id,
                         'storage_path' => $video->storage_path
                     ]);
@@ -239,9 +260,9 @@ class VideoController extends Controller
     public function requestTranscription(Video $video)
     {
         try {
-            // Check if file exists
-            if (!Storage::disk('public')->exists($video->storage_path)) {
-                Log::error('Video file not found', [
+            // Check if file exists on S3
+            if (!$video->storage_path || !Storage::disk('s3')->exists($video->storage_path)) {
+                Log::error('Video file not found on S3', [
                     'video_id' => $video->id,
                     'storage_path' => $video->storage_path
                 ]);

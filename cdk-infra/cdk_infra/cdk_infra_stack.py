@@ -180,7 +180,8 @@ class CdkInfraStack(Stack):
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             versioned=True,
             removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True # Allows deletion of non-empty bucket on destroy (for prototype)
+            auto_delete_objects=True, # Correct property for S3 Bucket to empty on delete
+            object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED # Enable ACLs, bucket owner still preferred for ownership
         )
         self.app_data_bucket = app_data_bucket
 

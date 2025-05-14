@@ -17,12 +17,21 @@ chmod -R 777 /var/www/bootstrap/cache
 # Ensure we are in the Laravel directory for artisan commands
 cd /var/www
 
-echo "Clearing and caching Laravel optimizations..."
-php artisan optimize:clear
+echo "Clearing all Laravel caches..."
+php artisan config:clear
+php artisan route:clear
+php artisan view:clear
+php artisan cache:clear
+php artisan event:clear # Clear event cache too, just in case
+# php artisan optimize:clear # This is a broader command, let's be specific first
+echo "Laravel caches cleared."
+
+echo "Re-caching configurations (config, route, view)..."
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
-echo "Laravel optimizations completed."
+# php artisan event:cache # Only if you use event discovery and want to cache it
+echo "Laravel configurations re-cached."
 
 echo "Running database migrations..."
 # Ensure we are in the Laravel directory (WORKDIR should handle this, but for safety)

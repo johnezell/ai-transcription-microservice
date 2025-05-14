@@ -16,9 +16,9 @@ The application consists of the following components:
 
 1. **Container Repositories** - Amazon ECR for storing Docker images
 2. **Container Orchestration** - Amazon ECS for running containers
-3. **Database** - Amazon RDS MySQL as a replacement for the local MySQL container
-4. **Shared Storage** - Amazon EFS for shared storage across services
-5. **Load Balancing** - Application Load Balancer for routing traffic
+3. **Database** - Amazon RDS MySQL (Aurora Serverless v2) for the application database
+4. **Shared Storage** - Amazon S3 for storing videos, intermediate files, and final transcriptions/data.
+5. **Load Balancing** - N/A (Direct IP access for Laravel prototype)
 6. **Networking** - Using existing VPC and subnets
 
 ## Pre-existing Resources
@@ -41,19 +41,20 @@ We will use the following pre-existing network infrastructure:
 |-----------|--------|----------------|
 | **Setup & Configuration** |  |  |
 | ✅ Create deployment plan | Completed | Initial plan document created |
-| ⬜ Set up CDK project structure |  | e.g., `cdk init app --language typescript` |
-| ⬜ Configure CDK environment (bootstrap) |  | `cdk bootstrap aws://ACCOUNT-NUMBER/REGION` |
+| ✅ Set up CDK project structure | Completed | `cdk init app --language python` in `cdk-infra` dir |
+| ✅ Configure CDK environment (bootstrap) | Completed | `cdk bootstrap` run with trust for lookups |
 | ⬜ Create deployment menu script | In Progress | Basic structure created, CDK commands to be added |
-| ⬜ Configure Docker for application services | In Progress | Dockerfiles for services, ECR push |
+| ⬜ Configure Docker for application services | In Progress | Dockerfiles for services, ECR push pending |
 | **Infrastructure Deployment** |  |  |
-| ⬜ Network configuration |  |  |
-| ⬜ Security groups |  |  |
-| ⬜ ECR repositories |  |  |
-| ⬜ EFS file system |  |  |
-| ⬜ RDS database |  |  |
-| ⬜ ECS cluster |  |  |
-| ⬜ Load balancer |  |  |
-| ⬜ IAM roles and policies |  |  |
+| ✅ Network configuration | Completed | VPC imported via `Vpc.from_lookup` |
+| ✅ Security groups | Completed | Laravel, Internal Services, RDS SGs defined and deployed. VPN access configured. EFS SG removed. |
+| ✅ ECR repositories | Completed | All 4 ECR repos defined with lifecycle policies and deployed. |
+| ✅ S3 Bucket | Completed | Application data S3 bucket defined and deployed. |
+| ⬜ EFS file system | N/A | Replaced by S3 for primary data storage. |
+| ✅ RDS database | Completed | Aurora Serverless v2 deployed and connection verified. |
+| ✅ ECS cluster | Completed | ECS Cluster defined and deployed. |
+| ⬜ Load balancer | N/A | Decided to use direct IP access for prototype. |
+| ✅ IAM roles and policies | Completed | ECS Task Execution Role and Shared App Task Role (with S3 bucket-specific permissions) defined and deployed. |
 | **Service Deployment** |  |  |
 | ⬜ Laravel service |  |  |
 | ⬜ Audio extraction service |  |  |
@@ -102,19 +103,19 @@ We will use the following pre-existing network infrastructure:
 
 ### 5. Database (using `aws-cdk-lib/aws-rds`)
 - Create an RDS MySQL instance or Aurora Serverless cluster (`rds.DatabaseInstance` or `rds.ServerlessCluster`) in the private subnets.
-- Configure security groups to allow access from ECS services.
+- Configure security groups to allow access from ECS services and VPN.
 - Set up parameter groups, option groups, and backup policies as needed.
 
-### 6. Shared Storage (using `aws-cdk-lib/aws-efs`)
-- Create an EFS file system (`efs.FileSystem`) within the VPC.
-- Configure mount targets in the private subnets.
-- Set up access points (`efs.AccessPoint`) and security groups for controlled access from ECS tasks.
+### 6. Shared Storage (using `aws-cdk-lib/aws-s3`)
+- Create an S3 bucket (`s3.Bucket`) for application data (videos, intermediate files, results).
+- Configure bucket policies, public access block, versioning, and lifecycle rules as appropriate.
+- Ensure IAM task roles have appropriate permissions to read/write to this bucket.
 
 ### 7. Task Definitions (as part of ECS constructs)
 - Define task definitions implicitly or explicitly within ECS service constructs:
   - Container definitions (image from ECR, CPU, memory, port mappings).
+  - Environment variables (including secrets from AWS Secrets Manager or Systems Manager Parameter Store, S3 bucket name).
   - Volume configurations (EFS mounts).
-  - Environment variables (including secrets from AWS Secrets Manager or Systems Manager Parameter Store).
   - Logging configuration (to CloudWatch Logs).
 
 ### 8. ECS Services (using `aws-cdk-lib/aws-ecs` or `aws-cdk-lib/aws-ecs-patterns`)

@@ -9,6 +9,10 @@ from aws_cdk import (
     aws_iam as iam,
     aws_logs as logs,
     aws_rds as rds,
+    aws_secretsmanager as secretsmanager,
+    aws_s3 as s3,
+    Duration,
+    RemovalPolicy,
 )
 from constructs import Construct
 
@@ -18,6 +22,8 @@ class CdkInfraStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         app_name = "aws-transcription"
+        db_name = "appdb" # Database name for Aurora
+        # user_vpn_client_ip = "72.239.107.152/32" # User's VPN client IP - will be re-evaluated
 
         # Import the existing VPC using its ID
         # This lookup will require context to be populated in cdk.context.json
@@ -26,10 +32,10 @@ class CdkInfraStack(Stack):
             vpc_id="vpc-09422297ced61f9d2" # Your VPC ID from plan.md
         )
 
-        # Import existing VPN Security Group
-        vpn_sg = ec2.SecurityGroup.from_security_group_id(self, "ImportedVpnSg",
-            security_group_id="sg-0cb48fd65f65e8829"
-        )
+        # Removed import of sg-09a118ae14a5c0955 as a peer SG
+        # vpn_sg_inter_account = ec2.SecurityGroup.from_security_group_id(self, "ImportedVpnInterAccountSg",
+        #     security_group_id="sg-09a118ae14a5c0955" 
+        # )
 
         # Laravel ECS Task Security Group (for private access to Laravel)
         laravel_ecs_task_sg = ec2.SecurityGroup(self, "LaravelEcsTaskSecurityGroup",
@@ -45,7 +51,7 @@ class CdkInfraStack(Stack):
             allow_all_outbound=True
         )
 
-        # Now that both SGs are defined, add cross-referencing ingress rules:
+        # Now that base SGs are defined, add cross-referencing ingress rules:
 
         # Allow traffic from Internal Services to Laravel (e.g., on port 80)
         laravel_ecs_task_sg.add_ingress_rule(
@@ -53,11 +59,17 @@ class CdkInfraStack(Stack):
             connection=ec2.Port.tcp(80),
             description="Allow HTTP traffic from Internal Services to Laravel"
         )
-        # Allow traffic from VPN Security Group to Laravel (e.g., on port 80)
+        # Allow traffic from the TrueFire VPN Gateway IP to Laravel (e.g., on port 80)
         laravel_ecs_task_sg.add_ingress_rule(
-            peer=vpn_sg,
+            peer=ec2.Peer.ipv4(truefire_vpn_gateway_ip), 
             connection=ec2.Port.tcp(80),
-            description="Allow HTTP traffic from VPN Security Group to Laravel"
+            description="Allow HTTP from TrueFire VPN Gateway IP to Laravel"
+        )
+        # Allow traffic from specific user VPN client IP to Laravel (as a fallback or alternative path)
+        laravel_ecs_task_sg.add_ingress_rule(
+            peer=ec2.Peer.ipv4(user_vpn_client_ip),
+            connection=ec2.Port.tcp(80),
+            description="Allow HTTP from user VPN client IP to Laravel"
         )
 
         # Allow traffic from Laravel tasks to internal services on port 5000
@@ -73,11 +85,11 @@ class CdkInfraStack(Stack):
             description="Allow service-to-service communication on port 5000"
         )
 
-        # RDS Security Group
+        # RDS Security Group - Reverted to only allow internal service access pending VPN diagnosis
         rds_sg = ec2.SecurityGroup(self, "RdsSecurityGroup",
             vpc=vpc,
             description="Security group for the RDS database",
-            allow_all_outbound=True # Typically true, adjust if DB needs restricted outbound
+            allow_all_outbound=True
         )
         # Allow MySQL traffic from Laravel tasks
         rds_sg.add_ingress_rule(
@@ -91,65 +103,73 @@ class CdkInfraStack(Stack):
             connection=ec2.Port.tcp(3306),
             description="Allow MySQL traffic from Internal services"
         )
+        # Allow MySQL traffic from the TrueFire VPN Gateway IP
+        rds_sg.add_ingress_rule(
+            peer=ec2.Peer.ipv4(truefire_vpn_gateway_ip), 
+            connection=ec2.Port.tcp(3306),
+            description="Allow MySQL from TrueFire VPN Gateway IP"
+        )
+        # Allow MySQL traffic from specific user VPN client IP (as a fallback or alternative path)
+        rds_sg.add_ingress_rule(
+            peer=ec2.Peer.ipv4(user_vpn_client_ip),
+            connection=ec2.Port.tcp(3306),
+            description="Allow MySQL from user VPN client IP"
+        )
 
-        # EFS Security Group
-        efs_sg = ec2.SecurityGroup(self, "EfsSecurityGroup",
-            vpc=vpc,
-            description="Security group for the EFS file system",
-            allow_all_outbound=True
-        )
-        # Allow NFS traffic from Laravel tasks
-        efs_sg.add_ingress_rule(
-            peer=laravel_ecs_task_sg,
-            connection=ec2.Port.tcp(2049), # NFS port
-            description="Allow NFS traffic from Laravel tasks"
-        )
-        # Allow NFS traffic from Internal services
-        efs_sg.add_ingress_rule(
-            peer=internal_services_sg,
-            connection=ec2.Port.tcp(2049), # NFS port
-            description="Allow NFS traffic from Internal services"
-        )
+        # EFS Security Group and related EFS resources are removed as per decision to use S3.
 
         # ECR Repositories
         laravel_repo = ecr.Repository(self, "LaravelEcrRepo",
             repository_name=f"{app_name}-laravel",
             image_scan_on_push=True,
+            removal_policy=RemovalPolicy.DESTROY, # For prototype
+            auto_delete_images=True, # For prototype
             lifecycle_rules=[
                 ecr.LifecycleRule(description="Keep only 10 untagged images", max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(description="Keep last 30 tagged images", max_image_count=30, tag_status=ecr.TagStatus.ANY)
-            ],
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            ]
         )
 
         audio_extraction_repo = ecr.Repository(self, "AudioExtractionEcrRepo",
             repository_name=f"{app_name}-audio-extraction",
             image_scan_on_push=True,
+            removal_policy=RemovalPolicy.DESTROY, # For prototype
+            auto_delete_images=True, # For prototype
             lifecycle_rules=[
                 ecr.LifecycleRule(max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(max_image_count=30, tag_status=ecr.TagStatus.ANY)
-            ],
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            ]
         )
 
         transcription_service_repo = ecr.Repository(self, "TranscriptionServiceEcrRepo",
             repository_name=f"{app_name}-transcription-service",
             image_scan_on_push=True,
+            removal_policy=RemovalPolicy.DESTROY, # For prototype
+            auto_delete_images=True, # For prototype
             lifecycle_rules=[
                 ecr.LifecycleRule(max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(max_image_count=30, tag_status=ecr.TagStatus.ANY)
-            ],
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            ]
         )
 
         music_term_repo = ecr.Repository(self, "MusicTermEcrRepo",
             repository_name=f"{app_name}-music-term-recognition",
             image_scan_on_push=True,
+            removal_policy=RemovalPolicy.DESTROY, # For prototype
+            auto_delete_images=True, # For prototype
             lifecycle_rules=[
                 ecr.LifecycleRule(max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(max_image_count=30, tag_status=ecr.TagStatus.ANY)
-            ],
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            ]
+        )
+
+        # S3 Bucket for application data
+        app_data_bucket = s3.Bucket(self, "AppDataBucket",
+            bucket_name=f"{app_name}-data-{self.account}-{self.region}", # Globally unique name
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            versioned=True,
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True # Allows deletion of non-empty bucket on destroy (for prototype)
         )
 
         # ECS Cluster
@@ -172,15 +192,8 @@ class CdkInfraStack(Stack):
             assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
             description="Shared task role for Laravel and Python services"
         )
-        shared_task_role.add_to_policy(iam.PolicyStatement(
-            actions=[
-                "s3:GetObject",
-                "s3:PutObject",
-                "s3:ListBucket",
-                "s3:DeleteObject"
-            ],
-            resources=["arn:aws:s3:::*/*"] # Consider scoping this down to specific buckets
-        ))
+        # Grant S3 permissions to the specific app data bucket
+        app_data_bucket.grant_read_write(shared_task_role)
         # Transcribe permissions removed as per user request for self-hosted Whisper AI
 
         # CloudWatch Log Groups
@@ -189,38 +202,41 @@ class CdkInfraStack(Stack):
         laravel_log_group = logs.LogGroup(self, "LaravelLogGroup",
             log_group_name=f"/ecs/{app_name}-laravel",
             retention=log_retention,
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            removal_policy=RemovalPolicy.DESTROY # For prototype
         )
         audio_extraction_log_group = logs.LogGroup(self, "AudioExtractionLogGroup",
             log_group_name=f"/ecs/{app_name}-audio-extraction",
             retention=log_retention,
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            removal_policy=RemovalPolicy.DESTROY # For prototype
         )
         transcription_service_log_group = logs.LogGroup(self, "TranscriptionServiceLogGroup",
-            log_group_name=f"/ecs/{app_name}-transcription-service",
+            log_group_name=f"/ecs/{app_name}-transcription-service", # For Whisper AI container logs
             retention=log_retention,
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            removal_policy=RemovalPolicy.DESTROY # For prototype
         )
         music_term_log_group = logs.LogGroup(self, "MusicTermLogGroup",
             log_group_name=f"/ecs/{app_name}-music-term-recognition",
             retention=log_retention,
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY
+            removal_policy=RemovalPolicy.DESTROY # For prototype
         )
 
-        # RDS Aurora Serverless v2 MySQL Database Cluster
-        db_cluster = rds.DatabaseCluster(self, "AuroraServerlessMySqlCluster",
+        # RDS Aurora Serverless v2 MySQL Cluster
+        db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
             engine=rds.DatabaseClusterEngine.aurora_mysql(
-                version=rds.AuroraMysqlEngineVersion.VER_3_05_0  # MySQL 8.0.32 compatible
+                version=rds.AuroraMysqlEngineVersion.VER_3_04_0  # Changed to MySQL 8.0.28 compatible
             ),
-            credentials=rds.Credentials.from_generated_secret(f"{app_name}DbAdmin"), # Creates a new secret in Secrets Manager
+            credentials=rds.Credentials.from_generated_secret("dbAdmin"), # Stores master credentials in Secrets Manager
+            writer=rds.ClusterInstance.serverless_v2("writerInstance"), # Defines a Serverless v2 writer instance
+            serverless_v2_min_capacity=0.5, # Min ACUs
+            serverless_v2_max_capacity=1.0, # Max ACUs for prototype, can be increased
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             security_groups=[rds_sg],
-            default_database_name=f"{app_name}DB",
-            serverless_v2_min_capacity=0.5,  # Min ACUs
-            serverless_v2_max_capacity=1.0,   # Max ACUs for prototype, adjust as needed
-            backup_retention=aws_cdk.Duration.days(1),    # Minimal backup retention for prototype
-            removal_policy=aws_cdk.RemovalPolicy.DESTROY # Deletes DB when stack is destroyed (for prototype ONLY)
+            default_database_name=db_name,
+            removal_policy=RemovalPolicy.DESTROY,  # DESTROY for prototype, use SNAPSHOT or RETAIN for prod
+            backup=rds.BackupProps(
+                retention=aws_cdk.Duration.days(1)  # Explicitly using aws_cdk.Duration
+            )
         )
 
         # We can add outputs or use 'vpc' variable later to pass to other constructs
@@ -241,9 +257,9 @@ class CdkInfraStack(Stack):
             value=rds_sg.security_group_id,
             description="ID of the RDS Security Group"
         )
-        aws_cdk.CfnOutput(self, "EfsSecurityGroupIdOutput",
-            value=efs_sg.security_group_id,
-            description="ID of the EFS Security Group"
+        aws_cdk.CfnOutput(self, "AppDataBucketNameOutput",
+            value=app_data_bucket.bucket_name,
+            description="Name of the application data S3 bucket"
         )
         aws_cdk.CfnOutput(self, "LaravelRepoUriOutput",
             value=laravel_repo.repository_uri,
@@ -272,6 +288,18 @@ class CdkInfraStack(Stack):
         aws_cdk.CfnOutput(self, "SharedAppTaskRoleArnOutput",
             value=shared_task_role.role_arn,
             description="ARN of the Shared Application Task Role"
+        )
+        aws_cdk.CfnOutput(self, "DbClusterEndpointOutput",
+            value=db_cluster.cluster_endpoint.hostname,
+            description="Hostname of the DB Cluster Endpoint"
+        )
+        aws_cdk.CfnOutput(self, "DbClusterReadEndpointOutput",
+            value=db_cluster.cluster_read_endpoint.hostname,
+            description="Hostname of the DB Cluster Read Endpoint"
+        )
+        aws_cdk.CfnOutput(self, "DbClusterSecretArnOutput",
+            value=db_cluster.secret.secret_arn if db_cluster.secret else "N/A",
+            description="ARN of the DB Cluster master credentials secret in Secrets Manager"
         )
 
         # The code that defines your stack goes here

@@ -14,17 +14,18 @@ chown -R www-data:www-data /var/www
 chmod -R 777 /var/www/storage
 chmod -R 777 /var/www/bootstrap/cache
 
+# Ensure we are in the Laravel directory for artisan commands
+cd /var/www
 
-# Application cache clear (optional, but good practice before migrate/start)
-# Consider running these if your deployment process doesn't handle them elsewhere.
-# php artisan optimize:clear
-# php artisan config:cache # Re-cache config after env vars are set
-# php artisan route:cache
-# php artisan view:cache
+echo "Clearing and caching Laravel optimizations..."
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+echo "Laravel optimizations completed."
 
 echo "Running database migrations..."
 # Ensure we are in the Laravel directory (WORKDIR should handle this, but for safety)
-cd /var/www
 php artisan migrate --force
 echo "Database migrations completed."
 

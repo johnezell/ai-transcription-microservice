@@ -52,12 +52,12 @@ We will use the following pre-existing network infrastructure:
 | ✅ S3 Bucket | Completed | Application data S3 bucket defined and deployed. |
 | ⬜ EFS file system | N/A | Replaced by S3 for primary data storage. |
 | ✅ RDS database | Completed | Aurora Serverless v2 deployed and connection verified. |
-| ✅ ECS cluster | Completed | ECS Cluster defined and deployed. |
-| ⬜ Load balancer | N/A | Decided to use direct IP access for prototype. |
-| ✅ IAM roles and policies | Completed | ECS Task Execution Role and Shared App Task Role (with S3 bucket-specific permissions) defined and deployed. |
+| ✅ ECS cluster | Completed | ECS Cluster defined and deployed with a '.local' CloudMap namespace. |
+| ✅ Load balancer | Completed | Network Load Balancer (NLB) deployed for Laravel service, accessible via DNS. |
+| ✅ IAM roles and policies | Completed | ECS Task Execution Role and Shared App Task Role (with S3 bucket-specific permissions & ECS Exec permissions) defined and deployed. |
 | **Service Deployment** |  |  |
-| ✅ Laravel service | Completed | Deployed to Fargate, accessible via private IP, DB migrations run. |
-| ⬜ Audio extraction service |  |  |
+| ✅ Laravel service | Completed | Deployed to Fargate, accessible via NLB DNS & private IP. S3 uploads & URL generation working. AudioExtractionJob dispatches. Callbacks from Audio service working. |
+| ✅ Audio extraction service | Completed | Deployed to Fargate. S3 I/O for video input & audio output working. Service discovery to/from Laravel confirmed. Video & TranscriptionLog DB records updated correctly by callbacks. |
 | ⬜ Transcription service |  |  |
 | ⬜ Music term recognition service |  |  |
 | **Testing & Validation** |  |  |

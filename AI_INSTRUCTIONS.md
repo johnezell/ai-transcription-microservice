@@ -50,4 +50,61 @@ This document contains key information and decisions to help the AI assistant ma
 *   **Current State:** Database connectivity confirmed. Base infrastructure (VPC, SGs, ECR, ECS Cluster, IAM Roles, Log Groups, S3 Bucket, RDS) is deployed and committed.
 *   **Next planned infrastructure step:** Define ECS Task Definitions and Fargate Services, starting with Laravel.
 
+## S3 Bucket Configuration & Object ACLs
+
+*   **Initial Issue**: Laravel S3 uploads failed with `AccessControlListNotSupported` errors. This was because the S3 bucket (`aws-transcription-data-<ACCOUNT>-<REGION>`) was created with Object Ownership "Bucket owner enforced" (ACLs disabled), but Laravel's S3 driver was attempting to set an ACL.
+*   **Resolution Steps Taken**:
+    1.  Modified Laravel's `VideoController.php` to explicitly pass `['ACL' => 'bucket-owner-full-control']` with S3 `put()` operations after trying empty options `[]`.
+    2.  Modified the S3 bucket definition in `CdkInfraStack` to set `object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED`. This enables ACLs on the bucket, allowing the `bucket-owner-full-control` ACL to be accepted and resolving the error.
+*   **Current S3 Bucket Object Ownership**: `BUCKET_OWNER_PREFERRED` (ACLs are enabled).
+*   **Application S3 Uploads**: Laravel now uses `Storage::disk('s3')->put(..., ['ACL' => 'bucket-owner-full-control'])` for video uploads, and this is working.
+
+## Laravel IAM Credential Resolution
+
+*   **Initial Issue**: Laravel Fargate tasks were attempting S3 operations using a hardcoded IAM user (`arn:aws:iam::542876199144:user/serverless`) instead of the assigned ECS Task Role (`CdkInfraStack-SharedAppTaskRole...`). This caused `AccessDenied` errors.
+*   **Cause**: Static AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) were present in the `.env` file copied into the Docker image.
+*   **Resolution**:
+    1.  Removed static AWS keys from the `app/laravel/.env` file that is part of the Docker image build (user confirmed this was done manually).
+    2.  Ensured Laravel's `config/filesystems.php` relies on environment variables (`env('AWS_BUCKET')`, `env('AWS_DEFAULT_REGION')`) which are injected by ECS.
+    3.  Updated `docker/scripts/entrypoint.sh` to aggressively clear and re-cache Laravel configurations (`config:clear`, `config:cache`, etc.) on container startup.
+*   **Current State**: Laravel application now correctly uses the IAM Task Role for AWS SDK calls (confirmed by log showing assumed role ARN).
+
+## ECS Service Discovery & Inter-Service Communication
+
+*   **Cloud Map Namespace**: The ECS Cluster (`aws-transcription-cluster`) in `CdkInfraStack` has been configured with a default Cloud Map namespace: `local` (via `default_cloud_map_namespace` on `ecs.Cluster`).
+*   **Service DNS Names (Anticipated)**:
+    *   Laravel Service: `aws-transcription-laravel-service.local` (Port 80 for HTTP API)
+    *   Audio Extraction Service: `audio-extraction-service.local` (Port 5000 for HTTP API)
+*   **Environment Variables for Service URLs**:
+    *   Laravel Service (`LaravelServiceStack`): `AUDIO_SERVICE_URL` is set to `http://audio-extraction-service.local:5000`.
+    *   Audio Extraction Service (`AudioExtractionServiceStack`): `LARAVEL_API_URL` is set to `http://aws-transcription-laravel-service.local:80/api`.
+
+## Docker Image Builds for Fargate
+
+*   **Cross-Platform Builds**: Development on ARM (Apple Silicon M1/M2) requires Docker images for Fargate (AMD64) to be built targeting `linux/amd64`.
+*   **CDK Configuration**: `DockerImageAsset` constructs in CDK stacks use `platform=ecr_assets.Platform.LINUX_AMD64`.
+*   **`.dockerignore`**: A comprehensive `.dockerignore` file is in place at the workspace root to prevent unnecessary files (especially `cdk.out`, `.venv`) from being included in the Docker build context, which resolved `ENAMETOOLONG` errors during `cdk synth`.
+
+## Laravel Application File Handling
+
+*   **Video Uploads**: `VideoController.php` now correctly uploads video files to S3 using `Storage::disk('s3')->put()` with `['ACL' => 'bucket-owner-full-control']`.
+*   **Video URL Accessors**: `app/Models/Video.php` accessors (`getUrlAttribute`, `getAudioUrlAttribute`, etc.) have been updated to generate S3 temporary pre-signed URLs for S3-stored files and to read JSON content from S3.
+*   **AudioExtractionJob**: `app/Jobs/AudioExtractionJob.php` has been updated to check for video existence on S3 and passes the S3 key to the audio extraction service.
+
+## Laravel Service Access (NLB)
+
+*   A Network Load Balancer (NLB) has been added in front of the Laravel Fargate service.
+*   **NLB DNS Name**: `aws-transcription-laravel-nlb-d602a8d13f41e935.elb.us-east-1.amazonaws.com` (This was an example, the actual one is in CDK outputs for `LaravelServiceStack`). *User should replace this with the actual DNS from their deployment if different for their own notes.*
+*   This provides a stable DNS endpoint for accessing the Laravel application via VPN, instead of relying on dynamic Fargate task IPs.
+*   The Laravel service security group (`laravel_ecs_task_sg`) allows TCP port 80 ingress from the VPC CIDR to facilitate NLB access.
+
+## Next Steps (Current)
+
+*   **Commit all recent changes** (Laravel app updates, S3 fixes, NLB addition, Audio Service CDK stack and code, plan updates, AI instruction updates).
+*   **Begin work on the Transcription Service**:
+    *   Discuss Dockerfile requirements (especially for self-hosted Whisper AI).
+    *   Create CDK stack (`transcription_service_stack.py`).
+    *   Implement service logic for S3 I/O, calling Whisper, and callbacks to Laravel.
+    *   Configure service discovery.
+
 *(This file should be updated as the project progresses)* 

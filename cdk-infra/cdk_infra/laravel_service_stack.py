@@ -7,7 +7,10 @@ from aws_cdk import (
     aws_ecr_assets as ecr_assets,
     aws_secretsmanager as secretsmanager,
     aws_s3 as s3,
-    Duration
+    aws_servicediscovery as servicediscovery,
+    aws_elasticloadbalancingv2 as elbv2,
+    Duration,
+    CfnOutput
 )
 from constructs import Construct
 
@@ -75,7 +78,9 @@ class LaravelServiceStack(Stack):
 
                 "AWS_BUCKET": app_data_bucket.bucket_name,
                 "AWS_DEFAULT_REGION": self.region,
-                "AWS_USE_PATH_STYLE_ENDPOINT": "false"
+                "AWS_USE_PATH_STYLE_ENDPOINT": "false",
+
+                "AUDIO_SERVICE_URL": "http://audio-extraction-service.local:5000" # For inter-service communication via Service Discovery
                 # Add other necessary Laravel environment variables
             },
             secrets={
@@ -85,6 +90,23 @@ class LaravelServiceStack(Stack):
                 "DB_USERNAME": ecs.Secret.from_secrets_manager(db_secret, "username"),
                 "DB_PASSWORD": ecs.Secret.from_secrets_manager(db_secret, "password")
             }
+        )
+
+        # Create an internal Network Load Balancer
+        self.nlb = elbv2.NetworkLoadBalancer(self, "LaravelNlb",
+            vpc=vpc,
+            internet_facing=False, # Internal NLB
+            load_balancer_name=f"{app_name}-laravel-nlb",
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
+                one_per_az=True # Crucial for NLB subnet selection
+            )
+        )
+
+        # Add a listener on port 80
+        listener = self.nlb.add_listener("LaravelNlbListener",
+            port=80,
+            protocol=elbv2.Protocol.TCP
         )
 
         # ECS Fargate Service for Laravel
@@ -97,7 +119,46 @@ class LaravelServiceStack(Stack):
             assign_public_ip=False, # No public IP needed as per plan (VPN access)
             desired_count=1, # Start with one task
             service_name=f"{app_name}-laravel-service",
+            cloud_map_options=ecs.CloudMapOptions(
+                name=f"{app_name}-laravel-service", # Register with this name in the .local namespace
+                # The 'local' namespace is assumed from the cluster default or should be passed if separately created
+                dns_record_type=servicediscovery.DnsRecordType.A,
+                dns_ttl=Duration.seconds(60)
+            ),
             enable_execute_command=True # Enable ECS Exec
+        )
+
+        # Add the Fargate service as a target to the NLB listener
+        listener.add_targets("LaravelFargateTarget",
+            port=80,
+            targets=[laravel_fargate_service.load_balancer_target(
+                container_name="LaravelWebAppContainer",
+                container_port=80
+            )],
+            # Optional: configure health checks for the target group
+            health_check=elbv2.HealthCheck(
+                protocol=elbv2.Protocol.TCP,
+                port="80",
+                interval=Duration.seconds(30),
+                timeout=Duration.seconds(10),
+                healthy_threshold_count=3,
+                unhealthy_threshold_count=3
+            )
+        )
+        
+        # Ensure Laravel ECS Task Security Group allows traffic from the NLB (VPC CIDR)
+        # This allows any resource in the VPC to reach the NLB, which then reaches the tasks.
+        # A more restrictive rule would be to allow traffic only from NLB's specific IPs/prefix list, 
+        # but for internal NLB, VPC CIDR is often acceptable for simplicity.
+        laravel_ecs_task_sg.add_ingress_rule(
+            peer=ec2.Peer.ipv4(vpc.vpc_cidr_block),
+            connection=ec2.Port.tcp(80),
+            description="Allow TCP traffic from anywhere in the VPC to Laravel tasks via NLB"
+        )
+
+        CfnOutput(self, "LaravelNlbDnsName",
+            value=self.nlb.load_balancer_dns_name,
+            description="DNS name of the Network Load Balancer for the Laravel service"
         )
 
         # Add any outputs if needed, e.g., service name

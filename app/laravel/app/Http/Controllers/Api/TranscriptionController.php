@@ -87,6 +87,16 @@ class TranscriptionController extends Controller
      */
     public function updateJobStatus($jobId, Request $request)
     {
+        Log::info('[TranscriptionController@updateJobStatus] Received status update request.', [
+            'job_id' => $jobId,
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            // 'headers' => $request->headers->all(), // Can be very verbose
+            'content_type' => $request->getContentTypeFormat(),
+            'wants_json' => $request->wantsJson(),
+            'payload' => $request->all()
+        ]);
+
         // Get current timestamp
         $now = now();
         
@@ -105,7 +115,7 @@ class TranscriptionController extends Controller
 
         // Validate request
         $request->validate([
-            'status' => 'required|string|in:processing,completed,failed,extracting_audio,transcribing,transcribed,processing_music_terms',
+            'status' => 'required|string|in:processing,completed,failed,extracting_audio,audio_extracted,transcribing,transcribed,processing_music_terms',
             'completed_at' => 'nullable|date',
             'response_data' => 'nullable',
             'error_message' => 'nullable|string',
@@ -206,9 +216,11 @@ class TranscriptionController extends Controller
                 // If we have response data and it includes audio information
                 if ($request->response_data) {
                     $responseData = is_array($request->response_data) ? $request->response_data : json_decode($request->response_data, true);
+                    Log::info('[TranscriptionController@updateJobStatus] Processing response_data.', ['job_id' => $jobId, 'parsed_response_data' => $responseData]); // Log parsed response data
                     
                     // Audio extraction completed
                     if (isset($responseData['audio_path'])) {
+                        Log::info('[TranscriptionController@updateJobStatus] Audio path found in response_data.', ['job_id' => $jobId, 'audio_path' => $responseData['audio_path']]);
                         $videoData['audio_path'] = $responseData['audio_path'];
                         $videoData['audio_size'] = $responseData['audio_size_bytes'] ?? null;
                         $videoData['audio_duration'] = $responseData['duration_seconds'] ?? null;
@@ -460,6 +472,7 @@ class TranscriptionController extends Controller
                 }
             }
 
+            Log::info('[TranscriptionController@updateJobStatus] Returning JSON response.', ['job_id' => $jobId, 'success' => true]);
             return response()->json([
                 'success' => true,
                 'message' => 'Job status updated successfully',

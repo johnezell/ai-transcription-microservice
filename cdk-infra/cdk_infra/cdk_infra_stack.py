@@ -186,11 +186,15 @@ class CdkInfraStack(Stack):
         self.app_data_bucket = app_data_bucket
 
         # ECS Cluster
-        cluster = ecs.Cluster(self, "EcsCluster",
+        # Add a default Cloud Map namespace for service discovery (e.g., servicename.local)
+        self.cluster = ecs.Cluster(self, "EcsCluster",
             vpc=vpc,
-            cluster_name=f"{app_name}-cluster"
+            cluster_name=f"{app_name}-cluster",
+            default_cloud_map_namespace=ecs.CloudMapNamespaceOptions(
+                name="local", # Services will be discoverable at <service_name>.local
+                vpc=vpc
+            )
         )
-        self.cluster = cluster
 
         # ECS Task Execution Role (common for all services)
         # This role is used by the ECS agent to make calls to AWS services on your behalf
@@ -301,7 +305,7 @@ class CdkInfraStack(Stack):
             description="URI of the Music Term Recognition ECR repository"
         )
         aws_cdk.CfnOutput(self, "EcsClusterNameOutput",
-            value=cluster.cluster_name,
+            value=self.cluster.cluster_name,
             description="Name of the ECS Cluster"
         )
         aws_cdk.CfnOutput(self, "EcsTaskExecutionRoleArnOutput",

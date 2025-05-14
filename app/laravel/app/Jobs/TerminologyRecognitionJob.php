@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Video;
+use App\Models\TranscriptionLog;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -10,22 +11,18 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\App;
 
 class TerminologyRecognitionJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * The video model instance.
-     *
-     * @var \App\Models\Video
-     */
-    protected $video;
+    public Video $video;
 
     /**
      * Create a new job instance.
      *
-     * @param  \App\Models\Video  $video
+     * @param \App\Models\Video $video
      * @return void
      */
     public function __construct(Video $video)
@@ -38,148 +35,116 @@ class TerminologyRecognitionJob implements ShouldQueue
      *
      * @return void
      */
-    public function handle()
+    public function handle(): void
     {
-        try {
-            // Make sure the video has a transcript
-            if (empty($this->video->transcript_path)) {
-                Log::error('Transcript not found for terminology recognition job', [
-                    'video_id' => $this->video->id
-                ]);
-                
-                throw new \Exception('No transcript available for terminology recognition');
-            }
-            
-            // Update status to indicate we're processing terminology
-            $this->video->update([
-                'status' => 'processing_music_terms' // Using the old status name for backward compatibility
-            ]);
-            
-            // Get or create transcription log
-            $log = \App\Models\TranscriptionLog::firstOrCreate(
-                ['video_id' => $this->video->id],
-                [
-                    'job_id' => $this->video->id,
-                    'status' => 'processing_music_terms',
-                    'started_at' => now(),
+        if (App::environment('local')) {
+            Log::info('[TerminologyRecognitionJob LOCAL] Simulating terminology recognition success.', ['video_id' => $this->video->id]);
+            $baseS3Key = 's3/jobs/' . $this->video->id . '/';
+            $dummyTerminologyJsonKey = $baseS3Key . 'mock_terminology.json';
+            $mockedTermData = [
+                'method' => 'mock_regex_v1',
+                'total_unique_terms' => 5,
+                'total_term_occurrences' => 10,
+                'category_summary' => ['Technology' => 3, 'Dev Concepts' => 2],
+                'terms' => [
+                    ['term' => 'laravel', 'category' => 'Technology', 'count' => 2],
+                    ['term' => 'php', 'category' => 'Technology', 'count' => 3],
                 ]
-            );
-            
-            // Update terminology recognition start time
-            $termStartTime = now();
-            $log->update([
-                'music_term_recognition_started_at' => $termStartTime, // Using the old column name for backward compatibility
-                'status' => 'processing_music_terms',
-                'progress_percentage' => 85 // Terminology recognition started, about 85% through whole process
-            ]);
-            
-            // Get the terminology service URL from environment
-            $serviceUrl = env('MUSIC_TERM_SERVICE_URL', 'http://music-term-recognition-service:5000');
-            
-            // Log the request with additional context
-            Log::info('Dispatching terminology recognition request to service', [
-                'video_id' => $this->video->id,
-                'service_url' => $serviceUrl,
-                'transcript_path' => $this->video->transcript_path,
-                'job_class' => 'TerminologyRecognitionJob'
+            ];
+            // if (!Storage::disk('s3')->exists($dummyTerminologyJsonKey)) { 
+            //     Storage::disk('s3')->put($dummyTerminologyJsonKey, json_encode($mockedTermData)); 
+            // }
+
+            $this->video->update([
+                'status' => 'completed', // Assuming this is the final step for local mock
+                'terminology_path' => $dummyTerminologyJsonKey,
+                'terminology_json' => $mockedTermData, 
+                'has_terminology' => true,
+                'terminology_count' => $mockedTermData['total_term_occurrences'],
+                'terminology_metadata' => ['category_summary' => $mockedTermData['category_summary']]
             ]);
 
-            // Send request to the terminology recognition service
-            $response = Http::timeout(180)->post("{$serviceUrl}/process", [
-                'job_id' => (string) $this->video->id
-            ]);
-
-            if ($response->successful()) {
-                Log::info('Successfully dispatched terminology recognition request', [
-                    'video_id' => $this->video->id,
-                    'response' => $response->json()
-                ]);
-                
-                // Update progress - terminology service will call back on completion
-                $log->update([
-                    'progress_percentage' => 90 // Terminology recognition in progress
-                ]);
-                
-                // NOTE: The actual terminology processing happens asynchronously
-                // and updates will come through the callback endpoint
-                // The video will be marked as 'completed' when the callback is received
-                // from the terminology service
-                
-            } else {
-                $errorMessage = 'Terminology recognition service returned error: ' . $response->body();
-                Log::error($errorMessage, [
-                    'video_id' => $this->video->id
-                ]);
-                
-                // Mark video as completed since terminology is optional
-                $this->video->update([
-                    'status' => 'completed', 
-                    'error_message' => $errorMessage
-                ]);
-                
-                $termEndTime = now();
-                $termDuration = $termEndTime->diffInSeconds($termStartTime);
-                
-                // Calculate total duration from start
-                $totalDuration = 0;
-                if ($log->started_at) {
-                    $totalDuration = $termEndTime->diffInSeconds($log->started_at);
-                }
-                
+            $log = TranscriptionLog::where('video_id', $this->video->id)->first();
+            if ($log) {
                 $log->update([
                     'status' => 'completed',
-                    'error_message' => $errorMessage,
-                    'music_term_recognition_completed_at' => $termEndTime,
-                    'music_term_recognition_duration_seconds' => $termDuration,
-                    'completed_at' => $termEndTime,
-                    'total_processing_duration_seconds' => $totalDuration,
+                    'terminology_analysis_started_at' => $log->terminology_analysis_started_at ?? now()->subSecond(),
+                    'terminology_analysis_completed_at' => now(), 
+                    'terminology_term_count' => $mockedTermData['total_term_occurrences'], 
+                    'completed_at' => now(),
                     'progress_percentage' => 100
                 ]);
             }
-        } catch (\Exception $e) {
-            $errorMessage = 'Exception in terminology recognition job: ' . $e->getMessage();
-            Log::error($errorMessage, [
-                'video_id' => $this->video->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            // Update video to completed status since terminology recognition is optional
-            $this->video->update([
-                'status' => 'completed',
-                'error_message' => $errorMessage
-            ]);
-            
-            // Try to update log with timing information
-            try {
-                $log = \App\Models\TranscriptionLog::where('video_id', $this->video->id)->first();
-                if ($log) {
-                    $endTime = now();
-                    $startTime = $log->music_term_recognition_started_at ?? $log->started_at ?? $endTime;
-                    $duration = $endTime->diffInSeconds($startTime);
-                    
-                    // Calculate total duration from start
-                    $totalDuration = 0;
-                    if ($log->started_at) {
-                        $totalDuration = $endTime->diffInSeconds($log->started_at);
-                    }
-                    
-                    $log->update([
-                        'status' => 'completed',
-                        'error_message' => $errorMessage,
-                        'music_term_recognition_completed_at' => $endTime,
-                        'music_term_recognition_duration_seconds' => $duration,
-                        'completed_at' => $endTime,
-                        'total_processing_duration_seconds' => $totalDuration,
-                        'progress_percentage' => 100
-                    ]);
-                }
-            } catch (\Exception $logEx) {
-                Log::error('Failed to update transcription log', [
+            Log::info('[TerminologyRecognitionJob LOCAL] Mock processing complete.', ['video_id' => $this->video->id]);
+            return;
+        }
+
+        if (empty($this->video->transcript_path)) {
+            Log::error('[TerminologyRecognitionJob] Transcript path is empty for video.', ['video_id' => $this->video->id]);
+            $this->failJob('Transcript path missing for terminology recognition.');
+            return;
+        }
+
+        // Update video status to 'processing_terminology' (or a new generic status)
+        $this->video->update(['status' => 'processing_terminology']);
+        
+        $log = TranscriptionLog::firstOrCreate(
+            ['video_id' => $this->video->id],
+            ['job_id' => $this->video->id, 'started_at' => now()]
+        );
+        $log->update([
+            'status' => 'processing_terminology',
+            'terminology_analysis_started_at' => now(),
+            'progress_percentage' => 85 
+        ]);
+
+        $terminologyServiceUrl = env('TERMINOLOGY_SERVICE_URL', 'http://terminology-service.local:5000');
+        $payload = [
+            'job_id' => (string) $this->video->id,
+            'transcript_s3_key' => $this->video->transcript_path, 
+        ];
+
+        Log::info('[TerminologyRecognitionJob] Dispatching request to Terminology Service.', [
+            'video_id' => $this->video->id,
+            'service_url' => $terminologyServiceUrl,
+            'payload' => $payload
+        ]);
+
+        try {
+            $response = Http::timeout(300) // Timeout for terminology processing
+                            ->post("{$terminologyServiceUrl}/process", $payload);
+
+            if ($response->successful()) {
+                Log::info('[TerminologyRecognitionJob] Successfully dispatched request to Terminology Service.', [
                     'video_id' => $this->video->id,
-                    'error' => $logEx->getMessage()
+                    'response_status' => $response->status(),
                 ]);
+                // Actual status update to 'terminology_extracted' or 'completed' will happen via callback
+            } else {
+                $errorMessage = 'Terminology service returned an error.';
+                try { $errorMessage .= ' Status: ' . $response->status() . ' Body: ' . $response->body(); } catch (\Exception $_) {}
+                Log::error($errorMessage, ['video_id' => $this->video->id]);
+                $this->failJob($errorMessage);
             }
+        } catch (\Exception $e) {
+            Log::error('[TerminologyRecognitionJob] Exception calling Terminology Service.', [
+                'video_id' => $this->video->id,
+                'error' => $e->getMessage()
+            ]);
+            $this->failJob('Exception calling Terminology Service: ' . $e->getMessage());
+        }
+    }
+
+    protected function failJob(string $errorMessage): void
+    {
+        $this->video->update(['status' => 'failed', 'error_message' => $errorMessage]);
+        $log = TranscriptionLog::where('video_id', $this->video->id)->first();
+        if ($log) {
+            $log->update([
+                'status' => 'failed',
+                'error_message' => $errorMessage,
+                'completed_at' => now()
+            ]);
         }
     }
 } 

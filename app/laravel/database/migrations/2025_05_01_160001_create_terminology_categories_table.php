@@ -11,13 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('music_terms', function (Blueprint $table) {
+        Schema::create('terminology_categories', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('category_id')->constrained('music_term_categories')->onDelete('cascade');
-            $table->string('term');
-            $table->text('description')->nullable();
+            $table->string('name');
+            $table->string('slug')->unique();
+            $table->string('description')->nullable();
+            $table->string('color_class')->default('blue'); // Example, can be adjusted or removed
             $table->boolean('active')->default(true);
-            $table->unique(['category_id', 'term']);
+            $table->integer('display_order')->default(0);
             $table->timestamps();
         });
     }
@@ -27,6 +28,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('music_terms');
+        Schema::dropIfExists('terminology_categories');
     }
-};
+}; 

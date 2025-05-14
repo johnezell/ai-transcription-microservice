@@ -33,16 +33,12 @@ class Video extends Model
         'transcript_json',
         'transcript_srt',
         'terminology_path',
-        'terminology_count',
-        'terminology_metadata',
         'terminology_json',
         'has_terminology',
+        'terminology_count',
+        'terminology_metadata',
         'course_id',
         'lesson_number',
-        'music_terms_path',
-        'music_terms_count',
-        'music_terms_metadata',
-        'has_music_terms',
     ];
     
     /**
@@ -55,12 +51,11 @@ class Video extends Model
         'size_bytes' => 'integer',
         'audio_size' => 'integer',
         'audio_duration' => 'float',
-        'terminology_count' => 'integer',
-        'terminology_metadata' => 'array',
         'transcript_json' => 'array',
         'terminology_json' => 'array',
         'has_terminology' => 'boolean',
-        'has_music_terms' => 'boolean',
+        'terminology_count' => 'integer',
+        'terminology_metadata' => 'array',
     ];
     
     /**
@@ -195,18 +190,14 @@ class Video extends Model
     public function getTerminologyUrlAttribute(): ?string
     {
         if (empty($this->terminology_path)) {
-            Log::debug('[Video Model] getTerminologyUrlAttribute: terminology_path is empty.', ['video_id' => $this->id]);
+            // Log::debug('[Video Model] getTerminologyUrlAttribute: terminology_path is empty.', ['video_id' => $this->id]);
             return null;
         }
 
         if (Storage::disk('s3')->exists($this->terminology_path)) {
             try {
                 $s3Url = Storage::disk('s3')->temporaryUrl($this->terminology_path, now()->addMinutes(15));
-                Log::info('[Video Model] getTerminologyUrlAttribute: Generated S3 temporary URL for terminology.', [
-                    'video_id' => $this->id,
-                    's3_key_terminology' => $this->terminology_path,
-                    's3_exists' => true
-                ]);
+                // Log::info('[Video Model] getTerminologyUrlAttribute: Generated S3 temporary URL for terminology.', ['video_id' => $this->id]);
                 return $s3Url;
             } catch (\Exception $e) {
                 Log::error('[Video Model] getTerminologyUrlAttribute: Error generating S3 temporary URL for terminology.', [
@@ -217,24 +208,9 @@ class Video extends Model
                 return null;
             }
         } else {
-            Log::warning('[Video Model] getTerminologyUrlAttribute: S3 key for terminology does not exist on s3 disk.', [
-                'video_id' => $this->id,
-                's3_key_terminology' => $this->terminology_path,
-                's3_exists' => false
-            ]);
+            // Log::warning('[Video Model] getTerminologyUrlAttribute: S3 key for terminology does not exist on s3 disk.', ['video_id' => $this->id]);
             return null;
         }
-    }
-    
-    /**
-     * Get the URL for the music terms JSON file if it exists.
-     * 
-     * @return string|null
-     * @deprecated Use getTerminologyUrlAttribute instead
-     */
-    public function getMusicTermsUrlAttribute()
-    {
-        return $this->getTerminologyUrlAttribute();
     }
     
     /**
@@ -384,28 +360,6 @@ class Video extends Model
     }
 
     /**
-     * Get the music terms JSON data.
-     *
-     * @return array|null
-     * @deprecated Use getTerminologyJsonDataAttribute instead
-     */
-    public function getMusicTermsJsonDataAttribute()
-    {
-        return $this->getTerminologyJsonDataAttribute();
-    }
-    
-    /**
-     * Check if music terms are available for this video.
-     * 
-     * @return bool
-     * @deprecated Use getHasTerminologyAttribute instead
-     */
-    public function getHasMusicTermsAttribute()
-    {
-        return $this->getHasTerminologyAttribute();
-    }
-
-    /**
      * Get the terminology JSON data.
      * Attempts to load from database first, then from S3 if path exists.
      *
@@ -413,38 +367,21 @@ class Video extends Model
      */
     public function getTerminologyJsonDataAttribute(): ?array
     {
-        if (!empty($this->terminology_json)) {
-            Log::debug('[Video Model] getTerminologyJsonDataAttribute: Returning data from DB column.', ['video_id' => $this->id]);
-            return $this->terminology_json;
+        // Check attribute directly to avoid recursion if already decoded by cast
+        if (!empty($this->attributes['terminology_json'])) {
+            $data = $this->attributes['terminology_json'];
+            return is_array($data) ? $data : json_decode($data, true);
         }
         
         if (empty($this->terminology_path)) {
-            Log::debug('[Video Model] getTerminologyJsonDataAttribute: terminology_path is empty, cannot load from S3.', ['video_id' => $this->id]);
             return null;
         }
         
-        // Assuming terminology_path directly points to the JSON file key on S3
         if (Storage::disk('s3')->exists($this->terminology_path)) {
             try {
                 $jsonDataString = Storage::disk('s3')->get($this->terminology_path);
-                 if ($jsonDataString === null) {
-                    Log::warning('[Video Model] getTerminologyJsonDataAttribute: S3 get() returned null for terminology JSON.', [
-                        'video_id' => $this->id,
-                        's3_key_terminology_json' => $this->terminology_path
-                    ]);
-                    return null;
-                }
-                $decodedData = json_decode($jsonDataString, true);
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    Log::error('[Video Model] getTerminologyJsonDataAttribute: Failed to decode terminology JSON from S3.', [
-                        'video_id' => $this->id,
-                        's3_key_terminology_json' => $this->terminology_path,
-                        'json_error' => json_last_error_msg()
-                    ]);
-                    return null;
-                }
-                Log::info('[Video Model] getTerminologyJsonDataAttribute: Successfully loaded and decoded terminology JSON from S3.', ['video_id' => $this->id, 's3_key_terminology_json' => $this->terminology_path]);
-                return $decodedData;
+                 if ($jsonDataString === null) return null;
+                return json_decode($jsonDataString, true);
             } catch (\Exception $e) {
                 Log::error('[Video Model] getTerminologyJsonDataAttribute: Exception reading terminology JSON from S3.', [
                     'video_id' => $this->id,
@@ -453,28 +390,10 @@ class Video extends Model
                 ]);
                 return null;
             }
-        } else {
-            Log::warning('[Video Model] getTerminologyJsonDataAttribute: Terminology JSON file key does not exist on S3.', [
-                'video_id' => $this->id,
-                's3_key_terminology_json' => $this->terminology_path
-            ]);
-            return null;
-        }
+        } 
+        return null;
     }
     
-    /**
-     * Check if terminology is available for this video.
-     * 
-     * @return bool
-     */
-    public function getHasTerminologyAttribute()
-    {
-        return !empty($this->terminology_json) ||
-               !empty($this->terminology_path) || 
-               !empty($this->terminology_metadata) || 
-               ($this->terminology_count ?? 0) > 0;
-    }
-
     /**
      * Get the URL for the transcript JSON file if it exists.
      * For S3 stored files, this will be a temporary pre-signed URL.
@@ -599,40 +518,5 @@ class Video extends Model
             ->where('lesson_number', '<', $this->lesson_number)
             ->orderBy('lesson_number', 'desc')
             ->first();
-    }
-
-    public function getTerminologyPathAttribute()
-    {
-        return $this->music_terms_path;
-    }
-
-    public function setTerminologyPathAttribute($value)
-    {
-        $this->attributes['music_terms_path'] = $value;
-    }
-
-    public function getTerminologyCountAttribute()
-    {
-        return $this->music_terms_count;
-    }
-
-    public function setTerminologyCountAttribute($value)
-    {
-        $this->attributes['music_terms_count'] = $value;
-    }
-
-    public function getTerminologyMetadataAttribute()
-    {
-        return $this->music_terms_metadata;
-    }
-
-    public function setTerminologyMetadataAttribute($value)
-    {
-        $this->attributes['music_terms_metadata'] = $value;
-    }
-
-    public function setHasTerminologyAttribute($value)
-    {
-        $this->attributes['has_music_terms'] = $value;
     }
 }

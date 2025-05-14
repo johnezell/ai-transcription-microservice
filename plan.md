@@ -56,10 +56,13 @@ We will use the following pre-existing network infrastructure:
 | ✅ Load balancer | Completed | Network Load Balancer (NLB) deployed for Laravel service, accessible via DNS. |
 | ✅ IAM roles and policies | Completed | ECS Task Execution Role and Shared App Task Role (with S3 bucket-specific permissions & ECS Exec permissions) defined and deployed. |
 | **Service Deployment** |  |  |
-| ✅ Laravel service | Completed | Deployed to Fargate, accessible via NLB DNS & private IP. S3 uploads & URL generation working. AudioExtractionJob dispatches. Callbacks from Audio service working. |
-| ✅ Audio extraction service | Completed | Deployed to Fargate. S3 I/O for video input & audio output working. Service discovery to/from Laravel confirmed. Video & TranscriptionLog DB records updated correctly by callbacks. |
-| ⬜ Transcription service |  |  |
+| ✅ Laravel service | Completed | Deployed to Fargate, accessible via NLB. S3 uploads & URL generation working. Video playback stable. AudioExtractionJob dispatches. Callbacks from Audio service working. |
+| ✅ Audio extraction service | Completed | Deployed to Fargate. S3 I/O for video input & audio output working. Service discovery & API callbacks to/from Laravel confirmed. Video & TranscriptionLog DB records updated correctly by callback. |
+| ✅ Transcription service | Completed | Deployed to Fargate (Whisper AI). S3 I/O for audio input & transcript (txt, srt, json) output working. Service discovery & API callbacks to/from Laravel confirmed. Video & TranscriptionLog DB records updated correctly by callback. |
 | ⬜ Music term recognition service |  |  |
+| ⬜ Terminology recognition service |  |  |
+| **Tooling & DX** |  |  |
+| ✅ Deployment Script (`scripts/deploy.sh`) | Completed | Created and validated for `--all` and single-stack deployments. |
 | **Testing & Validation** |  |  |
 | ⬜ Infrastructure validation |  |  |
 | ⬜ Service discovery testing |  |  |

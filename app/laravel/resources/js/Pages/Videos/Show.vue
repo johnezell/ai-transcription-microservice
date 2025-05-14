@@ -243,16 +243,31 @@ async function fetchVideoDetails() {
                     const currentFullUrl = videoData.value[key];
                     const newFullUrl = newVideoDataFromApi[key];
 
+                    // *** NEW DETAILED LOGGING FOR fetchVideoDetails ***
+                    console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] Comparing:`, {
+                        currentKnownUrl: currentFullUrl || 'null_or_empty',
+                        newUrlFromApi: newFullUrl || 'null_or_empty'
+                    });
+
                     if (newFullUrl) { // Only proceed if the new URL exists
                         const oldBase = currentFullUrl ? currentFullUrl.split('?')[0] : null;
                         const newBase = newFullUrl.split('?')[0];
+
+                        console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] Base URLs:`, {
+                            oldBase: oldBase,
+                            newBase: newBase,
+                            isDifferent: oldBase !== newBase,
+                            isCurrentMissing: !currentFullUrl
+                        });
 
                         if (!currentFullUrl || oldBase !== newBase) {
                             console.log(`[Show.vue DEBUG from fetchVideoDetails] Updating videoData.${key} because it was missing or base changed. New URL:`, newFullUrl);
                             videoData.value[key] = newFullUrl;
                         } else {
-                            // console.log(`[Show.vue DEBUG from fetchVideoDetails] videoData.${key} base is the same, NOT updating.`);
+                            console.log(`[Show.vue DEBUG from fetchVideoDetails] videoData.${key} base is the same, NOT updating.`);
                         }
+                    } else {
+                        console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] New URL from API is null/empty, not updating.`);
                     }
                 } else {
                     // For all other keys, update directly

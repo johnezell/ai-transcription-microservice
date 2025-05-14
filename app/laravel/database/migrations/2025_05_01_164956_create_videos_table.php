@@ -14,27 +14,48 @@ return new class extends Migration
         Schema::create('videos', function (Blueprint $table) {
             $table->uuid('id')->primary();
             
+            // $table->foreignUuid('course_id')->nullable()->constrained()->nullOnDelete(); // Old way
+            $table->foreignUuid('course_id')->nullable(); // Define column first
+            $table->foreign('course_id')        // Then define foreign key constraint explicitly
+                  ->references('id')
+                  ->on('courses')
+                  ->nullOnDelete();
+
+            $table->integer('lesson_number')->nullable();
+            
             // Basic video information
             $table->string('original_filename');
-            $table->string('storage_path')->nullable(); // Allow null initially
-            $table->string('s3_key')->nullable(); 
+            $table->string('storage_path')->nullable(); // S3 key for original video
+            $table->string('s3_key')->nullable();       // Original video filename part (might be redundant if storage_path is full key)
             $table->string('mime_type');
-            $table->bigInteger('size_bytes');
+            $table->unsignedBigInteger('size_bytes');
             
             // Status tracking
-            $table->string('status')->default('uploading')->comment('uploading, uploaded, processing, extracting_audio, transcribing, completed, failed');
+            $table->string('status')->default('uploading');
             
-            // Additional metadata
+            // Additional metadata (e.g., upload details)
             $table->json('metadata')->nullable();
             
             // Audio extraction information
-            $table->string('audio_path')->nullable();
-            $table->float('audio_duration')->nullable();
-            $table->bigInteger('audio_size')->nullable();
-            
+            $table->string('audio_path')->nullable();       // S3 key for extracted audio.wav
+            $table->double('audio_duration', 10, 3)->nullable(); // Duration in seconds, with precision
+            $table->unsignedBigInteger('audio_size')->nullable();   // Size in bytes
+
             // Transcription information
-            $table->string('transcript_path')->nullable();
-            $table->text('transcript_text')->nullable();
+            $table->string('transcript_path')->nullable();   // S3 key for .txt transcript
+            $table->mediumText('transcript_text')->nullable(); // Full transcript text
+            $table->json('transcript_json')->nullable();      // Parsed JSON from Whisper (or from transcript.json on S3)
+            $table->mediumText('transcript_srt')->nullable();   // SRT content
+
+            // Terminology fields
+            $table->string('terminology_path')->nullable();      // S3 key for terminology.json
+            $table->json('terminology_json')->nullable();        // Parsed JSON content from terminology service
+            $table->boolean('has_terminology')->default(false);
+            $table->integer('terminology_count')->unsigned()->nullable()->default(0);
+            $table->json('terminology_metadata')->nullable();   // For category summaries, etc.
+
+            // Error message field
+            $table->text('error_message')->nullable();
             
             $table->timestamps();
         });

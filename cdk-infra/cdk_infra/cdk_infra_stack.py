@@ -174,6 +174,18 @@ class CdkInfraStack(Stack):
         )
         self.music_term_repo = music_term_repo
 
+        terminology_service_repo = ecr.Repository(self, "TerminologyServiceEcrRepo",
+            repository_name=f"{app_name}-terminology-service",
+            image_scan_on_push=True,
+            removal_policy=RemovalPolicy.DESTROY,
+            empty_on_delete=True,
+            lifecycle_rules=[
+                ecr.LifecycleRule(max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
+                ecr.LifecycleRule(max_image_count=30, tag_status=ecr.TagStatus.ANY)
+            ]
+        )
+        self.terminology_service_repo = terminology_service_repo
+
         # S3 Bucket for application data (videos, transcripts, etc.)
         app_data_bucket = s3.Bucket(self, "AppDataBucket",
             bucket_name=f"{app_name}-data-{self.account}-{self.region}", # Globally unique name
@@ -255,6 +267,13 @@ class CdkInfraStack(Stack):
         )
         self.music_term_log_group = music_term_log_group
 
+        terminology_log_group = logs.LogGroup(self, "TerminologyLogGroup",
+            log_group_name=f"/ecs/{app_name}-terminology-service",
+            retention=log_retention,
+            removal_policy=RemovalPolicy.DESTROY
+        )
+        self.terminology_log_group = terminology_log_group
+
         # RDS Aurora Serverless v2 MySQL Cluster
         db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
             engine=rds.DatabaseClusterEngine.aurora_mysql(
@@ -313,7 +332,11 @@ class CdkInfraStack(Stack):
         )
         aws_cdk.CfnOutput(self, "MusicTermRepoUriOutput",
             value=music_term_repo.repository_uri,
-            description="URI of the Music Term Recognition ECR repository"
+            description="URI of the Music Term Recognition ECR repository (OLD - to be removed/replaced)"
+        )
+        aws_cdk.CfnOutput(self, "TerminologyServiceRepoUriOutput",
+            value=terminology_service_repo.repository_uri,
+            description="URI of the Terminology Service ECR repository"
         )
         aws_cdk.CfnOutput(self, "EcsClusterNameOutput",
             value=self.cluster.cluster_name,

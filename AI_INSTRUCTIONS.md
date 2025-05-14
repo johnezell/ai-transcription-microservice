@@ -100,7 +100,7 @@ This document contains key information and decisions to help the AI assistant ma
 
 ## Transcription Service (Whisper AI)
 
-*   **Status**: Deployed and successfully transcribing audio.
+*   **Status**: Deployed and successfully transcribing audio. Video playback in UI is now stable.
 *   **Dockerfile**: `Dockerfile.transcription-service` (builds for `linux/amd64`).
 *   **Service Logic (`app/services/transcription/service.py`)**:
     *   Receives `audio_s3_key` from Laravel's `TranscriptionJob`.
@@ -114,16 +114,21 @@ This document contains key information and decisions to help the AI assistant ma
     *   Transcription service calls back to `http://aws-transcription-laravel-service.local:80/api/transcription/.../status`.
 *   **Current Model**: Using Whisper "base" model.
 
+## Deployment Script
+
+*   A `scripts/deploy.sh` script has been created and validated.
+*   It handles `npm run build` for Laravel assets and `cdk deploy` (defaulting to `--all`, or taking a specific stack name as an argument).
+*   This streamlines the deployment process.
+
 ## Next Steps (Current)
 
-*   **Verify & Troubleshoot Laravel UI**:
-    *   Confirm transcript files (TXT, SRT, JSON) are correctly linked and accessible/viewable in the Laravel UI.
-    *   Address any issues with S3 URL generation for these transcript files within Laravel models/views.
-*   **Log Cleanup**: Review and reduce verbose logging in all services now that major components are working.
-*   **Begin work on the Music Terminology Service**:
-    *   Discuss Dockerfile and service logic.
-    *   Create CDK stack.
-    *   Integrate with the main processing workflow.
+*   **Log Cleanup**: Review and reduce verbose logging in Laravel (`Video.php` model accessors, `TranscriptionController.php`, `routes/api.php`) and Vue.js (`Show.vue`) now that major components are working.
+*   **Begin work on the Terminology Recognition Service** (to be made more abstract than just "music terms"):
+    *   Discuss service requirements, input (transcript S3 key), output (JSON of terms, categories, timestamps stored in S3 and/or DB).
+    *   Design Python service logic (Flask, NLP libraries like spaCy or NLTK, or simpler regex/keyword matching for V1).
+    *   Define Dockerfile.
+    *   Create CDK stack (`terminology_service_stack.py`).
+    *   Integrate with the Laravel workflow (new Job, update `TranscriptionController` to dispatch it after `transcribed` status).
 *   **Commit all recent changes**.
 
 *(This file should be updated as the project progresses)* 

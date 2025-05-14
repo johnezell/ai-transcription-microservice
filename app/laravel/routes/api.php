@@ -34,7 +34,7 @@ Route::get('/hello', [HelloController::class, 'hello'])->name('api.hello');
 Route::get('/connectivity-test', [ConnectivityController::class, 'testConnectivity'])->name('api.connectivity-test');
 
 // Transcription endpoints
-Route::post('/transcription', [TranscriptionController::class, 'dispatchJob']);
+// Route::post('/transcription', [TranscriptionController::class, 'dispatchJob']); // Commented out as it uses the old ProcessTranscriptionJob
 Route::get('/transcription/{jobId}', [TranscriptionController::class, 'getJobStatus']);
 Route::post('/transcription/{jobId}/status', [TranscriptionController::class, 'updateJobStatus']);
 Route::get('/test-python-service', [TranscriptionController::class, 'testPythonService']);

@@ -11,6 +11,7 @@ from datetime import datetime
 import tempfile
 import uuid
 from pathlib import Path
+import boto3
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -41,10 +42,18 @@ S3_BASE_DIR = '/var/www/storage/app/public/s3'
 S3_JOBS_DIR = os.path.join(S3_BASE_DIR, 'jobs')
 
 # Get environment variables
-LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://laravel/api')
+LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://aws-transcription-laravel.local:80/api')
+AWS_BUCKET = os.environ.get('AWS_BUCKET')
+AWS_DEFAULT_REGION = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
 
 # Ensure base directory exists
 os.makedirs(S3_JOBS_DIR, exist_ok=True)
+
+s3_client = None
+if AWS_BUCKET:
+    s3_client = boto3.client('s3', region_name=AWS_DEFAULT_REGION)
+else:
+    logger.error("AWS_BUCKET environment variable not set. S3 operations will fail.")
 
 # Lazy-load Whisper model to save memory
 @lru_cache(maxsize=1)
@@ -132,26 +141,26 @@ def save_srt(segments, output_path):
 
 def update_job_status(job_id, status, response_data=None, error_message=None):
     """Update the job status in Laravel."""
+    if not LARAVEL_API_URL:
+        logger.error("LARAVEL_API_URL not set, cannot update job status.")
+        return
     try:
         url = f"{LARAVEL_API_URL}/transcription/{job_id}/status"
-        logger.info(f"Sending status update to Laravel: {url}")
-        
+        logger.info(f"Sending status update to Laravel: {url} with status: {status}")
         payload = {
-            'status': status,
-            'response_data': response_data,
-            'error_message': error_message,
-            'completed_at': datetime.now().isoformat() if status in ['completed', 'failed'] else None
+            'status': status, 'response_data': response_data, 'error_message': error_message,
+            'completed_at': datetime.now().isoformat() if status in ['completed', 'failed', 'transcribed'] else None
         }
-        
-        response = requests.post(url, json=payload)
-        
-        if response.status_code != 200:
-            logger.error(f"Failed to update job status in Laravel: {response.text}")
-        else:
-            logger.info(f"Successfully updated job status in Laravel for job {job_id}")
-            
+        headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        logger.info(f"Successfully updated job status in Laravel for job {job_id} to {status}")
+    except requests.exceptions.HTTPError as http_err:
+        logger.error(f"HTTP error updating status for {job_id}: {http_err} - Response: {http_err.response.text}")
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"Request exception updating status for {job_id}: {req_err}")
     except Exception as e:
-        logger.error(f"Error updating job status in Laravel: {str(e)}")
+        logger.error(f"Generic error updating status for {job_id}: {str(e)}", exc_info=True)
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -159,7 +168,9 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'transcription-service',
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'laravel_api_url_set': bool(LARAVEL_API_URL),
+        'aws_bucket_set': bool(AWS_BUCKET)
     })
 
 @app.route('/connectivity-test', methods=['GET'])
@@ -188,90 +199,92 @@ def test_laravel_connectivity():
         return False
 
 @app.route('/process', methods=['POST'])
-def process_transcription():
+def process_transcription_route():
     """Process a transcription job."""
     data = request.json
     
-    if not data or 'job_id' not in data:
-        return jsonify({
-            'success': False,
-            'message': 'Invalid request data. job_id is required.'
-        }), 400
+    if not data or 'job_id' not in data or 'audio_s3_key' not in data:
+        logger.error(f"Invalid request. Missing job_id or audio_s3_key: {data}")
+        return jsonify({'success': False, 'message': 'Invalid request: job_id and audio_s3_key required.'}), 400
     
     job_id = data['job_id']
+    audio_s3_key = data['audio_s3_key']
     model_name = data.get('model_name', 'base')
     initial_prompt = data.get('initial_prompt', None)
     
-    logger.info(f"Received transcription job: {job_id}")
+    logger.info(f"Received transcription job: {job_id} for S3 audio key: {audio_s3_key} with model: {model_name}")
     
-    # Create or get job directory
-    job_dir = os.path.join(S3_JOBS_DIR, job_id)
-    
-    # Define standard file paths
-    audio_path = os.path.join(job_dir, 'audio.wav')
-    transcript_path = os.path.join(job_dir, 'transcript.txt')
-    srt_path = os.path.join(job_dir, 'transcript.srt')
-    json_path = os.path.join(job_dir, 'transcript.json')
-    
-    try:
-        # Check if audio file exists
-        if not os.path.exists(audio_path):
-            error_msg = f"Audio file not found at standard path: {audio_path}"
-            logger.error(error_msg)
-            update_job_status(job_id, 'failed', None, error_msg)
-            return jsonify({
-                'success': False,
-                'message': error_msg
-            }), 404
-        
-        # Update status to transcribing - now Laravel will handle this
-        # but we'll still send an update to confirm we've started
-        update_job_status(job_id, 'transcribing')
-        
-        # Process the audio with Whisper
-        transcription_result = process_audio(audio_path, model_name, initial_prompt)
-        
-        # Save the transcript to files
-        save_transcript_to_file(transcription_result['text'], transcript_path)
-        save_srt(transcription_result['segments'], srt_path)
-        with open(json_path, 'w') as f:
-            json.dump(transcription_result, f, indent=2)
-        
-        # Prepare response data
-        response_data = {
-            'message': 'Transcription completed successfully',
-            'service_timestamp': datetime.now().isoformat(),
-            'transcript_path': transcript_path,
-            'transcript_text': transcription_result['text'],
-            'confidence_score': transcription_result.get('confidence_score', 0.0),
-            'metadata': {
-                'service': 'transcription-service',
-                'processed_by': 'Whisper-based transcription',
-                'model': model_name
+    if not s3_client or not AWS_BUCKET:
+        logger.error("S3 client or AWS_BUCKET not configured for transcription service.")
+        update_job_status(job_id, 'failed', None, "Transcription service S3 configuration error.")
+        return jsonify({'success': False, 'message': 'Transcription service S3 configuration error.'}), 500
+
+    s3_job_prefix = os.path.dirname(audio_s3_key) # e.g., s3/jobs/UUID
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        local_audio_path = os.path.join(tmpdir, "downloaded_audio.wav")
+        local_transcript_txt_path = os.path.join(tmpdir, "transcript.txt")
+        local_transcript_srt_path = os.path.join(tmpdir, "transcript.srt")
+        local_transcript_json_path = os.path.join(tmpdir, "transcript.json")
+
+        s3_transcript_txt_key = os.path.join(s3_job_prefix, "transcript.txt")
+        s3_transcript_srt_key = os.path.join(s3_job_prefix, "transcript.srt")
+        s3_transcript_json_key = os.path.join(s3_job_prefix, "transcript.json")
+
+        try:
+            logger.info(f"Downloading audio from S3: bucket={AWS_BUCKET}, key={audio_s3_key} to {local_audio_path}")
+            s3_client.download_file(AWS_BUCKET, audio_s3_key, local_audio_path)
+            logger.info(f"Successfully downloaded {audio_s3_key} to {local_audio_path}")
+
+            update_job_status(job_id, 'transcribing')
+            
+            transcription_result = process_audio(local_audio_path, model_name, initial_prompt)
+            
+            # Save transcripts locally first
+            with open(local_transcript_txt_path, 'w', encoding='utf-8') as f:
+                f.write(transcription_result['text'])
+            logger.info(f"Local transcript text saved to: {local_transcript_txt_path}")
+            
+            save_srt(transcription_result['segments'], local_transcript_srt_path)
+            
+            with open(local_transcript_json_path, 'w', encoding='utf-8') as f:
+                json.dump(transcription_result, f, indent=2)
+            logger.info(f"Local transcript JSON saved to: {local_transcript_json_path}")
+
+            # Upload transcripts to S3
+            s3_client.upload_file(local_transcript_txt_path, AWS_BUCKET, s3_transcript_txt_key)
+            logger.info(f"Uploaded transcript text to S3 key: {s3_transcript_txt_key}")
+            s3_client.upload_file(local_transcript_srt_path, AWS_BUCKET, s3_transcript_srt_key)
+            logger.info(f"Uploaded transcript SRT to S3 key: {s3_transcript_srt_key}")
+            s3_client.upload_file(local_transcript_json_path, AWS_BUCKET, s3_transcript_json_key)
+            logger.info(f"Uploaded transcript JSON to S3 key: {s3_transcript_json_key}")
+            
+            response_data = {
+                'message': 'Transcription completed successfully and files uploaded to S3.',
+                'service_timestamp': datetime.now().isoformat(),
+                'transcript_path': s3_transcript_txt_key,
+                'transcript_srt_path': s3_transcript_srt_key,
+                'transcript_json_path': s3_transcript_json_key,
+                'transcript_text_excerpt': transcription_result['text'][:255], # Excerpt for logging/DB
+                'confidence_score': transcription_result.get('confidence_score', 0.0),
+                'language': transcription_result.get('language', 'en'),
+                'metadata': {
+                    'service': 'transcription-service',
+                    'processed_by': 'Whisper-based transcription',
+                    'model': model_name
+                }
             }
-        }
-        
-        # Update job status in Laravel
-        update_job_status(job_id, 'completed', response_data)
-        
-        return jsonify({
-            'success': True,
-            'job_id': job_id,
-            'message': 'Transcription processed successfully',
-            'data': response_data
-        })
-        
-    except Exception as e:
-        logger.error(f"Error processing job {job_id}: {str(e)}")
-        
-        # Update job status in Laravel
-        update_job_status(job_id, 'failed', None, str(e))
-        
-        return jsonify({
-            'success': False,
-            'job_id': job_id,
-            'message': f'Transcription failed: {str(e)}'
-        }), 500
+            
+            # Update job status in Laravel - status 'transcribed' signals completion of this step
+            # Terminology recognition will be the next step triggered by Laravel if applicable.
+            update_job_status(job_id, 'transcribed', response_data)
+            
+            return jsonify({'success': True, 'job_id': job_id, 'data': response_data})
+            
+        except Exception as e:
+            logger.error(f"Error processing transcription for job {job_id}: {str(e)}", exc_info=True)
+            update_job_status(job_id, 'failed', None, f"Transcription failed: {str(e)}")
+            return jsonify({'success': False, 'job_id': job_id, 'message': f'Transcription failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True) 
+    app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_ENV') == 'development') 

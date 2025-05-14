@@ -20,7 +20,7 @@ class TranscriptionJob implements ShouldQueue
      *
      * @var \App\Models\Video
      */
-    protected $video;
+    protected Video $video;
 
     /**
      * Create a new job instance.
@@ -38,130 +38,77 @@ class TranscriptionJob implements ShouldQueue
      *
      * @return void
      */
-    public function handle()
+    public function handle(): void
     {
-        try {
-            // Update video status to transcribing
-            $this->video->update(['status' => 'transcribing']);
-            
-            // Get or create transcription log
-            $log = \App\Models\TranscriptionLog::firstOrCreate(
-                ['video_id' => $this->video->id],
-                [
-                    'job_id' => $this->video->id,
-                    'status' => 'transcribing',
-                    'started_at' => now(),
-                ]
-            );
-            
-            // Update transcription start time
-            $transcriptionStartTime = now();
-            $log->update([
-                'transcription_started_at' => $transcriptionStartTime,
-                'status' => 'transcribing',
-                'progress_percentage' => 60 // Transcription started, about 60% through the whole process
-            ]);
-            
-            // Get the transcription service URL from environment
-            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
-            
-            // Log the request
-            Log::info('Dispatching transcription request to service', [
-                'video_id' => $this->video->id,
-                'service_url' => $transcriptionServiceUrl
-            ]);
+        if (empty($this->video->audio_path)) {
+            Log::error('[TranscriptionJob] Audio path is empty, cannot start transcription.', ['video_id' => $this->video->id]);
+            $this->video->update(['status' => 'failed', 'error_message' => 'Audio path missing for transcription.']);
+            return;
+        }
 
-            // Send request to the transcription service
-            $response = Http::timeout(180)->post("{$transcriptionServiceUrl}/process", [
-                'job_id' => (string) $this->video->id
-            ]);
+        // Update video status to 'transcribing'
+        $this->video->update(['status' => 'transcribing']);
+        
+        $transcriptionLog = \App\Models\TranscriptionLog::firstOrCreate(
+            ['video_id' => $this->video->id],
+            ['job_id' => $this->video->id, 'started_at' => now()]
+        );
+        $transcriptionLog->update([
+            'status' => 'transcribing',
+            'transcription_started_at' => now(),
+            'progress_percentage' => 60 // Example progress: Transcription process initiated
+        ]);
+
+        $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service.local:5000');
+        $payload = [
+            'job_id' => (string) $this->video->id,
+            'audio_s3_key' => $this->video->audio_path, // Pass the S3 key of the audio file
+            'model_name' => 'base' // Or make this configurable, e.g., via $this->video->model_preference
+        ];
+
+        Log::info('[TranscriptionJob] Dispatching request to Transcription Service.', [
+            'video_id' => $this->video->id,
+            'service_url' => $transcriptionServiceUrl,
+            'payload' => $payload
+        ]);
+
+        try {
+            $response = Http::timeout(3600) // Increased timeout for potentially long transcription
+                            ->post("{$transcriptionServiceUrl}/process", $payload);
 
             if ($response->successful()) {
-                Log::info('Successfully dispatched transcription request', [
+                Log::info('[TranscriptionJob] Successfully dispatched request to Transcription Service.', [
                     'video_id' => $this->video->id,
-                    'response' => $response->json()
+                    'response_status' => $response->status(),
+                    // 'response_body' => $response->json() // Service will call back with full data
                 ]);
-                
-                // Update progress - transcription service will call back on completion
-                $log->update([
-                    'progress_percentage' => 75 // Transcription in progress
-                ]);
+                // Status will be updated by callback from transcription service
             } else {
-                $errorMessage = 'Transcription service returned error: ' . $response->body();
-                Log::error($errorMessage, [
-                    'video_id' => $this->video->id
-                ]);
-                
-                // Update video with failure
-                $this->video->update([
-                    'status' => 'failed',
-                    'error_message' => $errorMessage
-                ]);
-                
-                $transcriptionEndTime = now();
-                $transcriptionDuration = $transcriptionEndTime->diffInSeconds($transcriptionStartTime);
-                
-                $log->update([
-                    'status' => 'failed',
-                    'error_message' => $errorMessage,
-                    'transcription_completed_at' => $transcriptionEndTime,
-                    'transcription_duration_seconds' => $transcriptionDuration,
-                    'completed_at' => $transcriptionEndTime,
-                    'progress_percentage' => 0
-                ]);
-                
-                // Calculate total duration if possible
-                if ($log->started_at) {
-                    $totalDuration = $transcriptionEndTime->diffInSeconds($log->started_at);
-                    $log->update([
-                        'total_processing_duration_seconds' => $totalDuration
-                    ]);
-                }
+                $errorMessage = 'Transcription service returned an error.';
+                try { $errorMessage .= ' Status: ' . $response->status() . ' Body: ' . $response->body(); } catch (\Exception $_) {}
+                Log::error($errorMessage, ['video_id' => $this->video->id]);
+                $this->failJob($errorMessage);
             }
         } catch (\Exception $e) {
-            $errorMessage = 'Exception in transcription job: ' . $e->getMessage();
-            Log::error($errorMessage, [
+            Log::error('[TranscriptionJob] Exception calling Transcription Service.', [
                 'video_id' => $this->video->id,
                 'error' => $e->getMessage()
             ]);
-            
-            // Update video with failure
-            $this->video->update([
+            $this->failJob('Exception calling Transcription Service: ' . $e->getMessage());
+        }
+    }
+
+    protected function failJob(string $errorMessage): void
+    {
+        $this->video->update(['status' => 'failed', 'error_message' => $errorMessage]);
+        $transcriptionLog = \App\Models\TranscriptionLog::where('video_id', $this->video->id)->first();
+        if ($transcriptionLog) {
+            $transcriptionLog->update([
                 'status' => 'failed',
-                'error_message' => $errorMessage
+                'error_message' => $errorMessage,
+                'completed_at' => now()
+                // Consider also updating transcription_completed_at if it was started
             ]);
-            
-            // Try to update log with timing information
-            try {
-                $log = \App\Models\TranscriptionLog::where('video_id', $this->video->id)->first();
-                if ($log) {
-                    $endTime = now();
-                    $startTime = $log->transcription_started_at ?? $log->started_at ?? $endTime;
-                    $duration = $endTime->diffInSeconds($startTime);
-                    
-                    $log->update([
-                        'status' => 'failed',
-                        'error_message' => $errorMessage,
-                        'transcription_completed_at' => $endTime,
-                        'transcription_duration_seconds' => $duration,
-                        'completed_at' => $endTime,
-                        'progress_percentage' => 0
-                    ]);
-                    
-                    // Calculate total duration if possible
-                    if ($log->started_at && $log->started_at != $startTime) {
-                        $totalDuration = $endTime->diffInSeconds($log->started_at);
-                        $log->update([
-                            'total_processing_duration_seconds' => $totalDuration
-                        ]);
-                    }
-                }
-            } catch (\Exception $logEx) {
-                Log::error('Failed to update transcription log', [
-                    'video_id' => $this->video->id,
-                    'error' => $logEx->getMessage()
-                ]);
-            }
         }
     }
 } 

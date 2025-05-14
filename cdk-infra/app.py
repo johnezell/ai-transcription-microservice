@@ -6,6 +6,7 @@ import aws_cdk as cdk
 from cdk_infra.cdk_infra_stack import CdkInfraStack
 from cdk_infra.laravel_service_stack import LaravelServiceStack
 from cdk_infra.audio_extraction_service_stack import AudioExtractionServiceStack
+from cdk_infra.transcription_service_stack import TranscriptionServiceStack
 
 # Define the AWS environment (account and region)
 # Using your Account ID and the region from plan.md
@@ -49,8 +50,22 @@ audio_extraction_service_stack = AudioExtractionServiceStack(app, "AudioExtracti
     env=aws_env
 )
 
+# Instantiate the Transcription service stack
+transcription_service_stack = TranscriptionServiceStack(app, "TranscriptionServiceStack",
+    vpc=main_infra_stack.vpc,
+    cluster=main_infra_stack.cluster,
+    internal_services_sg=main_infra_stack.internal_services_sg,
+    ecs_task_execution_role=main_infra_stack.ecs_task_execution_role,
+    shared_task_role=main_infra_stack.shared_task_role,
+    app_data_bucket=main_infra_stack.app_data_bucket,
+    transcription_log_group=main_infra_stack.transcription_service_log_group,
+    laravel_service_discovery_name="aws-transcription-laravel-service.local",
+    env=aws_env
+)
+
 # Add dependencies
 laravel_service_stack.add_dependency(main_infra_stack)
 audio_extraction_service_stack.add_dependency(main_infra_stack)
+transcription_service_stack.add_dependency(main_infra_stack)
 
 app.synth()

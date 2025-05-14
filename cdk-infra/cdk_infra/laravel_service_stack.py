@@ -80,8 +80,8 @@ class LaravelServiceStack(Stack):
                 "AWS_DEFAULT_REGION": self.region,
                 "AWS_USE_PATH_STYLE_ENDPOINT": "false",
 
-                "AUDIO_SERVICE_URL": "http://audio-extraction-service.local:5000" # For inter-service communication via Service Discovery
-                # Add other necessary Laravel environment variables
+                "AUDIO_SERVICE_URL": "http://audio-extraction-service.local:5000",
+                "TRANSCRIPTION_SERVICE_URL": "http://transcription-service.local:5000" # For Laravel to call the Transcription service
             },
             secrets={
                 "DB_HOST": ecs.Secret.from_secrets_manager(db_secret, "host"),

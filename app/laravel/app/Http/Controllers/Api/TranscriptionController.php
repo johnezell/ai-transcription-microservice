@@ -21,34 +21,34 @@ class TranscriptionController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function dispatchJob(Request $request)
-    {
-        // Validate request
-        $request->validate([
-            'filename' => 'required|string',
-            'type' => 'required|in:audio,video',
-        ]);
-
-        // Generate a unique job ID
-        $jobId = (string) Str::uuid();
-
-        // Create a transcription log entry
-        $log = TranscriptionLog::create([
-            'job_id' => $jobId,
-            'status' => 'pending',
-            'request_data' => $request->all(),
-        ]);
-
-        // Dispatch the job to the queue
-        ProcessTranscriptionJob::dispatch($log);
-
-        // Return response with job ID
-        return response()->json([
-            'success' => true,
-            'message' => 'Transcription job dispatched successfully',
-            'job_id' => $jobId,
-        ], 202);
-    }
+//    public function dispatchJob(Request $request)
+//    {
+//        // Validate request
+//        $request->validate([
+//            'filename' => 'required|string',
+//            'type' => 'required|in:audio,video',
+//        ]);
+//
+//        // Generate a unique job ID
+//        $jobId = (string) Str::uuid();
+//
+//        // Create a transcription log entry
+//        $log = TranscriptionLog::create([
+//            'job_id' => $jobId,
+//            'status' => 'pending',
+//            'request_data' => $request->all(),
+//        ]);
+//
+//        // Dispatch the job to the queue
+//        ProcessTranscriptionJob::dispatch($log);
+//
+//        // Return response with job ID
+//        return response()->json([
+//            'success' => true,
+//            'message' => 'Transcription job dispatched successfully',
+//            'job_id' => $jobId,
+//        ], 202);
+//    }
 
     /**
      * Get the status of a transcription job.
@@ -253,8 +253,9 @@ class TranscriptionController extends Controller
                             ]);
                         }
                         
-                        // Audio extraction is complete, trigger transcription service
-                        $this->triggerTranscription($video->id);
+                        // Audio extraction is complete, dispatch TranscriptionJob
+                        Log::info('[TranscriptionController@updateJobStatus] Dispatching TranscriptionJob.', ['video_id' => $video->id]);
+                        \App\Jobs\TranscriptionJob::dispatch($video); // Dispatch the new job
                     }
                     
                     // Transcription completed

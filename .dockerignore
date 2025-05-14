@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+
+# IDE / Editor specific
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# macOS specific
+._*
+
+# CDK and Python virtual environment
+cdk-infra/cdk.out
+cdk-infra/.venv
+cdk-infra/cdk.context.json # Usually not needed in image
+cdk-infra/app.py # Not needed in image
+cdk-infra/requirements.txt # Dependencies are installed in Dockerfile
+cdk-infra/requirements-dev.txt 
+cdk-infra/README.md
+cdk-infra/source.bat
+cdk-infra/tests/
+
+# Node modules (if installed locally and not needed directly in the image build stages)
+# node_modules
+# app/laravel/node_modules 
+
+# Composer cache / vendor dir if handled entirely within Dockerfile
+# app/laravel/vendor
+# app/laravel/composer.lock 
+# If composer install is run in the Dockerfile, you might not need to copy vendor from host.
+# Dockerfile already runs composer install.
+
+# Log files
+*.log
+logs/
+app/laravel/storage/logs/*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Other service directories if they exist at the root and are not needed by Laravel Dockerfile
+# For example:
+# services/
+# audio-extraction-service/
+# transcription-service/
+# music-term-recognition-service/
+
+# Specific files from root if not needed
+# Dockerfile.audio # etc.
+# plan.md
+# AI_INSTRUCTIONS.md 

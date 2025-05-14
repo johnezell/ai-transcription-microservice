@@ -46,8 +46,8 @@ This document contains key information and decisions to help the AI assistant ma
 
 ## Current Status & Recommended Commits
 
-*   **Last Commit Point (User to perform):** After RDS Aurora Serverless v2 cluster deployment was successful and DB connection verified. Suggested message: `feat: Add Aurora DB, S3 bucket, and working VPN access for DB`
-*   **Current State:** Database connectivity confirmed. Base infrastructure (VPC, SGs, ECR, ECS Cluster, IAM Roles, Log Groups, S3 Bucket, RDS) is deployed.
+*   **Last Commit (Done by User):** `feat: Add Aurora DB, S3 bucket, and working VPN access for DB` (covered all infrastructure up to and including RDS & S3 bucket).
+*   **Current State:** Database connectivity confirmed. Base infrastructure (VPC, SGs, ECR, ECS Cluster, IAM Roles, Log Groups, S3 Bucket, RDS) is deployed and committed.
 *   **Next planned infrastructure step:** Define ECS Task Definitions and Fargate Services, starting with Laravel.
 
 *(This file should be updated as the project progresses)* 

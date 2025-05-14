@@ -23,7 +23,10 @@ class CdkInfraStack(Stack):
 
         app_name = "aws-transcription"
         db_name = "appdb" # Database name for Aurora
-        # user_vpn_client_ip = "72.239.107.152/32" # User's VPN client IP - will be re-evaluated
+        # These will be fetched from cdk.json or context shortly.
+        # For now, ensure they are defined for clarity if used directly below.
+        truefire_vpn_gateway_ip = self.node.try_get_context("truefire_vpn_gateway_ip") or "72.239.107.152/32" # Example, adjust as needed
+        user_vpn_client_ip = self.node.try_get_context("user_vpn_client_ip") or "10.209.27.93/32" # Example, adjust as needed
 
         # Import the existing VPC using its ID
         # This lookup will require context to be populated in cdk.context.json
@@ -31,6 +34,7 @@ class CdkInfraStack(Stack):
         vpc = ec2.Vpc.from_lookup(self, "ImportedVpc",
             vpc_id="vpc-09422297ced61f9d2" # Your VPC ID from plan.md
         )
+        self.vpc = vpc
 
         # Removed import of sg-09a118ae14a5c0955 as a peer SG
         # vpn_sg_inter_account = ec2.SecurityGroup.from_security_group_id(self, "ImportedVpnInterAccountSg",
@@ -43,6 +47,7 @@ class CdkInfraStack(Stack):
             description="Security group for the Laravel ECS Fargate tasks (private access)",
             allow_all_outbound=True
         )
+        self.laravel_ecs_task_sg = laravel_ecs_task_sg
         
         # Internal Services Security Group (for Python microservices)
         internal_services_sg = ec2.SecurityGroup(self, "InternalServicesSecurityGroup",
@@ -50,6 +55,7 @@ class CdkInfraStack(Stack):
             description="Security group for internal Python microservices",
             allow_all_outbound=True
         )
+        self.internal_services_sg = internal_services_sg
 
         # Now that base SGs are defined, add cross-referencing ingress rules:
 
@@ -91,6 +97,7 @@ class CdkInfraStack(Stack):
             description="Security group for the RDS database",
             allow_all_outbound=True
         )
+        self.rds_sg = rds_sg
         # Allow MySQL traffic from Laravel tasks
         rds_sg.add_ingress_rule(
             peer=laravel_ecs_task_sg,
@@ -123,45 +130,49 @@ class CdkInfraStack(Stack):
             repository_name=f"{app_name}-laravel",
             image_scan_on_push=True,
             removal_policy=RemovalPolicy.DESTROY, # For prototype
-            auto_delete_images=True, # For prototype
+            empty_on_delete=True, # For prototype (replaced auto_delete_images)
             lifecycle_rules=[
                 ecr.LifecycleRule(description="Keep only 10 untagged images", max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(description="Keep last 30 tagged images", max_image_count=30, tag_status=ecr.TagStatus.ANY)
             ]
         )
+        self.laravel_repo = laravel_repo
 
         audio_extraction_repo = ecr.Repository(self, "AudioExtractionEcrRepo",
             repository_name=f"{app_name}-audio-extraction",
             image_scan_on_push=True,
             removal_policy=RemovalPolicy.DESTROY, # For prototype
-            auto_delete_images=True, # For prototype
+            empty_on_delete=True, # For prototype (replaced auto_delete_images)
             lifecycle_rules=[
                 ecr.LifecycleRule(max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(max_image_count=30, tag_status=ecr.TagStatus.ANY)
             ]
         )
+        self.audio_extraction_repo = audio_extraction_repo
 
         transcription_service_repo = ecr.Repository(self, "TranscriptionServiceEcrRepo",
             repository_name=f"{app_name}-transcription-service",
             image_scan_on_push=True,
             removal_policy=RemovalPolicy.DESTROY, # For prototype
-            auto_delete_images=True, # For prototype
+            empty_on_delete=True, # For prototype (replaced auto_delete_images)
             lifecycle_rules=[
                 ecr.LifecycleRule(max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(max_image_count=30, tag_status=ecr.TagStatus.ANY)
             ]
         )
+        self.transcription_service_repo = transcription_service_repo
 
         music_term_repo = ecr.Repository(self, "MusicTermEcrRepo",
             repository_name=f"{app_name}-music-term-recognition",
             image_scan_on_push=True,
             removal_policy=RemovalPolicy.DESTROY, # For prototype
-            auto_delete_images=True, # For prototype
+            empty_on_delete=True, # For prototype (replaced auto_delete_images)
             lifecycle_rules=[
                 ecr.LifecycleRule(max_image_count=10, tag_status=ecr.TagStatus.UNTAGGED),
                 ecr.LifecycleRule(max_image_count=30, tag_status=ecr.TagStatus.ANY)
             ]
         )
+        self.music_term_repo = music_term_repo
 
         # S3 Bucket for application data
         app_data_bucket = s3.Bucket(self, "AppDataBucket",
@@ -171,12 +182,14 @@ class CdkInfraStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True # Allows deletion of non-empty bucket on destroy (for prototype)
         )
+        self.app_data_bucket = app_data_bucket
 
         # ECS Cluster
         cluster = ecs.Cluster(self, "EcsCluster",
             vpc=vpc,
             cluster_name=f"{app_name}-cluster"
         )
+        self.cluster = cluster
 
         # ECS Task Execution Role (common for all services)
         # This role is used by the ECS agent to make calls to AWS services on your behalf
@@ -186,6 +199,7 @@ class CdkInfraStack(Stack):
                 iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AmazonECSTaskExecutionRolePolicy")
             ]
         )
+        self.ecs_task_execution_role = ecs_task_execution_role
 
         # Shared IAM Task Role for application services
         shared_task_role = iam.Role(self, "SharedAppTaskRole",
@@ -195,6 +209,7 @@ class CdkInfraStack(Stack):
         # Grant S3 permissions to the specific app data bucket
         app_data_bucket.grant_read_write(shared_task_role)
         # Transcribe permissions removed as per user request for self-hosted Whisper AI
+        self.shared_task_role = shared_task_role
 
         # CloudWatch Log Groups
         log_retention = logs.RetentionDays.ONE_MONTH
@@ -204,21 +219,25 @@ class CdkInfraStack(Stack):
             retention=log_retention,
             removal_policy=RemovalPolicy.DESTROY # For prototype
         )
+        self.laravel_log_group = laravel_log_group
         audio_extraction_log_group = logs.LogGroup(self, "AudioExtractionLogGroup",
             log_group_name=f"/ecs/{app_name}-audio-extraction",
             retention=log_retention,
             removal_policy=RemovalPolicy.DESTROY # For prototype
         )
+        self.audio_extraction_log_group = audio_extraction_log_group
         transcription_service_log_group = logs.LogGroup(self, "TranscriptionServiceLogGroup",
             log_group_name=f"/ecs/{app_name}-transcription-service", # For Whisper AI container logs
             retention=log_retention,
             removal_policy=RemovalPolicy.DESTROY # For prototype
         )
+        self.transcription_service_log_group = transcription_service_log_group
         music_term_log_group = logs.LogGroup(self, "MusicTermLogGroup",
             log_group_name=f"/ecs/{app_name}-music-term-recognition",
             retention=log_retention,
             removal_policy=RemovalPolicy.DESTROY # For prototype
         )
+        self.music_term_log_group = music_term_log_group
 
         # RDS Aurora Serverless v2 MySQL Cluster
         db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
@@ -238,6 +257,9 @@ class CdkInfraStack(Stack):
                 retention=aws_cdk.Duration.days(1)  # Explicitly using aws_cdk.Duration
             )
         )
+        self.db_cluster = db_cluster
+        # Expose the secret for the Laravel stack to use
+        self.db_cluster_secret = db_cluster.secret
 
         # We can add outputs or use 'vpc' variable later to pass to other constructs
         # For example, to see the VPC ID after synthesis/deployment:

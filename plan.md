@@ -56,7 +56,7 @@ We will use the following pre-existing network infrastructure:
 | ⬜ Load balancer | N/A | Decided to use direct IP access for prototype. |
 | ✅ IAM roles and policies | Completed | ECS Task Execution Role and Shared App Task Role (with S3 bucket-specific permissions) defined and deployed. |
 | **Service Deployment** |  |  |
-| ⬜ Laravel service |  |  |
+| ✅ Laravel service | Completed | Deployed to Fargate, accessible via private IP, DB migrations run. |
 | ⬜ Audio extraction service |  |  |
 | ⬜ Transcription service |  |  |
 | ⬜ Music term recognition service |  |  |

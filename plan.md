@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the plan for deploying the AWS Transcription Service application to Amazon ECS using Terraform. The application consists of multiple microservices that need to be containerized and deployed to AWS infrastructure.
+This document outlines the plan for deploying the AWS Transcription Service application to Amazon ECS using AWS CDK (Cloud Development Kit). The application consists of multiple microservices that need to be containerized and deployed to AWS infrastructure.
 
 ## Application Components
 
@@ -41,10 +41,10 @@ We will use the following pre-existing network infrastructure:
 |-----------|--------|----------------|
 | **Setup & Configuration** |  |  |
 | ✅ Create deployment plan | Completed | Initial plan document created |
-| ⬜ Set up Terraform directory structure |  |  |
-| ⬜ Configure Terraform backend |  |  |
-| ⬜ Create deployment menu script | In Progress | Basic structure created |
-| ⬜ Configure Docker for Terraform | In Progress | Added to script, not yet tested |
+| ⬜ Set up CDK project structure |  | e.g., `cdk init app --language typescript` |
+| ⬜ Configure CDK environment (bootstrap) |  | `cdk bootstrap aws://ACCOUNT-NUMBER/REGION` |
+| ⬜ Create deployment menu script | In Progress | Basic structure created, CDK commands to be added |
+| ⬜ Configure Docker for application services | In Progress | Dockerfiles for services, ECR push |
 | **Infrastructure Deployment** |  |  |
 | ⬜ Network configuration |  |  |
 | ⬜ Security groups |  |  |
@@ -70,174 +70,190 @@ We will use the following pre-existing network infrastructure:
 | ⬜ Create operational runbook |  |  |
 | ⬜ Document CI/CD pipeline |  |  |
 
-## Terraform Implementation Plan
+## CDK Implementation Plan
 
-### 1. Provider and Backend Configuration
-- Configure AWS provider using the `tfs-shared-services` profile in us-east-1 region
-- Set up S3 backend for Terraform state
-- Define common variables and data sources
-- Reference existing VPC and subnet resources using data sources
+### 1. CDK Project Setup and Configuration
+- Initialize a new CDK project (e.g., using TypeScript or Python).
+- Configure AWS provider details (region, account) in the CDK app or via environment variables/AWS profile.
+- CDK handles state management via CloudFormation stacks, typically stored in an S3 bucket created during `cdk bootstrap`.
+- Define common configurations, context values (`cdk.json`, `cdk.context.json`), and stack properties.
+- Reference existing VPC and subnet resources using CDK lookup methods (e.g., `Vpc.fromLookup`) or by importing them with their IDs.
 
-### 2. Networking Infrastructure
-- Import existing VPC and subnet resources
-- Create security groups within the existing VPC
-- Create Application Load Balancer in the public subnets
-- Configure routing rules for the ALB
+### 2. Networking Infrastructure (using `aws-cdk-lib/aws-ec2`)
+- Import the existing VPC and subnets using `Vpc.fromLookup` or by providing their IDs.
+- Create security groups (`ec2.SecurityGroup`) within the existing VPC.
+- Create an Application Load Balancer (`elbv2.ApplicationLoadBalancer`) in the public subnets.
+- Configure listeners and target groups for the ALB.
 
-### 3. ECR Repositories
-- Create ECR repositories for each service:
+### 3. ECR Repositories (using `aws-cdk-lib/aws-ecr`)
+- Create ECR repositories (`ecr.Repository`) for each service:
   - `aws-transcription-laravel`
   - `aws-audio-extraction`
   - `aws-transcription-service`
   - `aws-music-term-recognition`
-- Configure lifecycle policies
+- Configure lifecycle policies for image retention.
+- Optionally, integrate with `aws-cdk-lib/aws-ecr-assets` for building and publishing images from local Dockerfiles during `cdk deploy`.
 
-### 4. ECS Infrastructure
-- Create ECS cluster in us-east-1 region
-- Set up task execution and task roles with appropriate permissions
-- Create CloudWatch log groups
+### 4. ECS Infrastructure (using `aws-cdk-lib/aws-ecs` and `aws-cdk-lib/aws-ecs-patterns`)
+- Create an ECS cluster (`ecs.Cluster`) in the us-east-1 region, configured to use the existing VPC.
+- Set up task execution IAM role (`iam.Role`) and task IAM roles with appropriate permissions.
+- Create CloudWatch log groups (`logs.LogGroup`) for container logs.
+- Consider using higher-level patterns like `ecs_patterns.ApplicationLoadBalancedFargateService` for simplicity.
 
-### 5. Database
-- Create RDS MySQL instance in the private subnets
-- Configure security groups and subnet groups
-- Set up parameter groups and backup policies
+### 5. Database (using `aws-cdk-lib/aws-rds`)
+- Create an RDS MySQL instance or Aurora Serverless cluster (`rds.DatabaseInstance` or `rds.ServerlessCluster`) in the private subnets.
+- Configure security groups to allow access from ECS services.
+- Set up parameter groups, option groups, and backup policies as needed.
 
-### 6. Shared Storage
-- Create EFS file system
-- Configure mount targets in the private subnets
-- Set up access points and security groups
+### 6. Shared Storage (using `aws-cdk-lib/aws-efs`)
+- Create an EFS file system (`efs.FileSystem`) within the VPC.
+- Configure mount targets in the private subnets.
+- Set up access points (`efs.AccessPoint`) and security groups for controlled access from ECS tasks.
 
-### 7. Task Definitions
-- Define task definitions for each service with:
-  - Container definitions (image, CPU, memory, port mappings)
-  - Volume configurations (EFS mounts)
-  - Environment variables
-  - Logging configuration
+### 7. Task Definitions (as part of ECS constructs)
+- Define task definitions implicitly or explicitly within ECS service constructs:
+  - Container definitions (image from ECR, CPU, memory, port mappings).
+  - Volume configurations (EFS mounts).
+  - Environment variables (including secrets from AWS Secrets Manager or Systems Manager Parameter Store).
+  - Logging configuration (to CloudWatch Logs).
 
-### 8. ECS Services
-- Create ECS services for each component in the private subnets
-- Configure service discovery for inter-service communication
-- Set up autoscaling policies
-- Define health checks and deployment configuration
+### 8. ECS Services (using `aws-cdk-lib/aws-ecs` or `aws-cdk-lib/aws-ecs-patterns`)
+- Create ECS services (`ecs.FargateService` or via patterns) for each component in the private subnets.
+- Configure service discovery (e.g., AWS Cloud Map, integrated with ECS).
+- Set up autoscaling policies.
+- Define health checks and deployment configurations (rolling updates, blue/green).
 
 ### 9. CI/CD Pipeline
-- Create scripts for building and pushing Docker images to ECR
-- Configure CodePipeline/CodeBuild or GitHub Actions for automated deployments
+- Create scripts for building and pushing Docker images to ECR (if not handled by `ecr-assets`).
+- Configure AWS CodePipeline/CodeBuild or GitHub Actions for automated `cdk synth` and `cdk deploy` operations.
 
 ## Iterative Testing Approach
 
 We'll use a modular, incremental approach to build and test the infrastructure:
 
-### 1. Module-by-Module Testing
-- Divide Terraform configurations into logical modules
-- Test each module independently before integration
+### 1. Stack-by-Stack / Construct-by-Construct Testing
+- Divide CDK configurations into logical Stacks and Constructs.
+- Test each Stack or key Construct independently before integration.
 - Use the following testing sequence:
-  1. Network configuration and security groups
+  1. Network configuration (VPC import, SGs)
   2. ECR repositories
   3. EFS file system
   4. RDS database
   5. ECS cluster and base infrastructure
-  6. Individual services one at a time
+  6. Individual services one at a time by deploying their respective stacks or updating the main application stack.
 
 ### 2. Local Docker Testing
 - Test service containers locally before pushing to ECR:
   ```bash
-  docker-compose up audio-extraction-service
+  # Example: docker-compose up audio-extraction-service
+  docker build -t audio-extraction-service ./audio-extraction-service
+  docker run -p 5000:5000 audio-extraction-service
   ```
-- Validate individual container functionality
-- Test inter-service communication locally
+- Validate individual container functionality.
+- Test inter-service communication locally if feasible using Docker networks.
 
-### 3. Terraform Workspaces
-- Use Terraform workspaces to isolate environments:
+### 3. CDK Environments / Stacks for Isolation
+- Use separate CDK stack instantiations or context parameters to isolate environments (e.g., `dev`, `staging`).
+  ```typescript
+  // Example in bin/my-app.ts
+  // const devEnv = { account: 'ACCOUNTID', region: 'us-east-1' };
+  // new MyServiceStack(app, 'DevService', { env: devEnv, /* other dev props */ });
+  // new MyServiceStack(app, 'ProdService', { env: prodEnv, /* other prod props */ });
+  ```
+- Create a `dev` environment for testing before deploying to production-like environments.
+- Use consistent naming with environment prefixes/suffixes in stack names to avoid resource conflicts if not using separate accounts.
+
+### 4. Partial Deployments (Deploying Specific Stacks)
+- Use targeted deploys to test specific stacks:
   ```bash
-  terraform workspace new dev
-  terraform workspace select dev
+  cdk deploy MyEcrStack MyNetworkStack
   ```
-- Create a `dev` environment for testing before applying to production
-- Use consistent naming with environment prefixes to avoid resource conflicts
+- Build and validate ECR repositories stack first.
+- Push container images to ECR before creating ECS services that depend on them (or use `ecr-assets`).
+- Synthesize and deploy ECS task definitions and services stacks.
 
-### 4. Partial Deployments
-- Use targeted applies to test specific resources:
+### 5. Test Environment Variables and Context
+- Use `cdk.json` or `cdk.context.json` for environment-specific configurations or pass them as stack properties.
+  ```json
+  // cdk.json or cdk.context.json example
+  // {
+  //   "context": {
+  //     "dev:dbInstanceType": "t3.micro",
+  //     "prod:dbInstanceType": "m5.large"
+  //   }
+  // }
+  ```
+- Test with dev settings before applying production configuration.
+
+### 6. Infrastructure Validation and Review
+- Synthesize CloudFormation templates to review changes:
   ```bash
-  terraform apply -target=module.ecr -var-file=terraform.tfvars
+  cdk synth MyStack > template.yaml
   ```
-- Build and validate ECR repositories first
-- Push container images to ECR before creating ECS services
-- Create ECS task definitions before services
-
-### 5. Test Environment Variables
-- Create separate `.tfvars` files for different environments:
-  ```
-  terraform/
-  ├── terraform.tfvars       # Common variables
-  ├── dev.tfvars             # Development-specific overrides
-  ├── prod.tfvars            # Production-specific overrides
-  ```
-- Test with dev settings before applying production configuration
-
-### 6. Infrastructure Validation
-- Use built-in validation:
+- Run `cdk diff` frequently to check for potential changes before deploying:
   ```bash
-  terraform validate
+  cdk diff MyStack
   ```
-- Run plan mode frequently to check for potential issues:
-  ```bash
-  terraform plan -var-file=dev.tfvars
-  ```
-- Review planned changes carefully before applying
+- Review planned changes carefully before deploying with `cdk deploy MyStack`.
 
-## Using Docker for Terraform
+## Using the AWS CDK CLI
 
-To eliminate the need for local Terraform installation and ensure consistent versions across all deployments, we'll use Docker to run Terraform:
+The AWS CDK Command Line Interface (CLI) is the primary tool for interacting with your CDK applications. It's typically installed via npm.
 
-### 1. Docker Approach Benefits
-- No need to install Terraform locally
-- Consistent Terraform version across all environments
-- Isolated execution environment
-- Works on any platform with Docker
+### 1. CDK CLI Benefits
+- Define infrastructure in familiar programming languages.
+- Leverage high-level constructs for conciseness and best practices.
+- Integrated with AWS CloudFormation for robust deployment and state management.
+- Facilitates modular and reusable infrastructure components.
 
-### 2. Docker Command Pattern
-```bash
-docker run --rm -it \
-  -v $(pwd):/workspace \
-  -v ~/.aws:/root/.aws \
-  -e AWS_PROFILE=tfs-shared-services \
-  -e AWS_REGION=us-east-1 \
-  -w /workspace \
-  hashicorp/terraform:1.5.7 \
-  [command]
-```
+### 2. Common CDK Commands
+- `cdk init app --language [typescript|python|java|csharp|go]`: Initializes a new CDK project.
+- `cdk bootstrap`: Deploys the CDK toolkit stack (assets bucket, roles) to an AWS environment (once per account/region).
+- `npm run build`: Compiles your CDK app (e.g., TypeScript to JavaScript).
+- `cdk synth [StackName]`: Synthesizes and prints the CloudFormation template for the specified stack(s).
+- `cdk diff [StackName]`: Compares the specified stack(s) with the deployed version and shows a diff.
+- `cdk deploy [StackName|--all]`: Deploys the specified stack(s) or all stacks to your AWS account.
+- `cdk destroy [StackName|--all]`: Destroys the specified stack(s).
+- `cdk list` or `ls`: Lists the stacks in your CDK app.
 
 ### 3. Usage with Deployment Script
-Our `deploy-menu.sh` script has been updated to:
-- Check for Docker instead of Terraform
-- Pull the Terraform Docker image if needed
-- Run all Terraform commands through Docker
-- Mount the necessary volumes for AWS credentials and Terraform files
+Our `deploy-menu.sh` script will be updated to:
+- Check for Node.js and CDK CLI.
+- Offer options to run `cdk bootstrap`, `cdk synth`, `cdk diff`, `cdk deploy`, and `cdk destroy`.
+- Manage different environment configurations if applicable (e.g., by passing context or selecting different stack entry points).
 
-### 4. Image Version Management
-- We're using a specific version tag (1.5.7) to ensure consistency
-- Version can be updated in the script as needed
-- Script checks if the image exists locally before pulling
+### 4. CDK Version Management
+- CDK CLI version and library versions (`aws-cdk-lib`) are managed in `package.json`.
+- Keep CDK CLI and library versions in sync to avoid compatibility issues.
 
 ## Deployment Process
 
-1. **Initialize Infrastructure**
+1. **Bootstrap CDK (if first time for account/region)**
    ```bash
-   terraform init
-   terraform plan -var-file=terraform.tfvars
-   terraform apply -var-file=terraform.tfvars
+   cdk bootstrap aws://ACCOUNT-NUMBER/REGION --profile tfs-shared-services
    ```
 
-2. **Build and Push Docker Images**
+2. **Build and Push Docker Images (if not using CDK for assets)**
    ```bash
    AWS_PROFILE=tfs-shared-services AWS_REGION=us-east-1 ./scripts/build-push.sh
    ```
+   (Alternatively, if using `aws-cdk-lib/aws-ecr-assets`, this step is part of `cdk deploy`)
 
-3. **Deploy Services**
+3. **Synthesize and Review Changes (Recommended)**
    ```bash
-   terraform apply -var-file=terraform.tfvars -var='deploy_services=true'
+   # For TypeScript projects, compile first:
+   # npm run build 
+   cdk synth # To see templates for all stacks
+   cdk diff # To see changes for all stacks or a specific stack
    ```
+
+4. **Deploy Infrastructure and Services**
+   ```bash
+   cdk deploy --all --profile tfs-shared-services 
+   # Or deploy specific stacks:
+   # cdk deploy MyNetworkStack MyEcsClusterStack MyLaravelServiceStack --profile tfs-shared-services
+   ```
+   If deploying services that depend on images pushed in step 2, ensure that's done first, or structure your CDK app with `aws-ecr-assets` to handle image building and pushing.
 
 ## Key Considerations
 
@@ -255,571 +271,45 @@ Our `deploy-menu.sh` script has been updated to:
    - Encrypt data at rest and in transit
 
 4. **Cost Optimization**:
-   - Use Fargate Spot for non-critical services
-   - Implement autoscaling based on demand
-   - Use the appropriate instance types for RDS
+   - Use Fargate Spot for non-critical services (configurable in ECS Fargate service constructs).
+   - Implement autoscaling based on demand (configurable in ECS service constructs).
+   - Use the appropriate instance types for RDS (configurable in RDS constructs).
 
 5. **Monitoring and Logging**:
    - Set up CloudWatch alarms for service metrics
    - Configure log shipping to CloudWatch Logs
-   - Set up tracing with X-Ray (optional)
+   - Set up tracing with X-Ray (optional, can be enabled for various services via CDK).
 
-## Terraform Directory Structure
+## CDK Project Structure (Example for TypeScript)
 
 ```
-terraform/
-├── main.tf              # Provider configuration, backend, common variables
-├── variables.tf         # Input variables
-├── terraform.tfvars     # Variable values including AWS profile settings
-├── dev.tfvars           # Development environment variables
-├── outputs.tf           # Output values
-├── network.tf           # Import existing VPC and subnets, create security groups
-├── ecr.tf               # ECR repositories
-├── ecs-cluster.tf       # ECS cluster configuration
-├── ecs-tasks.tf         # Task definitions
-├── ecs-services.tf      # ECS services
-├── rds.tf               # Database resources
-├── efs.tf               # Shared storage resources
-└── monitoring.tf        # CloudWatch alarms and dashboards
+my-cdk-app/
+├── bin/
+│   └── my-cdk-app.ts    # Entry point of the CDK application, defines stacks
+├── lib/
+│   ├── my-network-stack.ts # Defines networking resources (VPC, SGs)
+│   ├── my-ecr-stack.ts     # Defines ECR repositories
+│   ├── my-ecs-cluster-stack.ts # Defines ECS Cluster, IAM Roles
+│   ├── my-database-stack.ts # Defines RDS instance
+│   ├── my-efs-stack.ts      # Defines EFS file system
+│   └── my-laravel-service-stack.ts # Defines ECS Fargate service for Laravel
+├── test/
+│   └── my-cdk-app.test.ts # Unit and snapshot tests for stacks
+├── cdk.json                 # Toolkit configuration, context values
+├── package.json             # NPM dependencies (including aws-cdk-lib)
+├── package-lock.json
+├── tsconfig.json            # TypeScript configuration
+└── README.md
 ```
 
-## Terraform Code Examples with Comments
+## CDK Code Examples with Comments (TypeScript)
+
+(This section will be populated with CDK code examples for key resources like VPC import, ECR, ECS Fargate Service, RDS, EFS, and Security Groups, replacing the old Terraform HCL examples. Due to length, these will be added incrementally or as a separate step if this initial update is too large.)
+
+*Placeholder for CDK code examples. The following Terraform examples will be removed and replaced.*
 
 ### Provider and Backend Configuration (main.tf)
-
-```hcl
-# Terraform block defines the required providers and versions
-# This is similar to package.json in Node.js or requirements.txt in Python
-terraform {
-  # Requiring specific version of AWS provider ensures compatibility
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"  # Provider source - hashicorp is the official maintainer
-      version = "~> 4.0"         # Version constraint - ~> means "compatible with"
-    }
-  }
-  
-  # Backend configuration determines where Terraform state is stored
-  # S3 backend enables team collaboration and state locking
-  backend "s3" {
-    bucket  = "your-terraform-state-bucket"  # S3 bucket to store state
-    key     = "aws-transcription-service/terraform.tfstate"  # Path within bucket
-    region  = "us-east-1"
-    profile = "tfs-shared-services"
-    
-    # DynamoDB table for state locking to prevent concurrent modifications
-    dynamodb_table = "terraform-state-lock"  # Uncomment if using state locking
-  }
-}
-
-# Configure the AWS Provider
-# This is equivalent to configuring the AWS SDK or CLI
-provider "aws" {
-  region  = "us-east-1"
-  profile = "tfs-shared-services"
-  
-  # Default tags apply to all resources created by this provider
-  # This is more efficient than adding tags to each resource manually
-  default_tags {
-    tags = {
-      Project     = "AWS-Transcription-Service"
-      Environment = terraform.workspace  # Automatically uses workspace name (dev, prod)
-      ManagedBy   = "Terraform"
-    }
-  }
-}
-
-# Variables are like function parameters for your Terraform configuration
-# Define variables in variables.tf, set values in .tfvars files
-variable "app_name" {
-  description = "Name of the application"
-  type        = string
-  default     = "aws-transcription"
-}
-
-# Data sources fetch information from your AWS account
-# These don't create resources - they just query existing ones
-# Useful for working with pre-existing infrastructure
-
-# Reference existing VPC - data sources use read-only API calls
-data "aws_vpc" "existing" {
-  id = "vpc-09422297ced61f9d2"
-}
-
-# Reference existing subnets - these could alternatively be fetched by
-# filters like tags instead of hardcoded IDs, which is more maintainable
-data "aws_subnet" "public_a" {
-  id = "subnet-0460f66368d31fd0d"
-}
-
-data "aws_subnet" "public_b" {
-  id = "subnet-02355996f055ea5ac"
-}
-
-data "aws_subnet" "private_a" {
-  id = "subnet-096caf8b193f1d108"
-}
-
-data "aws_subnet" "private_b" {
-  id = "subnet-0afef54f7c422ecab"
-}
-
-# Local values are like local variables in programming
-# Use locals for values derived from other values or for readability
-locals {
-  environment = terraform.workspace
-  common_tags = {
-    Application = var.app_name
-    Environment = local.environment
-  }
-}
-```
-
-### ECR Repositories (ecr.tf)
-
-```hcl
-# ECR repositories store container images like Docker Hub but in your AWS account
-# Each service gets its own repository for better separation of concerns
-
-# Create repository for Laravel service
-resource "aws_ecr_repository" "laravel" {
-  name                 = "${var.app_name}-laravel"
-  image_tag_mutability = "MUTABLE"  # Allows overwriting tags (like "latest")
-  
-  # Enable image scanning for security vulnerabilities
-  image_scanning_configuration {
-    scan_on_push = true  # Automatically scan images when pushed
-  }
-  
-  # Encryption configuration for images at rest
-  encryption_configuration {
-    encryption_type = "KMS"  # AWS Key Management Service
-    # Optional: kms_key = aws_kms_key.ecr.arn
-  }
-  
-  # Uncomment to automatically apply tags from variables
-  # tags = local.common_tags
-}
-
-# Create repository for Audio Extraction service
-resource "aws_ecr_repository" "audio" {
-  name                 = "${var.app_name}-audio-extraction"
-  image_tag_mutability = "MUTABLE"
-  
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-  
-  # Tags can be merged with local values
-  tags = merge(local.common_tags, {
-    Service = "audio-extraction"
-  })
-}
-
-# Repeat similar blocks for transcription and music services
-
-# Lifecycle policy controls image retention to manage costs
-# This is like setting up garbage collection for your container registry
-resource "aws_ecr_lifecycle_policy" "laravel" {
-  repository = aws_ecr_repository.laravel.name
-  
-  # Policy document in JSON format - Terraform uses a lot of JSON/HCL hybrid syntax
-  policy = jsonencode({
-    rules = [
-      {
-        rulePriority = 1,
-        description  = "Keep only 10 untagged images",
-        selection = {
-          tagStatus   = "untagged",  # Applies to images without specific tags
-          countType   = "imageCountMoreThan",
-          countNumber = 10
-        },
-        action = {
-          type = "expire"  # Delete images that match the selection criteria
-        }
-      },
-      {
-        rulePriority = 2,
-        description  = "Keep last 30 tagged images per service",
-        selection = {
-          tagStatus     = "any",
-          countType     = "imageCountMoreThan",
-          countNumber   = 30
-        },
-        action = {
-          type = "expire"
-        }
-      }
-    ]
-  })
-}
-
-# Output values are like return values from your Terraform configuration
-# Use them to display important information after applying
-output "repository_urls" {
-  description = "URLs of the ECR repositories"
-  value = {
-    laravel       = aws_ecr_repository.laravel.repository_url
-    audio         = aws_ecr_repository.audio.repository_url
-    # Add other repositories here
-  }
-}
-```
-
-### ECS Resources (ecs-cluster.tf)
-
-```hcl
-# ECS Cluster is the container orchestration platform
-# Similar to creating a Kubernetes cluster but AWS-specific
-resource "aws_ecs_cluster" "main" {
-  name = "${var.app_name}-cluster-${local.environment}"
-  
-  # Enable Container Insights for advanced monitoring
-  setting {
-    name  = "containerInsights"
-    value = "enabled"
-  }
-  
-  # Service Connect enables service discovery between containers
-  # This is similar to Kubernetes service discovery
-  service_connect_defaults {
-    namespace = aws_service_discovery_http_namespace.main.arn
-  }
-  
-  tags = local.common_tags
-}
-
-# Service discovery namespace for internal container communication
-resource "aws_service_discovery_http_namespace" "main" {
-  name        = "${var.app_name}-namespace"
-  description = "Service discovery namespace for ${var.app_name} services"
-  
-  tags = local.common_tags
-}
-
-# IAM role for ECS task execution
-# This gives the ECS service permission to pull images, write logs, etc.
-resource "aws_iam_role" "ecs_task_execution" {
-  name = "${var.app_name}-task-execution-role"
-  
-  # Assume role policy allows ECS to assume this role
-  # This is similar to IAM role trust relationships in the console
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Action = "sts:AssumeRole",
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        },
-        Effect = "Allow",
-        Sid    = ""
-      }
-    ]
-  })
-  
-  tags = local.common_tags
-}
-
-# Attach AWS managed policy for basic task execution permissions
-# Using managed policies is easier than creating custom policies
-resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
-  role       = aws_iam_role.ecs_task_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-# IAM role for the tasks themselves (application permissions)
-# This is what your application code uses to access AWS services
-resource "aws_iam_role" "ecs_task" {
-  name = "${var.app_name}-task-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Action = "sts:AssumeRole",
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        },
-        Effect = "Allow",
-        Sid    = ""
-      }
-    ]
-  })
-  
-  # Inline policy for specific permissions
-  # You can use inline or managed policies based on complexity
-  inline_policy {
-    name = "transcription-permissions"
-    policy = jsonencode({
-      Version = "2012-10-17",
-      Statement = [
-        {
-          Effect = "Allow",
-          Action = [
-            # Specific permissions needed by your application
-            "transcribe:StartTranscriptionJob",
-            "transcribe:GetTranscriptionJob",
-            "s3:GetObject",
-            "s3:PutObject"
-          ],
-          Resource = "*"  # Limit this to specific resources in production
-        }
-      ]
-    })
-  }
-  
-  tags = local.common_tags
-}
-
-# CloudWatch Log Group for container logs
-# Similar to creating log groups in CloudWatch console
-resource "aws_cloudwatch_log_group" "main" {
-  name              = "/ecs/${var.app_name}-${local.environment}"
-  retention_in_days = 30  # Adjust based on your requirements
-  
-  # Encryption for sensitive logs
-  kms_key_id = aws_kms_key.logs.arn
-  
-  tags = local.common_tags
-}
-
-# KMS key for log encryption
-# Creates a custom encryption key in KMS
-resource "aws_kms_key" "logs" {
-  description         = "KMS key for encrypting ${var.app_name} logs"
-  enable_key_rotation = true  # Security best practice
-  
-  tags = local.common_tags
-}
-```
-
-### ECS Task Definition (ecs-tasks.tf)
-
-```hcl
-# Task definition describes how to run a container
-# Similar to a Docker Compose file or Kubernetes pod definition
-resource "aws_ecs_task_definition" "laravel" {
-  family                   = "${var.app_name}-laravel"  # Task definition name
-  requires_compatibilities = ["FARGATE"]  # Run on Fargate (serverless)
-  network_mode             = "awsvpc"     # Required for Fargate
-  cpu                      = "1024"       # 1 vCPU
-  memory                   = "2048"       # 2 GB RAM
-  
-  # Execution role is for the container agent
-  execution_role_arn = aws_iam_role.ecs_task_execution.arn
-  
-  # Task role is for your application code
-  task_role_arn      = aws_iam_role.ecs_task.arn
-  
-  # Volume configuration for EFS
-  # This creates a persistent volume that survives container restarts
-  volume {
-    name = "shared-storage"
-    
-    efs_volume_configuration {
-      file_system_id     = aws_efs_file_system.main.id
-      transit_encryption = "ENABLED"
-      
-      authorization_config {
-        access_point_id = aws_efs_access_point.laravel.id
-      }
-    }
-  }
-  
-  # Container definitions - similar to entries in a docker-compose.yml
-  # This JSON defines the containers in your task
-  container_definitions = jsonencode([
-    {
-      name  = "laravel",
-      image = "${aws_ecr_repository.laravel.repository_url}:latest",
-      
-      # Port mappings expose container ports
-      portMappings = [
-        {
-          containerPort = 80,
-          hostPort      = 80,
-          protocol      = "tcp"
-        }
-      ],
-      
-      # Environment variables for container configuration
-      # These could come from SSM Parameter Store for sensitive values
-      environment = [
-        { name = "APP_ENV", value = local.environment },
-        { name = "DB_HOST", value = aws_rds_cluster.main.endpoint },
-        { name = "AUDIO_SERVICE_URL", value = "http://audio-extraction-service.${aws_service_discovery_http_namespace.main.name}" },
-        { name = "TRANSCRIPTION_SERVICE_URL", value = "http://transcription-service.${aws_service_discovery_http_namespace.main.name}" },
-        { name = "MUSIC_TERM_SERVICE_URL", value = "http://music-term-recognition-service.${aws_service_discovery_http_namespace.main.name}" }
-      ],
-      
-      # Secret environment variables from SSM Parameter Store
-      # More secure than hardcoding in the task definition
-      secrets = [
-        { name = "DB_PASSWORD", valueFrom = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/transcription/db/password" }
-      ],
-      
-      # Mount points connect volumes to container paths
-      mountPoints = [
-        {
-          sourceVolume  = "shared-storage",
-          containerPath = "/var/www/storage/app/public/s3",
-          readOnly      = false
-        }
-      ],
-      
-      # Essential containers must be running for the task to be considered healthy
-      essential = true,
-      
-      # Logging configuration sends container logs to CloudWatch
-      logConfiguration = {
-        logDriver = "awslogs",
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.main.name,
-          "awslogs-region"        = "us-east-1",
-          "awslogs-stream-prefix" = "laravel"
-        }
-      },
-      
-      # Health check ensures container is running properly
-      # Docker will restart the container if checks fail
-      healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost/api/health || exit 1"],
-        interval    = 30,
-        timeout     = 5,
-        retries     = 3,
-        startPeriod = 60  # Allow time for startup
-      }
-    }
-  ])
-  
-  # Using depends_on ensures proper resource creation order
-  # Not strictly necessary but helps avoid race conditions
-  depends_on = [
-    aws_efs_mount_target.private_a,
-    aws_efs_mount_target.private_b
-  ]
-  
-  tags = local.common_tags
-}
-
-# Get current account ID for use in ARNs
-data "aws_caller_identity" "current" {}
-```
-
-### Security Groups (network.tf)
-
-```hcl
-# Security groups control network traffic like firewalls
-# Think of them as firewall rules for your AWS resources
-
-# ALB Security Group - controls traffic to/from the load balancer
-resource "aws_security_group" "alb" {
-  name        = "${var.app_name}-alb-sg"
-  description = "Controls access to the ALB"
-  vpc_id      = data.aws_vpc.existing.id
-  
-  # Ingress rules define allowed inbound traffic
-  # This allows HTTP traffic from anywhere
-  ingress {
-    protocol    = "tcp"
-    from_port   = 80
-    to_port     = 80
-    cidr_blocks = ["0.0.0.0/0"]  # Public access
-    description = "Allow HTTP from internet"
-  }
-  
-  # This allows HTTPS traffic from anywhere
-  ingress {
-    protocol    = "tcp"
-    from_port   = 443
-    to_port     = 443
-    cidr_blocks = ["0.0.0.0/0"]  # Public access
-    description = "Allow HTTPS from internet"
-  }
-  
-  # Egress rules define allowed outbound traffic
-  # This allows all outbound traffic
-  egress {
-    protocol    = "-1"  # All protocols
-    from_port   = 0     # All ports
-    to_port     = 0     # All ports
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
-  }
-  
-  # Lifecycle settings control how Terraform manages this resource
-  # This prevents Terraform from replacing the security group
-  lifecycle {
-    create_before_destroy = true
-  }
-  
-  tags = merge(local.common_tags, {
-    Name = "${var.app_name}-alb-sg"
-  })
-}
-
-# ECS Security Group - controls traffic to/from the containers
-resource "aws_security_group" "ecs" {
-  name        = "${var.app_name}-ecs-sg"
-  description = "Controls access to the ECS services"
-  vpc_id      = data.aws_vpc.existing.id
-  
-  # Allow traffic from ALB to services
-  ingress {
-    protocol        = "tcp"
-    from_port       = 80
-    to_port         = 80
-    security_groups = [aws_security_group.alb.id]  # Only allow traffic from ALB
-    description     = "Allow HTTP from ALB"
-  }
-  
-  # Allow internal traffic between services
-  ingress {
-    protocol        = "tcp"
-    from_port       = 5000
-    to_port         = 5000
-    self            = true  # Allow traffic from resources with this security group
-    description     = "Allow service-to-service communication"
-  }
-  
-  # Allow all outbound traffic
-  egress {
-    protocol    = "-1"
-    from_port   = 0
-    to_port     = 0
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
-  }
-  
-  tags = merge(local.common_tags, {
-    Name = "${var.app_name}-ecs-sg"
-  })
-}
-
-# RDS Security Group - controls traffic to/from the database
-resource "aws_security_group" "rds" {
-  name        = "${var.app_name}-rds-sg"
-  description = "Controls access to RDS"
-  vpc_id      = data.aws_vpc.existing.id
-  
-  # Allow MySQL traffic from ECS services only
-  ingress {
-    protocol        = "tcp"
-    from_port       = 3306
-    to_port         = 3306
-    security_groups = [aws_security_group.ecs.id]
-    description     = "Allow MySQL from ECS services"
-  }
-  
-  # No direct outbound access needed for database
-  
-  tags = merge(local.common_tags, {
-    Name = "${var.app_name}-rds-sg"
-  })
-}
-
-# EFS Security Group - controls traffic to/from shared storage
+// ... existing code ...
 resource "aws_security_group" "efs" {
   name        = "${var.app_name}-efs-sg"
   description = "Controls access to EFS"
@@ -841,10 +331,5 @@ resource "aws_security_group" "efs" {
 ```
 
 ## Scripts
-
-```
-scripts/
-├── build-push.sh        # Script to build and push Docker images to ECR
-├── deploy-menu.sh       # Interactive menu for deployment operations
-└── deploy.sh            # Script to deploy updates
+// ... existing code ...
 ``` 

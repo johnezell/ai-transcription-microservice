@@ -42,9 +42,9 @@ class AudioExtractionJob implements ShouldQueue
     public function handle()
     {
         try {
-            // Make sure the video file exists
-            if (!Storage::disk('public')->exists($this->video->storage_path)) {
-                Log::error('Video file not found for audio extraction job', [
+            // Make sure the video file exists on S3
+            if (empty($this->video->storage_path) || !Storage::disk('s3')->exists($this->video->storage_path)) {
+                Log::error('Video file not found on S3 for audio extraction job', [
                     'video_id' => $this->video->id,
                     'storage_path' => $this->video->storage_path
                 ]);

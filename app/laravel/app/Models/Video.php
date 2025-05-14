@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Traits\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class Video extends Model
@@ -64,114 +65,165 @@ class Video extends Model
     
     /**
      * Get the URL for the video.
+     * For S3 stored files, this will be a temporary pre-signed URL.
      *
      * @return string|null
      */
-    public function getUrlAttribute()
+    public function getUrlAttribute(): ?string
     {
         if (empty($this->storage_path)) {
+            Log::debug('[Video Model] getUrlAttribute: storage_path is empty.', ['video_id' => $this->id]);
             return null;
         }
-        
-        // Debug log to help troubleshoot URL issues
-        \Illuminate\Support\Facades\Log::info('Video URL generation', [
-            'video_id' => $this->id,
-            'storage_path' => $this->storage_path,
-            'full_path' => Storage::disk('public')->path($this->storage_path),
-            'exists' => Storage::disk('public')->exists($this->storage_path)
-        ]);
-        
-        // If it's a relative path within the public disk (preferred format)
-        if (str_starts_with($this->storage_path, 's3/')) {
-            return asset('storage/' . $this->storage_path);
+
+        if (Storage::disk('s3')->exists($this->storage_path)) {
+            try {
+                // Generate a temporary pre-signed URL valid for 15 minutes
+                $s3Url = Storage::disk('s3')->temporaryUrl($this->storage_path, now()->addMinutes(15));
+                Log::info('[Video Model] getUrlAttribute: Generated S3 temporary URL.', [
+                    'video_id' => $this->id,
+                    's3_key' => $this->storage_path,
+                    's3_exists' => true,
+                    // 'generated_url' => $s3Url // Consider if logging pre-signed URLs is a security concern for production
+                ]);
+                return $s3Url;
+            } catch (\Exception $e) {
+                Log::error('[Video Model] getUrlAttribute: Error generating S3 temporary URL.', [
+                    'video_id' => $this->id,
+                    's3_key' => $this->storage_path,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
+            }
+        } else {
+            Log::warning('[Video Model] getUrlAttribute: S3 key does not exist on s3 disk.', [
+                'video_id' => $this->id,
+                's3_key' => $this->storage_path,
+                's3_exists' => false
+            ]);
+            return null; // Or a placeholder URL indicating the file is missing
         }
-        
-        // Convert absolute path to relative URL if needed
-        if (str_starts_with($this->storage_path, '/var/www/storage/app/public/')) {
-            $path = str_replace('/var/www/storage/app/public/', '', $this->storage_path);
-            return asset('storage/' . $path);
-        }
-        
-        // Default fallback - assuming it's relative to storage/app/public
-        return asset('storage/' . $this->storage_path);
     }
     
     /**
      * Get the URL for the audio file if it exists.
+     * For S3 stored files, this will be a temporary pre-signed URL.
      * 
      * @return string|null
      */
-    public function getAudioUrlAttribute()
+    public function getAudioUrlAttribute(): ?string
     {
         if (empty($this->audio_path)) {
+            Log::debug('[Video Model] getAudioUrlAttribute: audio_path is empty.', ['video_id' => $this->id]);
             return null;
         }
-        
-        // If it's a relative path within the public disk
-        if (str_starts_with($this->audio_path, 's3/')) {
-            return asset('storage/' . $this->audio_path);
+
+        if (Storage::disk('s3')->exists($this->audio_path)) {
+            try {
+                $s3Url = Storage::disk('s3')->temporaryUrl($this->audio_path, now()->addMinutes(15));
+                Log::info('[Video Model] getAudioUrlAttribute: Generated S3 temporary URL for audio.', [
+                    'video_id' => $this->id,
+                    's3_key_audio' => $this->audio_path,
+                    's3_exists' => true,
+                    // 'generated_url' => $s3Url
+                ]);
+                return $s3Url;
+            } catch (\Exception $e) {
+                Log::error('[Video Model] getAudioUrlAttribute: Error generating S3 temporary URL for audio.', [
+                    'video_id' => $this->id,
+                    's3_key_audio' => $this->audio_path,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
+            }
+        } else {
+            Log::warning('[Video Model] getAudioUrlAttribute: S3 key for audio does not exist on s3 disk.', [
+                'video_id' => $this->id,
+                's3_key_audio' => $this->audio_path,
+                's3_exists' => false
+            ]);
+            return null;
         }
-        
-        // Convert absolute path to relative URL
-        if (str_starts_with($this->audio_path, '/var/www/storage/app/public/')) {
-            $path = str_replace('/var/www/storage/app/public/', '', $this->audio_path);
-            return asset('storage/' . $path);
-        }
-        
-        // Default fallback - just return the path as-is
-        return $this->audio_path;
     }
     
     /**
      * Get the URL for the transcript file if it exists.
+     * For S3 stored files, this will be a temporary pre-signed URL.
      * 
      * @return string|null
      */
-    public function getTranscriptUrlAttribute()
+    public function getTranscriptUrlAttribute(): ?string
     {
         if (empty($this->transcript_path)) {
+            Log::debug('[Video Model] getTranscriptUrlAttribute: transcript_path is empty.', ['video_id' => $this->id]);
             return null;
         }
-        
-        // If it's a relative path within the public disk
-        if (str_starts_with($this->transcript_path, 's3/')) {
-            return asset('storage/' . $this->transcript_path);
+
+        if (Storage::disk('s3')->exists($this->transcript_path)) {
+            try {
+                $s3Url = Storage::disk('s3')->temporaryUrl($this->transcript_path, now()->addMinutes(15));
+                Log::info('[Video Model] getTranscriptUrlAttribute: Generated S3 temporary URL for transcript.', [
+                    'video_id' => $this->id,
+                    's3_key_transcript' => $this->transcript_path,
+                    's3_exists' => true
+                ]);
+                return $s3Url;
+            } catch (\Exception $e) {
+                Log::error('[Video Model] getTranscriptUrlAttribute: Error generating S3 temporary URL for transcript.', [
+                    'video_id' => $this->id,
+                    's3_key_transcript' => $this->transcript_path,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
+            }
+        } else {
+            Log::warning('[Video Model] getTranscriptUrlAttribute: S3 key for transcript does not exist on s3 disk.', [
+                'video_id' => $this->id,
+                's3_key_transcript' => $this->transcript_path,
+                's3_exists' => false
+            ]);
+            return null;
         }
-        
-        // Convert absolute path to relative URL
-        if (str_starts_with($this->transcript_path, '/var/www/storage/app/public/')) {
-            $path = str_replace('/var/www/storage/app/public/', '', $this->transcript_path);
-            return asset('storage/' . $path);
-        }
-        
-        // Default fallback - just return the path as-is
-        return $this->transcript_path;
     }
     
     /**
      * Get the URL for the terminology JSON file if it exists.
+     * For S3 stored files, this will be a temporary pre-signed URL.
      * 
      * @return string|null
      */
-    public function getTerminologyUrlAttribute()
+    public function getTerminologyUrlAttribute(): ?string
     {
         if (empty($this->terminology_path)) {
+            Log::debug('[Video Model] getTerminologyUrlAttribute: terminology_path is empty.', ['video_id' => $this->id]);
             return null;
         }
-        
-        // If it's a relative path within the public disk
-        if (str_starts_with($this->terminology_path, 's3/')) {
-            return asset('storage/' . $this->terminology_path);
+
+        if (Storage::disk('s3')->exists($this->terminology_path)) {
+            try {
+                $s3Url = Storage::disk('s3')->temporaryUrl($this->terminology_path, now()->addMinutes(15));
+                Log::info('[Video Model] getTerminologyUrlAttribute: Generated S3 temporary URL for terminology.', [
+                    'video_id' => $this->id,
+                    's3_key_terminology' => $this->terminology_path,
+                    's3_exists' => true
+                ]);
+                return $s3Url;
+            } catch (\Exception $e) {
+                Log::error('[Video Model] getTerminologyUrlAttribute: Error generating S3 temporary URL for terminology.', [
+                    'video_id' => $this->id,
+                    's3_key_terminology' => $this->terminology_path,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
+            }
+        } else {
+            Log::warning('[Video Model] getTerminologyUrlAttribute: S3 key for terminology does not exist on s3 disk.', [
+                'video_id' => $this->id,
+                's3_key_terminology' => $this->terminology_path,
+                's3_exists' => false
+            ]);
+            return null;
         }
-        
-        // Convert absolute path to relative URL
-        if (str_starts_with($this->terminology_path, '/var/www/storage/app/public/')) {
-            $path = str_replace('/var/www/storage/app/public/', '', $this->terminology_path);
-            return asset('storage/' . $path);
-        }
-        
-        // Default fallback - just return the path as-is
-        return $this->terminology_path;
     }
     
     /**
@@ -228,76 +280,107 @@ class Video extends Model
     
     /**
      * Get the URL for the SRT subtitles file if it exists.
+     * For S3 stored files, this will be a temporary pre-signed URL.
      * 
      * @return string|null
      */
-    public function getSubtitlesUrlAttribute()
+    public function getSubtitlesUrlAttribute(): ?string
     {
         if (empty($this->transcript_path)) {
+            // If there's no base transcript_path, we can't derive an SRT path for S3
+            Log::debug('[Video Model] getSubtitlesUrlAttribute: transcript_path is empty, cannot derive SRT path.', ['video_id' => $this->id]);
             return null;
         }
         
-        // Get the directory path from the transcript path
+        // Derive the expected SRT path on S3 from the transcript_path (assuming it's an S3 key)
         $dir = dirname($this->transcript_path);
-        $srtPath = $dir . '/transcript.srt';
-        
-        // Determine the relative path for asset URL
-        $relativePath = null;
-        
-        // If it's inside public disk path
-        if (str_starts_with($srtPath, '/var/www/storage/app/public/')) {
-            $relativePath = str_replace('/var/www/storage/app/public/', '', $srtPath);
-        } else if (str_starts_with($srtPath, 's3/')) {
-            $relativePath = $srtPath;
-        } else {
-            // Try to extract path based on transcript pattern
-            if (preg_match('#/s3/jobs/(.+)/transcript\.txt$#', $this->transcript_path, $matches)) {
-                $jobId = $matches[1];
-                $relativePath = "s3/jobs/{$jobId}/transcript.srt";
+        $srtPath = $dir . '/transcript.srt'; // e.g., s3/jobs/UUID/transcript.srt
+
+        if (Storage::disk('s3')->exists($srtPath)) {
+            try {
+                $s3Url = Storage::disk('s3')->temporaryUrl($srtPath, now()->addMinutes(15));
+                Log::info('[Video Model] getSubtitlesUrlAttribute: Generated S3 temporary URL for SRT.', [
+                    'video_id' => $this->id,
+                    's3_key_srt' => $srtPath,
+                    's3_exists' => true
+                ]);
+                return $s3Url;
+            } catch (\Exception $e) {
+                Log::error('[Video Model] getSubtitlesUrlAttribute: Error generating S3 temporary URL for SRT.', [
+                    'video_id' => $this->id,
+                    's3_key_srt' => $srtPath,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
             }
+        } else {
+            Log::warning('[Video Model] getSubtitlesUrlAttribute: Derived S3 key for SRT does not exist.', [
+                'video_id' => $this->id,
+                'derived_srt_path' => $srtPath,
+                'base_transcript_path' => $this->transcript_path,
+                's3_exists' => false
+            ]);
+            return null;
         }
-        
-        // If we have a relative path, return the asset URL
-        if ($relativePath) {
-            return asset('storage/' . $relativePath);
-        }
-        
-        return null;
     }
     
     /**
      * Get the transcript JSON data.
+     * Attempts to load from database first, then from S3 if path exists.
      *
      * @return array|null
      */
-    public function getTranscriptJsonDataAttribute()
+    public function getTranscriptJsonDataAttribute(): ?array
     {
-        // If we have JSON data stored in the database, return it
         if (!empty($this->transcript_json)) {
+            Log::debug('[Video Model] getTranscriptJsonDataAttribute: Returning data from DB column.', ['video_id' => $this->id]);
             return $this->transcript_json;
         }
         
-        // Otherwise try to load from file if we have a transcript path
         if (empty($this->transcript_path)) {
+            Log::debug('[Video Model] getTranscriptJsonDataAttribute: transcript_path is empty, cannot load from S3.', ['video_id' => $this->id]);
             return null;
         }
         
-        // Get the directory path from the transcript path
         $dir = dirname($this->transcript_path);
-        $jsonPath = $dir . '/transcript.json';
-        
-        // If the JSON file exists, read and return its contents
-        if (file_exists($jsonPath)) {
+        $jsonPath = $dir . '/transcript.json'; // e.g., s3/jobs/UUID/transcript.json
+
+        if (Storage::disk('s3')->exists($jsonPath)) {
             try {
-                $jsonData = json_decode(file_get_contents($jsonPath), true);
-                return $jsonData;
+                $jsonDataString = Storage::disk('s3')->get($jsonPath);
+                if ($jsonDataString === null) {
+                    Log::warning('[Video Model] getTranscriptJsonDataAttribute: S3 get() returned null for transcript JSON.', [
+                        'video_id' => $this->id,
+                        's3_key_json' => $jsonPath
+                    ]);
+                    return null;
+                }
+                $decodedData = json_decode($jsonDataString, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Log::error('[Video Model] getTranscriptJsonDataAttribute: Failed to decode transcript JSON from S3.', [
+                        'video_id' => $this->id,
+                        's3_key_json' => $jsonPath,
+                        'json_error' => json_last_error_msg()
+                    ]);
+                    return null;
+                }
+                Log::info('[Video Model] getTranscriptJsonDataAttribute: Successfully loaded and decoded transcript JSON from S3.', ['video_id' => $this->id, 's3_key_json' => $jsonPath]);
+                return $decodedData;
             } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to read transcript JSON file: ' . $e->getMessage());
+                Log::error('[Video Model] getTranscriptJsonDataAttribute: Exception reading transcript JSON from S3.', [
+                    'video_id' => $this->id,
+                    's3_key_json' => $jsonPath,
+                    'error' => $e->getMessage()
+                ]);
                 return null;
             }
+        } else {
+            Log::warning('[Video Model] getTranscriptJsonDataAttribute: Transcript JSON file key does not exist on S3.', [
+                'video_id' => $this->id,
+                's3_key_json' => $jsonPath
+            ]);
+            return null;
         }
-        
-        return null;
     }
 
     /**
@@ -324,33 +407,59 @@ class Video extends Model
 
     /**
      * Get the terminology JSON data.
+     * Attempts to load from database first, then from S3 if path exists.
      *
      * @return array|null
      */
-    public function getTerminologyJsonDataAttribute()
+    public function getTerminologyJsonDataAttribute(): ?array
     {
-        // If we have JSON data stored in the database, return it
         if (!empty($this->terminology_json)) {
+            Log::debug('[Video Model] getTerminologyJsonDataAttribute: Returning data from DB column.', ['video_id' => $this->id]);
             return $this->terminology_json;
         }
         
-        // Otherwise try to load from file if we have a terminology path
         if (empty($this->terminology_path)) {
+            Log::debug('[Video Model] getTerminologyJsonDataAttribute: terminology_path is empty, cannot load from S3.', ['video_id' => $this->id]);
             return null;
         }
         
-        // If the JSON file exists, read and return its contents
-        if (file_exists($this->terminology_path)) {
+        // Assuming terminology_path directly points to the JSON file key on S3
+        if (Storage::disk('s3')->exists($this->terminology_path)) {
             try {
-                $jsonData = json_decode(file_get_contents($this->terminology_path), true);
-                return $jsonData;
+                $jsonDataString = Storage::disk('s3')->get($this->terminology_path);
+                 if ($jsonDataString === null) {
+                    Log::warning('[Video Model] getTerminologyJsonDataAttribute: S3 get() returned null for terminology JSON.', [
+                        'video_id' => $this->id,
+                        's3_key_terminology_json' => $this->terminology_path
+                    ]);
+                    return null;
+                }
+                $decodedData = json_decode($jsonDataString, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Log::error('[Video Model] getTerminologyJsonDataAttribute: Failed to decode terminology JSON from S3.', [
+                        'video_id' => $this->id,
+                        's3_key_terminology_json' => $this->terminology_path,
+                        'json_error' => json_last_error_msg()
+                    ]);
+                    return null;
+                }
+                Log::info('[Video Model] getTerminologyJsonDataAttribute: Successfully loaded and decoded terminology JSON from S3.', ['video_id' => $this->id, 's3_key_terminology_json' => $this->terminology_path]);
+                return $decodedData;
             } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to read terminology JSON file: ' . $e->getMessage());
+                Log::error('[Video Model] getTerminologyJsonDataAttribute: Exception reading terminology JSON from S3.', [
+                    'video_id' => $this->id,
+                    's3_key_terminology_json' => $this->terminology_path,
+                    'error' => $e->getMessage()
+                ]);
                 return null;
             }
+        } else {
+            Log::warning('[Video Model] getTerminologyJsonDataAttribute: Terminology JSON file key does not exist on S3.', [
+                'video_id' => $this->id,
+                's3_key_terminology_json' => $this->terminology_path
+            ]);
+            return null;
         }
-        
-        return null;
     }
     
     /**

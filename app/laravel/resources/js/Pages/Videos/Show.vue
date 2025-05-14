@@ -56,7 +56,8 @@ function startPolling() {
     }
     
     // Poll every 3 seconds
-    pollingInterval.value = setInterval(fetchStatus, 3000);
+    // pollingInterval.value = setInterval(fetchStatus, 3000);
+    pollingInterval.value = setInterval(fetchStatus, 15000); // INCREASED POLLING INTERVAL FOR DEBUGGING
 }
 
 async function fetchStatus() {
@@ -97,14 +98,16 @@ async function fetchStatus() {
                 
                 // If status changed to a new state, force refresh for newly created videos
                 // This ensures we get all updated UI elements
-                if (isNewVideo.value && 
-                    (data.video.status === 'completed' || 
-                     data.video.has_audio || 
-                     data.video.has_transcript ||
-                     data.video.has_music_terms)) {
-                    window.location.reload();
-                    return;
-                }
+                // if (isNewVideo.value && 
+                //     (data.video.status === 'completed' || 
+                //      data.video.has_audio || 
+                //      data.video.has_transcript ||
+                //      data.video.has_music_terms)) {
+                //     // window.location.reload(); // COMMENTED OUT FOR DEBUGGING
+                //     console.log('[Show.vue DEBUG] Would have reloaded, but commented out. Fetching details instead.');
+                //     await fetchVideoDetails(); // Fetch details instead of full reload
+                //     return;
+                // }
             }
             
             // Copy all available properties from the response to our video data
@@ -123,8 +126,38 @@ async function fetchStatus() {
                 }
                 
                 // Copy URLs if they exist
-                if (data.video.url) videoData.value.url = data.video.url;
-                if (data.video.audio_url) videoData.value.audio_url = data.video.audio_url;
+                if (data.video.url) {
+                    const oldUrlString = videoData.value.url || 'null_or_empty';
+                    const newUrlString = data.video.url;
+                    const oldBaseUrl = videoData.value.url ? videoData.value.url.split('?')[0] : null;
+                    const newBaseUrl = data.video.url.split('?')[0];
+
+                    console.log('[Show.vue DEBUG] Comparing video URLs:', { 
+                        currentVideoDataUrl: oldUrlString,
+                        newUrlFromApi: newUrlString,
+                        oldBaseUrl: oldBaseUrl, 
+                        newBaseUrl: newBaseUrl,
+                        isDifferent: oldBaseUrl !== newBaseUrl,
+                        isCurrentMissing: !videoData.value.url
+                    });
+
+                    if (!videoData.value.url || oldBaseUrl !== newBaseUrl) {
+                        console.log('[Show.vue DEBUG] Updating videoData.url because it was missing or base changed. New URL:', data.video.url);
+                        videoData.value.url = data.video.url;
+                    } else {
+                        console.log('[Show.vue DEBUG] videoData.url base is the same, NOT updating to prevent restart.');
+                    }
+                }
+
+                // Similarly for audio_url
+                if (data.video.audio_url) {
+                    const oldBaseAudioUrl = videoData.value.audio_url ? videoData.value.audio_url.split('?')[0] : null;
+                    const newBaseAudioUrl = data.video.audio_url.split('?')[0];
+                    if (!videoData.value.audio_url || oldBaseAudioUrl !== newBaseAudioUrl) {
+                        videoData.value.audio_url = data.video.audio_url;
+                    }
+                }
+
                 if (data.video.transcript_url) videoData.value.transcript_url = data.video.transcript_url;
                 if (data.video.subtitles_url) videoData.value.subtitles_url = data.video.subtitles_url;
                 if (data.video.transcript_json_url) {
@@ -186,14 +219,13 @@ async function fetchStatus() {
 
 // New function to fetch full video details
 async function fetchVideoDetails() {
+    console.log('[Show.vue DEBUG] Attempting to call fetchVideoDetails() for video ID:', videoData.value.id);
     try {
-        // Make sure we have an ID
         if (!videoData.value.id) {
             console.error('Cannot fetch video details: No video ID available');
             return;
         }
         
-        // Use relative URL to avoid CORS issues
         const response = await fetch(`/api/videos/${videoData.value.id}`);
         
         if (!response.ok) {
@@ -202,20 +234,41 @@ async function fetchVideoDetails() {
         
         const data = await response.json();
         
-        if (data.success) {
-            // Update our local data with the full video details
-            Object.assign(videoData.value, data.video);
+        if (data.success && data.video) {
+            const newVideoDataFromApi = data.video;
             
-            // After updating the video data, try to fetch the transcript JSON
-            // if the transcript_json_url is now available
-            if (videoData.value.transcript_json_url) {
+            // Selectively update videoData.value to avoid unnecessary video restarts
+            Object.keys(newVideoDataFromApi).forEach(key => {
+                if (key === 'url' || key === 'audio_url') {
+                    const currentFullUrl = videoData.value[key];
+                    const newFullUrl = newVideoDataFromApi[key];
+
+                    if (newFullUrl) { // Only proceed if the new URL exists
+                        const oldBase = currentFullUrl ? currentFullUrl.split('?')[0] : null;
+                        const newBase = newFullUrl.split('?')[0];
+
+                        if (!currentFullUrl || oldBase !== newBase) {
+                            console.log(`[Show.vue DEBUG from fetchVideoDetails] Updating videoData.${key} because it was missing or base changed. New URL:`, newFullUrl);
+                            videoData.value[key] = newFullUrl;
+                        } else {
+                            // console.log(`[Show.vue DEBUG from fetchVideoDetails] videoData.${key} base is the same, NOT updating.`);
+                        }
+                    }
+                } else {
+                    // For all other keys, update directly
+                    videoData.value[key] = newVideoDataFromApi[key];
+                }
+            });
+
+            if (videoData.value.transcript_json_url) { // Check after potential update from API
                 await fetchTranscriptData();
             }
         } else {
-            console.error('API returned error:', data.message || 'Unknown error');
+            console.error('API returned error or no video data in fetchVideoDetails:', data.message || 'Unknown error');
         }
     } catch (error) {
         console.error('Error fetching video details:', error);
+        console.log('[Show.vue DEBUG] fetchVideoDetails() FAILED for video ID:', videoData.value.id, 'Error:', error);
     }
 }
 

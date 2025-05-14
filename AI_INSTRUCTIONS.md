@@ -98,13 +98,32 @@ This document contains key information and decisions to help the AI assistant ma
 *   This provides a stable DNS endpoint for accessing the Laravel application via VPN, instead of relying on dynamic Fargate task IPs.
 *   The Laravel service security group (`laravel_ecs_task_sg`) allows TCP port 80 ingress from the VPC CIDR to facilitate NLB access.
 
+## Transcription Service (Whisper AI)
+
+*   **Status**: Deployed and successfully transcribing audio.
+*   **Dockerfile**: `Dockerfile.transcription-service` (builds for `linux/amd64`).
+*   **Service Logic (`app/services/transcription/service.py`)**:
+    *   Receives `audio_s3_key` from Laravel's `TranscriptionJob`.
+    *   Downloads audio from S3.
+    *   Uses `openai-whisper` (e.g., "base" model) for transcription.
+    *   Uploads transcript files (`.txt`, `.srt`, `.json`) to the same S3 "folder" as the source audio (e.g., `s3/jobs/<VIDEO_ID>/transcript.txt`).
+    *   Calls back to Laravel (`/api/transcription/{job_id}/status`) with status `transcribed` and paths to the S3 transcript files.
+*   **CDK Stack (`transcription_service_stack.py`)**: Defines Fargate service, task definition (with appropriate memory/CPU for Whisper), ECR image asset, IAM permissions for S3, and CloudMap service discovery (`transcription-service.local`).
+*   **Inter-Service Communication**:
+    *   Laravel's `TranscriptionJob` calls `http://transcription-service.local:5000/process`.
+    *   Transcription service calls back to `http://aws-transcription-laravel-service.local:80/api/transcription/.../status`.
+*   **Current Model**: Using Whisper "base" model.
+
 ## Next Steps (Current)
 
-*   **Commit all recent changes** (Laravel app updates, S3 fixes, NLB addition, Audio Service CDK stack and code, plan updates, AI instruction updates).
-*   **Begin work on the Transcription Service**:
-    *   Discuss Dockerfile requirements (especially for self-hosted Whisper AI).
-    *   Create CDK stack (`transcription_service_stack.py`).
-    *   Implement service logic for S3 I/O, calling Whisper, and callbacks to Laravel.
-    *   Configure service discovery.
+*   **Verify & Troubleshoot Laravel UI**:
+    *   Confirm transcript files (TXT, SRT, JSON) are correctly linked and accessible/viewable in the Laravel UI.
+    *   Address any issues with S3 URL generation for these transcript files within Laravel models/views.
+*   **Log Cleanup**: Review and reduce verbose logging in all services now that major components are working.
+*   **Begin work on the Music Terminology Service**:
+    *   Discuss Dockerfile and service logic.
+    *   Create CDK stack.
+    *   Integrate with the main processing workflow.
+*   **Commit all recent changes**.
 
 *(This file should be updated as the project progresses)* 

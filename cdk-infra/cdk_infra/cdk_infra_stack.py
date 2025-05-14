@@ -174,14 +174,25 @@ class CdkInfraStack(Stack):
         )
         self.music_term_repo = music_term_repo
 
-        # S3 Bucket for application data
+        # S3 Bucket for application data (videos, transcripts, etc.)
         app_data_bucket = s3.Bucket(self, "AppDataBucket",
             bucket_name=f"{app_name}-data-{self.account}-{self.region}", # Globally unique name
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             versioned=True,
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True, # Correct property for S3 Bucket to empty on delete
-            object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED # Enable ACLs, bucket owner still preferred for ownership
+            object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED, # Enable ACLs, bucket owner still preferred for ownership
+            cors=[
+                s3.CorsRule(
+                    allowed_methods=[s3.HttpMethods.GET, s3.HttpMethods.HEAD],
+                    allowed_origins=["http://aws-transcription-laravel-nlb-d602a8d13f41e935.elb.us-east-1.amazonaws.com"],
+                    # If you test your Laravel UI locally (e.g., php artisan serve or npm run dev),
+                    # you might need to add its origin too, e.g., "http://localhost:8000" or "http://localhost:5173"
+                    allowed_headers=["*"]
+                    # expose_headers= # Optional: if your JS needs to read specific response headers
+                    # max_age=3000 # Optional: browser cache duration for preflight response
+                )
+            ]
         )
         self.app_data_bucket = app_data_bucket
 

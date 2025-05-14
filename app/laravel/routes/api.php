@@ -12,6 +12,8 @@ use Illuminate\Support\Str;
 use App\Http\Controllers\Api\TerminologyController;
 use Illuminate\Support\Facades\Log;
 
+use Illuminate\Support\Facades\Storage;
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -176,6 +178,7 @@ Route::get('/videos/{id}', function($id) {
     $video = Video::find($id);
     
     if (!$video) {
+        Log::warning("[API /videos/{id}] Video not found.", ['video_id' => $id]);
         return response()->json([
             'success' => false,
             'message' => 'Video not found'
@@ -211,24 +214,48 @@ Route::get('/videos/{id}/transcript-json', function($id) {
         ], 404);
     }
     
-    if (empty($video->transcript_json)) {
-        // Fallback to file if database doesn't have the data
-        if (!empty($video->transcript_path)) {
-            $dir = dirname($video->transcript_path);
-            $jsonPath = $dir . '/transcript.json';
-            if (file_exists($jsonPath)) {
-                $jsonData = json_decode(file_get_contents($jsonPath), true);
-                return response()->json($jsonData);
-            }
-        }
-        
-        return response()->json([
-            'success' => false,
-            'message' => 'Transcript data not available'
-        ], 404);
+    // Prefer data from the database column if it exists and is not empty
+    if (!empty($video->transcript_json)) {
+        Log::debug("[API /transcript-json] Returning transcript JSON from DB column.", ['video_id' => $id]);
+        return response()->json($video->transcript_json);
     }
     
-    return response()->json($video->transcript_json);
+    // Fallback to S3 if transcript_json column is empty but transcript_path exists
+    if (!empty($video->transcript_path)) {
+        $dir = dirname($video->transcript_path);
+        $jsonS3Key = $dir . '/transcript.json'; // e.g., s3/jobs/UUID/transcript.json
+
+        Log::debug("[API /transcript-json] Attempting to load transcript JSON from S3.", ['video_id' => $id, 's3_key' => $jsonS3Key]);
+
+        if (Storage::disk('s3')->exists($jsonS3Key)) {
+            try {
+                $jsonDataString = Storage::disk('s3')->get($jsonS3Key);
+                if ($jsonDataString === null) {
+                     Log::warning("[API /transcript-json] S3 get() returned null for transcript JSON.", ['video_id' => $id, 's3_key' => $jsonS3Key]);
+                     return response()->json(['success' => false, 'message' => 'Transcript data not available (S3 get failed). '], 404);
+                }
+                $decodedData = json_decode($jsonDataString, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Log::error("[API /transcript-json] Failed to decode transcript JSON from S3.", ['video_id' => $id, 's3_key' => $jsonS3Key, 'json_error' => json_last_error_msg()]);
+                    return response()->json(['success' => false, 'message' => 'Error decoding transcript data.'], 500);
+                }
+                Log::info("[API /transcript-json] Successfully loaded and decoded transcript JSON from S3.", ['video_id' => $id, 's3_key' => $jsonS3Key]);
+                return response()->json($decodedData);
+            } catch (\Exception $e) {
+                Log::error("[API /transcript-json] Exception reading transcript JSON from S3.", ['video_id' => $id, 's3_key' => $jsonS3Key, 'error' => $e->getMessage()]);
+                return response()->json(['success' => false, 'message' => 'Error reading transcript data.'], 500);
+            }
+        } else {
+            Log::warning("[API /transcript-json] Transcript JSON file key does not exist on S3.", ['video_id' => $id, 's3_key' => $jsonS3Key]);
+        }
+    }
+    
+    // If neither DB nor S3 fallback yielded data
+    Log::warning("[API /transcript-json] Transcript data not available in DB or S3.", ['video_id' => $id]);
+    return response()->json([
+        'success' => false,
+        'message' => 'Transcript data not available'
+    ], 404);
 });
 
 Route::get('/videos/{id}/terminology-json', function($id) {

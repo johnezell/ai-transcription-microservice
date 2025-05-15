@@ -4,7 +4,7 @@
       <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
       </svg>
-      Term Recognition ({{ totalTermCount }})
+      Term Recognition ({{ displayedTotalTermCount }})
     </h3>
 
     <div v-if="isLoading" class="flex justify-center py-6">
@@ -19,24 +19,21 @@
       <p>{{ error }}</p>
     </div>
 
-    <div v-else-if="!terminologyData || totalTermCount === 0" class="p-4 bg-gray-50 rounded-md text-gray-500">
-      No terminology was found in this transcription.
-    </div>
-
-    <div v-else class="space-y-4">
-      <!-- Category Summary -->
-      <div class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200">
-        <h4 class="font-medium text-gray-700 mb-3">Categories</h4>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div v-for="(count, category) in categoryStats" :key="category" class="flex items-center justify-between p-2 rounded-md" :class="getCategoryClass(category)">
-            <span class="font-medium">{{ formatCategoryName(category) }}</span>
-            <span class="bg-white px-2 py-1 rounded-full text-sm font-medium shadow-sm">{{ count }}</span>
-          </div>
+    <!-- Category Summary - Show if categoryStats has keys, independent of full terminologyData loading for this part -->
+    <div v-if="hasCategoryStats" class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200 mb-4">
+      <h4 class="font-medium text-gray-700 mb-3">Categories</h4>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div v-for="(count, category) in categoryStats" :key="category" class="flex items-center justify-between p-2 rounded-md" :class="getCategoryClass(category)">
+          <span class="font-medium">{{ formatCategoryName(category) }}</span>
+          <span class="bg-white px-2 py-1 rounded-full text-sm font-medium shadow-sm">{{ count }}</span>
         </div>
       </div>
+    </div>
 
+    <!-- Detailed Term Data - Show only if terminologyData is loaded -->
+    <div v-if="terminologyData && terminologyDataLoadedSuccessfully">
       <!-- Terms by Category -->
-      <div v-for="(terms, category) in filteredTermsByCategory" :key="category" class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200">
+      <div v-for="(terms, category) in filteredTermsByCategory" :key="category" class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200 mb-4">
         <h4 class="font-medium text-gray-700 mb-3 flex items-center">
           <span class="w-3 h-3 rounded-full mr-2" :class="getCategoryColorClass(category)"></span>
           {{ formatCategoryName(category) }}
@@ -69,12 +66,22 @@
         </div>
       </div>
       
-      <div v-else class="flex justify-center">
+      <div v-else-if="terminologyData.term_instances && terminologyData.term_instances.length > 0" class="flex justify-center mt-4">
         <button @click="showInstances = true" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
-          Show Term Mentions ({{ terminologyData.term_instances ? terminologyData.term_instances.length : 0 }})
+          Show Term Mentions ({{ terminologyData.term_instances.length }})
         </button>
       </div>
+
+       <div v-else-if="!filteredTermsByCategory || Object.keys(filteredTermsByCategory).length === 0" class="p-4 bg-gray-50 rounded-md text-gray-500 text-sm">
+        Detailed term list not available or empty in the fetched data.
+      </div>
     </div>
+
+    <!-- Message if no categories from metadata AND no detailed data loaded/found -->
+    <div v-else-if="!hasCategoryStats && !terminologyDataLoadedSuccessfully && !isLoading && !error" class="p-4 bg-gray-50 rounded-md text-gray-500">
+      No terminology information available.
+    </div>
+
   </div>
 </template>
 
@@ -98,35 +105,20 @@ const terminologyData = ref(null);
 const isLoading = ref(false);
 const error = ref(null);
 const showInstances = ref(false);
+const terminologyDataLoadedSuccessfully = ref(false);
+
+// Log incoming props
+// console.log('[TerminologyViewer PROPS] terminologyMetadata:', props.terminologyMetadata);
+// console.log('[TerminologyViewer PROPS] musicTermsMetadata:', props.musicTermsMetadata);
 
 // Computed properties
-const totalTermCount = computed(() => {
-  if (terminologyData.value && terminologyData.value.total_terms) {
-    return terminologyData.value.total_terms;
-  }
-  return props.terminologyCount || props.musicTermCount || 0;
-});
-
-const filteredTermsByCategory = computed(() => {
-  if (!terminologyData.value || !terminologyData.value.terms_by_category) {
-    return {};
-  }
-  
-  // Filter out categories with empty arrays
-  const filtered = {};
-  Object.entries(terminologyData.value.terms_by_category).forEach(([category, terms]) => {
-    if (terms.length > 0) {
-      filtered[category] = terms;
-    }
-  });
-  
-  return filtered;
-});
-
 const categoryStats = computed(() => {
+  // console.log('[TerminologyViewer categoryStats] Evaluating. Props.terminologyMetadata:', props.terminologyMetadata);
   if (props.terminologyMetadata && props.terminologyMetadata.categories) {
+    // console.log('[TerminologyViewer categoryStats] Using props.terminologyMetadata.categories:', props.terminologyMetadata.categories);
     return props.terminologyMetadata.categories;
   } else if (props.musicTermsMetadata && props.musicTermsMetadata.categories) {
+    // console.log('[TerminologyViewer categoryStats] Using props.musicTermsMetadata.categories:', props.musicTermsMetadata.categories);
     return props.musicTermsMetadata.categories;
   }
   
@@ -137,31 +129,93 @@ const categoryStats = computed(() => {
         stats[category] = terms.length;
       }
     });
-    return stats;
+    // console.log('[TerminologyViewer categoryStats] Calculating stats from terminologyData.terms_by_category:', stats);
+    if (Object.keys(stats).length > 0) return stats;
   }
+  // console.log('[TerminologyViewer categoryStats] Returning empty object.');
   return {};
+});
+
+const hasCategoryStats = computed(() => {
+  return Object.keys(categoryStats.value).length > 0;
+});
+
+const displayedTotalTermCount = computed(() => {
+  if (terminologyData.value && typeof terminologyData.value.total_terms === 'number') {
+    return terminologyData.value.total_terms;
+  }
+  if (typeof props.terminologyCount === 'number') {
+    return props.terminologyCount;
+  }
+  if (typeof props.musicTermCount === 'number') {
+    return props.musicTermCount;
+  }
+  // If no explicit total count, sum from categoryStats as a last resort for display
+  if (hasCategoryStats.value) {
+    return Object.values(categoryStats.value).reduce((sum, count) => sum + count, 0);
+  }
+  return 0;
+});
+
+const filteredTermsByCategory = computed(() => {
+  // console.log('[TerminologyViewer] filteredTermsByCategory: Evaluating. terminologyData.value:', terminologyData.value);
+
+  if (!terminologyData.value || !Array.isArray(terminologyData.value.terms) || terminologyData.value.terms.length === 0) {
+    // console.log('[TerminologyViewer] filteredTermsByCategory: No terminologyData.terms array found or it is empty. Returning {}.');
+    return {};
+  }
+
+  const groupedByCategory = {};
+
+  // Iterate over the flat 'terms' array from the API response
+  terminologyData.value.terms.forEach(termObject => {
+    if (termObject && termObject.category_slug && termObject.term) {
+      const category = termObject.category_slug;
+      if (!groupedByCategory[category]) {
+        groupedByCategory[category] = [];
+      }
+      // Add the term string to the appropriate category array
+      // Assuming the template expects an array of term strings for each category
+      groupedByCategory[category].push(termObject.term); 
+    }
+  });
+
+  // Filter out categories with empty arrays (though the above logic should prevent empty arrays if terms exist)
+  const filtered = {};
+  Object.entries(groupedByCategory).forEach(([category, terms]) => {
+    if (terms.length > 0) {
+      filtered[category] = terms;
+    }
+  });
+  
+  // console.log('[TerminologyViewer] filteredTermsByCategory: Result from processing flat terms list:', filtered);
+  return filtered;
 });
 
 // Methods
 const fetchTerminologyData = async () => {
-  // Prefer API URL if available, then fall back to file URLs
   const url = props.terminologyApiUrl || props.terminologyUrl || props.musicTermsUrl;
-  if (!url) return;
+  if (!url) {
+    terminologyDataLoadedSuccessfully.value = false; // Explicitly set if no URL
+    return;
+  }
   
   isLoading.value = true;
   error.value = null;
+  terminologyDataLoadedSuccessfully.value = false;
   
   try {
     const response = await fetch(url);
-    
     if (!response.ok) {
       throw new Error(`Failed to fetch terminology data (Status: ${response.status})`);
     }
-    
     terminologyData.value = await response.json();
+    terminologyDataLoadedSuccessfully.value = true; // Set on successful fetch and parse
+    // console.log('[TerminologyViewer] Fetched terminologyData:', terminologyData.value);
   } catch (err) {
     console.error('Error fetching terminology data:', err);
     error.value = err.message || 'Failed to load terminology data';
+    terminologyDataLoadedSuccessfully.value = false;
   } finally {
     isLoading.value = false;
   }
@@ -245,12 +299,12 @@ watch(() => props.terminologyApiUrl || props.terminologyUrl || props.musicTermsU
   if (newUrl) {
     fetchTerminologyData();
   }
-});
+}, { immediate: true }); // Add immediate: true to run on mount if URL is already present
 
-// Lifecycle hooks
-onMounted(() => {
-  if (props.terminologyUrl || props.musicTermsUrl) {
-    fetchTerminologyData();
-  }
-});
+// onMounted is no longer strictly needed for initial fetch due to watch immediate:true
+// onMounted(() => {
+//   if (props.terminologyUrl || props.musicTermsUrl) {
+//     fetchTerminologyData();
+//   }
+// });
 </script> 

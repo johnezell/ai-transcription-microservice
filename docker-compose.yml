@@ -1,132 +1,29 @@
-version: '3.8'
+# version: '3.8' # Obsolete, can be removed
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: aws-transcription-mysql
-    restart: unless-stopped
-    ports:
-      - "3306:3306"
-    environment:
-      - MYSQL_DATABASE=aws_transcription
-      - MYSQL_ROOT_PASSWORD=password
-      - MYSQL_ALLOW_EMPTY_PASSWORD=yes
-    command: --default-authentication-plugin=mysql_native_password
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: aws-transcription-phpmyadmin
-    restart: unless-stopped
-    ports:
-      - "8081:80"
-    environment:
-      - PMA_HOST=mysql
-      - PMA_PORT=3306
-      - MYSQL_ROOT_PASSWORD=password
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks:
-      - app-network
-
-  laravel:
+  laravel: # PHP-FPM application service with Nginx running inside via supervisord
     build:
-      context: .
+      context: . # Root of the workspace, where Dockerfile.laravel is
       dockerfile: Dockerfile.laravel
-    container_name: aws-transcription-laravel
+    container_name: aws-transcription-laravel-local-dev # New distinct name
     restart: unless-stopped
     ports:
-      - "8080:80"
-      - "80:80"
+      - "${APP_PORT:-8080}:80" # Expose the container's internal Nginx port 80 on host port 8080
     volumes:
-      - ./app/laravel:/var/www
-      - ./app/shared:/var/www/storage/app/public/s3:delegated
+      - ./app/laravel:/var/www   # For live code changes
+      - ~/.aws:/mnt/aws_creds_mounted:ro # For AWS SDK credentials
+    env_file: 
+      - ./app/laravel/.env.docker-aws # Populated by scripts/setup_local_env.sh
     networks:
-      - app-network
-    depends_on:
-      mysql:
-        condition: service_healthy
-    environment:
-      - APP_ENV=local
-      - DB_CONNECTION=mysql
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_DATABASE=aws_transcription
-      - DB_USERNAME=root
-      - DB_PASSWORD=password
-      - AUDIO_SERVICE_URL=http://audio-extraction-service:5000
-      - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
-      - MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000
-      - QUEUE_CONNECTION=database
+      - app-network 
 
-  audio-extraction-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.audio-service
-    container_name: aws-audio-extraction
-    restart: unless-stopped
-    volumes:
-      - ./app/services/audio-extraction:/app
-      - ./app/shared:/var/www/storage/app/public/s3:delegated
-    networks:
-      - app-network
-    environment:
-      - LARAVEL_API_URL=http://laravel/api
-      - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
-    ports:
-      - "5050:5000"
-
-  transcription-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.transcription
-    container_name: aws-transcription-service
-    restart: unless-stopped
-    volumes:
-      - ./app/services/transcription:/app
-      - ./app/shared:/var/www/storage/app/public/s3:delegated
-    depends_on:
-      - laravel
-      - audio-extraction-service
-    networks:
-      - app-network
-    environment:
-      - LARAVEL_API_URL=http://laravel/api
-    ports:
-      - "5051:5000"
-
-  music-term-recognition-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.music-service
-    container_name: aws-music-term-recognition
-    restart: unless-stopped
-    volumes:
-      - ./app/services/music-term-recognition:/app
-      - ./app/shared:/var/www/storage/app/public/s3:delegated
-    depends_on:
-      - laravel
-      - transcription-service
-    networks:
-      - app-network
-    environment:
-      - LARAVEL_API_URL=http://laravel/api
-    ports:
-      - "5052:5000"
+# No other services (mysql, phpmyadmin, python services, standalone nginx) are defined in this file
+# for the "local Laravel with AWS backend" setup.
+# If you need a fully local stack (local DB, local Python services), you would use a different docker-compose file
+# or manage different override files.
 
 networks:
-  app-network:
+  app-network: # Define the network if the laravel service is the only one using it now
     driver: bridge
 
-volumes:
-  mysql_data:
-    driver: local
+# No other volumes defined if other services are removed.

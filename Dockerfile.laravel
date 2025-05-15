@@ -37,18 +37,27 @@ RUN ln -sf /dev/stdout /var/log/nginx/access.log \
 # Set up Supervisor
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Copy existing application directory
+# Copy the entire Laravel application
+# Ensure your .dockerignore file excludes node_modules and vendor directories
+# from your local app/laravel directory to prevent them from being copied.
 COPY ./app/laravel .
+
+# Install PHP dependencies
+RUN composer install --optimize-autoloader --no-dev --no-interaction --no-progress
+
+# Install Node.js dependencies and build assets
+RUN npm install
+RUN npm run build
 
 # Copy entrypoint script
 COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Create required directories and set permissions
-RUN mkdir -p /var/www/storage/app/public/s3/jobs \
-    && mkdir -p /var/www/bootstrap/cache \
-    && chown -R www-data:www-data /var/www \
-    && chmod -R 777 /var/www/storage
+# Create required Laravel storage directories and set permissions.
+# entrypoint.sh also handles some permissions and cache clearing.
+RUN mkdir -p storage/framework/{sessions,views,cache} storage/logs bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R ug+rwx storage bootstrap/cache
 
 # Expose port 80
 EXPOSE 80

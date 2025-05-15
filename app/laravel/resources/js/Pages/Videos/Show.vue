@@ -502,7 +502,7 @@ onBeforeUnmount(() => {
                                     <TerminologyViewer 
                                         :terminology-url="videoData.terminology_url || videoData.music_terms_url"
                                         :terminology-api-url="videoData.terminology_json_api_url"
-                                        :terminology-metadata="videoData.terminology_metadata || videoData.music_terms_metadata"
+                                        :terminology-metadata="videoData.terminology_metadata && videoData.terminology_metadata.category_summary ? { categories: videoData.terminology_metadata.category_summary } : (videoData.music_terms_metadata && videoData.music_terms_metadata.category_summary ? { categories: videoData.music_terms_metadata.category_summary } : null)"
                                         :terminology-count="videoData.terminology_count || videoData.music_terms_count"
                                     />
                                 </div>

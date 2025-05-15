@@ -33,8 +33,8 @@ php artisan view:cache
 # php artisan event:cache # Only if you use event discovery and want to cache it
 echo "Laravel configurations re-cached."
 
-echo "Running database migrations (fresh with seed)..."
-php artisan migrate:fresh --seed --force
+echo "Running database migrations..."
+php artisan migrate --force
 echo "Database migrations completed."
 
 # The init-db.sh script call is removed as migrations are now handled here.

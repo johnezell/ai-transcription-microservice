@@ -12,6 +12,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Storage;
 
 class TerminologyRecognitionJob implements ShouldQueue
 {
@@ -37,28 +38,28 @@ class TerminologyRecognitionJob implements ShouldQueue
      */
     public function handle(): void
     {
-        if (App::environment('local')) {
+        /* if (App::environment('local')) {
             Log::info('[TerminologyRecognitionJob LOCAL] Simulating terminology recognition success.', ['video_id' => $this->video->id]);
             $baseS3Key = 's3/jobs/' . $this->video->id . '/';
-            $dummyTerminologyJsonKey = $baseS3Key . 'mock_terminology.json';
+            $dummyTerminologyJsonKey = $baseS3Key . 'mock_local_terminology.json';
             $mockedTermData = [
                 'method' => 'mock_regex_v1',
-                'total_unique_terms' => 5,
-                'total_term_occurrences' => 10,
-                'category_summary' => ['Technology' => 3, 'Dev Concepts' => 2],
+                'total_unique_terms' => rand(2, 10),
+                'total_term_occurrences' => rand(5, 20),
+                'category_summary' => ['Technology' => rand(1,3), 'Dev Concepts' => rand(1,2)],
                 'terms' => [
-                    ['term' => 'laravel', 'category' => 'Technology', 'count' => 2],
-                    ['term' => 'php', 'category' => 'Technology', 'count' => 3],
+                    ['term' => 'laravel', 'category_slug' => 'technology', 'count' => rand(1,2)],
+                    ['term' => 'php', 'category_slug' => 'technology', 'count' => rand(1,3)],
                 ]
             ];
-            // if (!Storage::disk('s3')->exists($dummyTerminologyJsonKey)) { 
-            //     Storage::disk('s3')->put($dummyTerminologyJsonKey, json_encode($mockedTermData)); 
-            // }
+            if (!Storage::disk('s3')->exists($dummyTerminologyJsonKey)) { 
+                Storage::disk('s3')->put($dummyTerminologyJsonKey, json_encode($mockedTermData), ['ACL' => 'bucket-owner-full-control']); 
+            }
 
             $this->video->update([
-                'status' => 'completed', // Assuming this is the final step for local mock
+                'status' => 'completed', // This is the final step in the mock chain
                 'terminology_path' => $dummyTerminologyJsonKey,
-                'terminology_json' => $mockedTermData, 
+                'terminology_json' => $mockedTermData['terms'], // Storing the example terms list
                 'has_terminology' => true,
                 'terminology_count' => $mockedTermData['total_term_occurrences'],
                 'terminology_metadata' => ['category_summary' => $mockedTermData['category_summary']]
@@ -75,9 +76,9 @@ class TerminologyRecognitionJob implements ShouldQueue
                     'progress_percentage' => 100
                 ]);
             }
-            Log::info('[TerminologyRecognitionJob LOCAL] Mock processing complete.', ['video_id' => $this->video->id]);
+            Log::info('[TerminologyRecognitionJob LOCAL] Mock processing complete. Video status set to completed.', ['video_id' => $this->video->id]);
             return;
-        }
+        } */
 
         if (empty($this->video->transcript_path)) {
             Log::error('[TerminologyRecognitionJob] Transcript path is empty for video.', ['video_id' => $this->video->id]);
@@ -90,7 +91,7 @@ class TerminologyRecognitionJob implements ShouldQueue
         
         $log = TranscriptionLog::firstOrCreate(
             ['video_id' => $this->video->id],
-            ['job_id' => $this->video->id, 'started_at' => now()]
+            ['job_id' => $this->video->id, 'started_at' => $this->video->transcriptionLog->started_at ?? now()]
         );
         $log->update([
             'status' => 'processing_terminology',
@@ -98,7 +99,7 @@ class TerminologyRecognitionJob implements ShouldQueue
             'progress_percentage' => 85 
         ]);
 
-        $terminologyServiceUrl = env('TERMINOLOGY_SERVICE_URL', 'http://terminology-service.local:5000');
+        $terminologyServiceUrl = env('TERMINOLOGY_SERVICE_URL');
         $payload = [
             'job_id' => (string) $this->video->id,
             'transcript_s3_key' => $this->video->transcript_path, 

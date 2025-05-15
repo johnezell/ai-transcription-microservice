@@ -8,8 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use App\Models\TerminologyCategory as Category;
-use App\Models\Terminology as Term;
+// use App\Models\TerminologyCategory as Category; // Keep FQCN for clarity in export
+// use App\Models\Terminology as Term;           // Keep FQCN for clarity in export
 
 class TerminologyController extends Controller
 {
@@ -23,7 +23,6 @@ class TerminologyController extends Controller
     public function show(Request $request, $id)
     {
         try {
-            // Find the video
             $video = Video::findOrFail($id);
             
             if (!$video->has_terminology) {
@@ -33,7 +32,6 @@ class TerminologyController extends Controller
                 ], 404);
             }
             
-            // Try to get the data from the database first
             if (!empty($video->terminology_json)) {
                 return response()->json([
                     'success' => true,
@@ -43,27 +41,11 @@ class TerminologyController extends Controller
                 ]);
             }
             
-            // If we have a terminology path, try to get the data from the file
             if ($video->terminology_path) {
-                // First determine if the path is absolute or relative
                 $path = $video->terminology_path;
-                
-                // In case of absolute path within the container
-                // This logic might be problematic if terminology_path is an S3 key
-                // For S3, we should use Storage::disk('s3')->exists() and get()
-                if (str_starts_with($path, '/var/www/storage/app/public/')) {
-                    $path = str_replace('/var/www/storage/app/public/', '', $path);
-                     if (Storage::disk('public')->exists($path)) {
-                        $terminologyData = json_decode(Storage::disk('public')->get($path), true);
-                        return response()->json([
-                            'success' => true,
-                            'terminology' => $terminologyData,
-                            'metadata' => $video->terminology_metadata,
-                            'count' => $video->terminology_count
-                        ]);
-                    }
-                } elseif (Storage::disk('s3')->exists($path)) { // Check S3 directly if not a local public path
-                    $terminologyData = json_decode(Storage::disk('s3')->get($path), true);
+                if (Storage::disk('s3')->exists($path)) { 
+                    $jsonData = Storage::disk('s3')->get($path);
+                    $terminologyData = json_decode($jsonData, true);
                     return response()->json([
                         'success' => true,
                         'terminology' => $terminologyData,
@@ -73,7 +55,6 @@ class TerminologyController extends Controller
                 }
             }
             
-            // If we get here, we have has_terminology but couldn't load the data
             return response()->json([
                 'success' => false,
                 'message' => 'Terminology file not found or inaccessible',
@@ -113,33 +94,29 @@ class TerminologyController extends Controller
                 ], 400);
             }
             
-            // Ensure this status matches one defined in TranscriptionController validation
             $video->update(['status' => 'processing_terminology']); 
             
-            // Use the correct environment variable for the Terminology service
             $serviceUrl = env('TERMINOLOGY_SERVICE_URL', 'http://terminology-service.local:5000');
             
             Log::info('Dispatching terminology recognition request via API controller', [
                 'video_id' => $id,
                 'service_url' => $serviceUrl,
-                'transcript_s3_key' => $video->transcript_path // Pass the S3 key
+                'transcript_s3_key' => $video->transcript_path
             ]);
             
-            $response = Http::timeout(300) // Increased timeout
+            $response = Http::timeout(300)
                             ->post("{$serviceUrl}/process", [
                                 'job_id' => (string) $video->id,
-                                'transcript_s3_key' => $video->transcript_path // Python service expects this
+                                'transcript_s3_key' => $video->transcript_path
                             ]);
             
             if ($response->successful()) {
                 $responseData = $response->json();
                 Log::info('Terminology recognition successfully initiated via API.', ['video_id' => $id, 'service_response' => $responseData]);
-                // The actual update of video model with terminology data will happen 
-                // when the Terminology service calls back to TranscriptionController@updateJobStatus
                 return response()->json([
                     'success' => true,
                     'message' => 'Terminology recognition process initiated successfully.',
-                    'data' => $responseData // Return what the service immediately responded with
+                    'data' => $responseData
                 ]);
             } else {
                 $video->update(['status' => 'failed', 'error_message' => 'Failed to dispatch to terminology service.']);
@@ -183,10 +160,9 @@ class TerminologyController extends Controller
      */
     public function export()
     {
-        // Use the correct model: TerminologyCategory (aliased as Category)
-        $categories = Category::where('active', true) 
-            ->with(['activeTerms' => function($query) { // Assumes 'activeTerms' relation exists and filters active terms
-                $query->orderBy('term');
+        $categories = \App\Models\TerminologyCategory::where('active', true) 
+            ->with(['activeTerms' => function($query) { 
+                $query->where('active', true)->orderBy('term');
             }])
             ->orderBy('display_order')
             ->orderBy('name')
@@ -194,8 +170,17 @@ class TerminologyController extends Controller
 
         $result = [];
         foreach ($categories as $category) {
-            // The 'activeTerms' relationship should now correctly give Terminology model instances
-            $result[$category->slug] = $category->activeTerms->pluck('term')->toArray(); 
+            $termsData = [];
+            foreach ($category->activeTerms as $termModel) {
+                $termsData[] = [
+                    'term' => $termModel->term,
+                    'patterns' => $termModel->patterns ?? [strtolower($termModel->term)],
+                    'description' => $termModel->description,
+                ];
+            }
+            if (!empty($termsData)) {
+                $result[$category->slug] = $termsData;
+            }
         }
         return response()->json($result);
     }

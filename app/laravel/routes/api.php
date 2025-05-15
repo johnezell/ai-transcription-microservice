@@ -41,9 +41,10 @@ Route::get('/transcription/{jobId}', [TranscriptionController::class, 'getJobSta
 Route::post('/transcription/{jobId}/status', [TranscriptionController::class, 'updateJobStatus']);
 Route::get('/test-python-service', [TranscriptionController::class, 'testPythonService']);
 
-// New terminology routes (using the new controller)
-Route::get('/videos/{id}/terminology', [TerminologyController::class, 'show'])->name('api.terminology.show');
-Route::post('/videos/{id}/terminology', [TerminologyController::class, 'triggerRecognition'])->name('api.terminology.process');
+// Terminology routes
+Route::get('/videos/{id}/terminology', [\App\Http\Controllers\Api\TerminologyController::class, 'show'])->name('api.terminology.show');
+Route::post('/videos/{id}/terminology', [\App\Http\Controllers\Api\TerminologyController::class, 'triggerRecognition'])->name('api.terminology.process');
+Route::get('/terminology/export', [\App\Http\Controllers\Api\TerminologyController::class, 'export'])->name('api.terminology.export');
 
 // Status polling endpoint for video processing
 Route::get('/videos/{id}/status', function($id) {
@@ -312,8 +313,6 @@ Route::get('/videos/{id}/terminology-json', function($id) {
     Log::warning("[API /terminology-json] Terminology data not available in DB or S3.", ['video_id' => $id]);
     return response()->json(['success' => false, 'message' => 'Terminology data not available'], 404);
 });
-
-Route::get('/music-terms/export', [\App\Http\Controllers\Api\TerminologyController::class, 'export']);
 
 // Course Analysis API
 Route::prefix('courses')->group(function() {

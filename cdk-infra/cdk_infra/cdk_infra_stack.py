@@ -196,14 +196,8 @@ class CdkInfraStack(Stack):
             object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED, # Enable ACLs, bucket owner still preferred for ownership
             cors=[
                 s3.CorsRule(
-                    allowed_methods=[s3.HttpMethods.GET, s3.HttpMethods.HEAD],
-                    allowed_origins=[
-                        "http://aws-transcription-laravel-nlb-651bc9087dd42449.elb.us-east-1.amazonaws.com",
-                        "http://localhost:8080", # Added for local Laravel dev via Docker Compose
-                        "http://localhost:5173", # Added for local Vite dev server (if used directly)
-                        # You might also want to add your local development origin if you test UI locally,
-                        # e.g., "http://localhost:8000" or "http://localhost:5173" (Vite dev port for Laravel Breeze)
-                    ],
+                    allowed_methods=[s3.HttpMethods.GET, s3.HttpMethods.HEAD, s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.DELETE],
+                    allowed_origins=['*'], # Allow all origins
                     allowed_headers=["*"] 
                     # expose_headers= [], 
                     # max_age=3000

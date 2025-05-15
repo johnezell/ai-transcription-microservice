@@ -237,6 +237,11 @@ async function fetchVideoDetails() {
         if (data.success && data.video) {
             const newVideoDataFromApi = data.video;
             
+            // *** ADDED LOGGING FOR TRANSCRIPT_TEXT ***
+            console.log('[Show.vue DEBUG - fetchVideoDetails] API response for video details:', newVideoDataFromApi);
+            console.log('[Show.vue DEBUG - fetchVideoDetails] transcript_text from API:', newVideoDataFromApi.transcript_text ? `'${newVideoDataFromApi.transcript_text.substring(0, 50)}...'` : 'MISSING or EMPTY');
+            console.log('[Show.vue DEBUG - fetchVideoDetails] transcript_json_url from API:', newVideoDataFromApi.transcript_json_url || 'MISSING or EMPTY');
+
             // Selectively update videoData.value to avoid unnecessary video restarts
             Object.keys(newVideoDataFromApi).forEach(key => {
                 if (key === 'url' || key === 'audio_url') {

@@ -256,8 +256,13 @@ def process_transcription_route():
             logger.info(f"Uploaded transcript text to S3 key: {s3_transcript_txt_key}")
             s3_client.upload_file(local_transcript_srt_path, AWS_BUCKET, s3_transcript_srt_key)
             logger.info(f"Uploaded transcript SRT to S3 key: {s3_transcript_srt_key}")
-            s3_client.upload_file(local_transcript_json_path, AWS_BUCKET, s3_transcript_json_key)
-            logger.info(f"Uploaded transcript JSON to S3 key: {s3_transcript_json_key}")
+            s3_client.upload_file(
+                local_transcript_json_path, 
+                AWS_BUCKET, 
+                s3_transcript_json_key,
+                ExtraArgs={'ContentType': 'application/json'}
+            )
+            logger.info(f"Uploaded transcript JSON to S3 key: {s3_transcript_json_key} with ContentType application/json")
             
             response_data = {
                 'message': 'Transcription completed successfully and files uploaded to S3.',

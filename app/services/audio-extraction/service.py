@@ -110,12 +110,12 @@ def health_check():
 def process_audio_extraction():
     """Extract audio from a video file from S3, process, and upload audio to S3."""
     data = request.json
-    if not data or 'job_id' not in data or 'video_path' not in data:
+    if not data or 'job_id' not in data or 'video_s3_key' not in data:
         logger.error(f"Invalid request data: {data}")
-        return jsonify({'success': False, 'message': 'Invalid request: job_id and video_path required.'}), 400
+        return jsonify({'success': False, 'message': 'Invalid request: job_id and video_s3_key required.'}), 400
     
     job_id = data['job_id']
-    s3_video_key = data['video_path'] # This is the S3 key from Laravel
+    s3_video_key = data['video_s3_key'] # Changed from data['video_path']
     
     logger.info(f"Processing job {job_id} for S3 video key: {s3_video_key}")
 

@@ -13,6 +13,7 @@ from aws_cdk import (
     CfnOutput
 )
 from constructs import Construct
+import datetime
 
 class LaravelServiceStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, 
@@ -40,7 +41,10 @@ class LaravelServiceStack(Stack):
         laravel_image_asset = ecr_assets.DockerImageAsset(self, "LaravelDockerImageAsset",
             directory="..", # Go up one level from 'cdk-infra' to the workspace root
             file="Dockerfile.laravel", # Name of the Dockerfile
-            platform=ecr_assets.Platform.LINUX_AMD64 # Specify the target platform
+            platform=ecr_assets.Platform.LINUX_AMD64, # Specify the target platform
+            build_args={
+                "CDK_BUILD_TIMESTAMP": str(datetime.datetime.utcnow().timestamp())
+            }
         )
 
         # ECS Task Definition for Laravel

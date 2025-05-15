@@ -1,5 +1,7 @@
 FROM php:8.2-fpm
 
+ARG CDK_BUILD_TIMESTAMP # For cache busting composer install
+
 WORKDIR /var/www
 
 # Install dependencies
@@ -37,17 +39,22 @@ RUN ln -sf /dev/stdout /var/log/nginx/access.log \
 # Set up Supervisor
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Copy the entire Laravel application
-# Ensure your .dockerignore file excludes node_modules and vendor directories
-# from your local app/laravel directory to prevent them from being copied.
+# Copy application source (composer.json, package.json, etc.)
+# Ensure .dockerignore excludes vendor/ and node_modules/
 COPY ./app/laravel .
 
 # Install PHP dependencies
-RUN composer install --optimize-autoloader --no-dev --no-interaction --no-progress
+# Use the build timestamp to ensure this layer is not cached when the timestamp changes
+RUN echo "CDK Build Timestamp for Composer: ${CDK_BUILD_TIMESTAMP}" \
+    && rm -rf vendor/ \
+    && composer install --optimize-autoloader --no-dev --no-interaction --no-progress --ignore-platform-reqs
 
 # Install Node.js dependencies and build assets
-RUN npm install
-RUN npm run build
+# Optionally, use timestamp here too if frontend assets need similar cache busting
+RUN echo "Building frontend assets" \
+    && rm -rf node_modules/ \
+    && npm install \
+    && npm run build
 
 # Copy entrypoint script
 COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh

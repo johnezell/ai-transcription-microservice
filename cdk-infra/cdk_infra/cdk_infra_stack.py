@@ -197,12 +197,14 @@ class CdkInfraStack(Stack):
             cors=[
                 s3.CorsRule(
                     allowed_methods=[s3.HttpMethods.GET, s3.HttpMethods.HEAD],
-                    allowed_origins=["http://aws-transcription-laravel-nlb-d602a8d13f41e935.elb.us-east-1.amazonaws.com"],
-                    # If you test your Laravel UI locally (e.g., php artisan serve or npm run dev),
-                    # you might need to add its origin too, e.g., "http://localhost:8000" or "http://localhost:5173"
-                    allowed_headers=["*"]
-                    # expose_headers= # Optional: if your JS needs to read specific response headers
-                    # max_age=3000 # Optional: browser cache duration for preflight response
+                    allowed_origins=[
+                        "http://aws-transcription-laravel-nlb-651bc9087dd42449.elb.us-east-1.amazonaws.com",
+                        # You might also want to add your local development origin if you test UI locally,
+                        # e.g., "http://localhost:8000" or "http://localhost:5173" (Vite dev port for Laravel Breeze)
+                    ],
+                    allowed_headers=["*"] 
+                    # expose_headers= [], 
+                    # max_age=3000
                 )
             ]
         )

@@ -262,36 +262,55 @@ Route::get('/videos/{id}/terminology-json', function($id) {
     $video = Video::find($id);
     
     if (!$video) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Video not found'
-        ], 404);
+        return response()->json(['success' => false, 'message' => 'Video not found'], 404);
     }
     
-    if (empty($video->terminology_json)) {
-        // Fallback to file if database doesn't have the data
-        if (!empty($video->terminology_path)) {
-            if (file_exists($video->terminology_path)) {
-                $jsonData = json_decode(file_get_contents($video->terminology_path), true);
-                return response()->json($jsonData);
-            }
-        }
-        
-        // Also try the music_terms path for backward compatibility
-        if (!empty($video->music_terms_path)) {
-            if (file_exists($video->music_terms_path)) {
-                $jsonData = json_decode(file_get_contents($video->music_terms_path), true);
-                return response()->json($jsonData);
-            }
-        }
-        
-        return response()->json([
-            'success' => false,
-            'message' => 'Terminology data not available'
-        ], 404);
+    // Prefer data from the database column if it exists and is not empty
+    if (!empty($video->terminology_json)) {
+        Log::debug("[API /terminology-json] Returning terminology JSON from DB column.", ['video_id' => $id]);
+        return response()->json($video->terminology_json);
     }
     
-    return response()->json($video->terminology_json);
+    // Fallback to S3 if terminology_json column is empty but terminology_path exists
+    $s3KeyToTry = null;
+    if (!empty($video->terminology_path)) {
+        $s3KeyToTry = $video->terminology_path;
+    } 
+    // Removed explicit fallback to music_terms_path for now to simplify; 
+    // The Video model already aliases music_terms_path to terminology_path for reading if needed.
+    // else if (!empty($video->music_terms_path)) { 
+    //     Log::info("[API /terminology-json] terminology_path empty, trying fallback music_terms_path.", ['video_id' => $id]);
+    //     $s3KeyToTry = $video->music_terms_path;
+    // }
+
+    if ($s3KeyToTry) {
+        Log::debug("[API /terminology-json] Attempting to load terminology JSON from S3.", ['video_id' => $id, 's3_key' => $s3KeyToTry]);
+        if (Storage::disk('s3')->exists($s3KeyToTry)) {
+            try {
+                $jsonDataString = Storage::disk('s3')->get($s3KeyToTry);
+                if ($jsonDataString === null) {
+                     Log::warning("[API /terminology-json] S3 get() returned null for terminology JSON.", ['video_id' => $id, 's3_key' => $s3KeyToTry]);
+                     return response()->json(['success' => false, 'message' => 'Terminology data not available (S3 get failed). '], 404);
+                }
+                $decodedData = json_decode($jsonDataString, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Log::error("[API /terminology-json] Failed to decode terminology JSON from S3.", ['video_id' => $id, 's3_key' => $s3KeyToTry, 'json_error' => json_last_error_msg()]);
+                    return response()->json(['success' => false, 'message' => 'Error decoding terminology data.'], 500);
+                }
+                Log::info("[API /terminology-json] Successfully loaded and decoded terminology JSON from S3.", ['video_id' => $id, 's3_key' => $s3KeyToTry]);
+                return response()->json($decodedData);
+            } catch (\Exception $e) {
+                Log::error("[API /terminology-json] Exception reading terminology JSON from S3.", ['video_id' => $id, 's3_key' => $s3KeyToTry, 'error' => $e->getMessage()]);
+                return response()->json(['success' => false, 'message' => 'Error reading terminology data.'], 500);
+            }
+        } else {
+            Log::warning("[API /terminology-json] Terminology JSON file key does not exist on S3.", ['video_id' => $id, 's3_key' => $s3KeyToTry]);
+        }
+    }
+    
+    // If neither DB nor S3 fallback yielded data
+    Log::warning("[API /terminology-json] Terminology data not available in DB or S3.", ['video_id' => $id]);
+    return response()->json(['success' => false, 'message' => 'Terminology data not available'], 404);
 });
 
 Route::get('/music-terms/export', [\App\Http\Controllers\Api\TerminologyController::class, 'export']);

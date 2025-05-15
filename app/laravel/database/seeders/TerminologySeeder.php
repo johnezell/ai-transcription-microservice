@@ -2,19 +2,18 @@
 
 namespace Database\Seeders;
 
-use App\Models\TermCategory;
-use App\Models\Term;
+use App\Models\TerminologyCategory;
+use App\Models\Terminology;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
-class MusicTermSeeder extends Seeder
+class TerminologySeeder extends Seeder
 {
     /**
      * Run the database seeds.
      */
     public function run(): void
     {
-        // Define categories with their colors
+        // Restore original music categories
         $categories = [
             [
                 'name' => 'Music Genres',
@@ -49,12 +48,12 @@ class MusicTermSeeder extends Seeder
                 'slug' => 'truefire_series',
                 'description' => 'TrueFire Series',
                 'color_class' => 'indigo',
-                'display_order' => 6,
+                'display_order' => 6, // Assuming 5 was intentionally skipped or for another category
             ]
         ];
 
-        // Define terms by category
-        $termsByCategory = [
+        // Restore original music terms, adapted to new structure
+        $termsByCategorySlug = [
             'music_genres' => [
                 'acoustic','acoustic blues','americana','acoustic rock','fingerstyle','classical','country','country rock','blues','folk','bluegrass','classic rock','gospel','jam band','multi genre','blues-rock','rock','country blues','modern country','western swing','funk','jazz','r&b','soul','jazz blues','metal','modern rock','hard rock','latin rock','gypsy jazz','progressive rock','funk rock','surf rock','world music','brazilian','celtic','flamenco','reggae','fingerstyle blues','singer-songwriter','roots rock','chicago blues','jazz rock','modern blues','british blues','jump blues','smooth jazz','southern rock','texas blues','honky-tonk','rockabilly','jazz funk','bebop','fingerstyle jazz','modern jazz','soul jazz','latin','latin jazz','swing jazz'
             ],
@@ -72,29 +71,42 @@ class MusicTermSeeder extends Seeder
             ]
         ];
 
+        // Convert simple string arrays to the new structure ['term' => ..., 'patterns' => ...]
+        foreach ($termsByCategorySlug as $slug => $termList) {
+            $structuredTerms = [];
+            foreach ($termList as $termString) {
+                $structuredTerms[] = [
+                    'term' => trim($termString),
+                    'patterns' => [strtolower(trim($termString))] // Default pattern is lowercase term
+                    // 'description' => null // Can add descriptions later if needed
+                ];
+            }
+            $termsByCategorySlug[$slug] = $structuredTerms;
+        }
+
         // Create categories
         foreach ($categories as $categoryData) {
-            // Use firstOrCreate to prevent duplicate entries
-            $category = TermCategory::firstOrCreate(
+            $category = TerminologyCategory::firstOrCreate(
                 ['slug' => $categoryData['slug']],
                 $categoryData
             );
             
             // Create terms for this category
-            if (isset($termsByCategory[$category->slug])) {
-                foreach ($termsByCategory[$category->slug] as $term) {
-                    // Use firstOrCreate for terms too
-                    Term::firstOrCreate(
+            if (isset($termsByCategorySlug[$category->slug])) {
+                foreach ($termsByCategorySlug[$category->slug] as $termData) {
+                    Terminology::firstOrCreate(
                         [
                             'category_id' => $category->id,
-                            'term' => $term
+                            'term' => $termData['term']
                         ],
                         [
-                            'active' => true
+                            'active' => true,
+                            'patterns' => $termData['patterns'] ?? [strtolower($termData['term'])], // Use patterns or default
+                            'description' => $termData['description'] ?? null
                         ]
                     );
                 }
             }
         }
     }
-}
+} 

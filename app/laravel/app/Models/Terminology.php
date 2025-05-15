@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class MusicTerm extends Model
+class Terminology extends Model // Renamed class
 {
     use HasFactory;
+
+    protected $table = 'terminologies'; // Explicit table name
 
     /**
      * The attributes that are mass assignable.
@@ -20,6 +22,7 @@ class MusicTerm extends Model
         'term',
         'description',
         'active',
+        'patterns', // Added new field
     ];
 
     /**
@@ -29,6 +32,7 @@ class MusicTerm extends Model
      */
     protected $casts = [
         'active' => 'boolean',
+        'patterns' => 'json', // Cast new field to json
     ];
 
     /**
@@ -36,6 +40,6 @@ class MusicTerm extends Model
      */
     public function category(): BelongsTo
     {
-        return $this->belongsTo(MusicTermCategory::class, 'category_id');
+        return $this->belongsTo(TerminologyCategory::class, 'category_id'); // Updated related model
     }
-}
+} 

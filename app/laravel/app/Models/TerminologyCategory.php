@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class MusicTermCategory extends Model
+class TerminologyCategory extends Model // Renamed class
 {
     use HasFactory;
+
+    protected $table = 'terminology_categories'; // Explicit table name
 
     /**
      * The attributes that are mass assignable.
@@ -39,7 +41,7 @@ class MusicTermCategory extends Model
      */
     public function terms(): HasMany
     {
-        return $this->hasMany(MusicTerm::class, 'category_id');
+        return $this->hasMany(Terminology::class, 'category_id'); // Updated related model
     }
 
     /**
@@ -47,7 +49,7 @@ class MusicTermCategory extends Model
      */
     public function activeTerms(): HasMany
     {
-        return $this->hasMany(MusicTerm::class, 'category_id')
+        return $this->hasMany(Terminology::class, 'category_id') // Updated related model
             ->where('active', true);
     }
-}
+} 

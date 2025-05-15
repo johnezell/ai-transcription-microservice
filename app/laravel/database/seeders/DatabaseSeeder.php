@@ -16,7 +16,7 @@ class DatabaseSeeder extends Seeder
         // Create a default test user
         $this->call(DefaultUserSeeder::class);
         
-        // Seed music terms
-        $this->call(MusicTermSeeder::class);
+        // Seed terminology (renamed from MusicTermSeeder)
+        $this->call(TerminologySeeder::class);
     }
 }

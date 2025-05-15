@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Term;
-use App\Models\TermCategory;
+use App\Models\Terminology;
+use App\Models\TerminologyCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +17,7 @@ class TerminologyController extends Controller
      */
     public function index()
     {
-        $categories = TermCategory::with(['terms' => function($query) {
+        $categories = TerminologyCategory::with(['terms' => function($query) {
             $query->orderBy('term');
         }])
         ->orderBy('display_order')
@@ -54,15 +54,15 @@ class TerminologyController extends Controller
         // Check for existing slug
         $count = 0;
         $originalSlug = $validated['slug'];
-        while (TermCategory::where('slug', $validated['slug'])->exists()) {
+        while (TerminologyCategory::where('slug', $validated['slug'])->exists()) {
             $count++;
             $validated['slug'] = $originalSlug . '-' . $count;
         }
         
         $validated['active'] = true;
-        $validated['display_order'] = TermCategory::max('display_order') + 1;
+        $validated['display_order'] = TerminologyCategory::max('display_order') + 1;
         
-        $category = TermCategory::create($validated);
+        $category = TerminologyCategory::create($validated);
         
         return redirect()->route('admin.terminology.index')
             ->with('success', 'Category created successfully');
@@ -73,7 +73,7 @@ class TerminologyController extends Controller
      */
     public function editCategory(string $id)
     {
-        $category = TermCategory::findOrFail($id);
+        $category = TerminologyCategory::findOrFail($id);
         
         return Inertia::render('Admin/Terminology/EditCategory', [
             'category' => $category
@@ -85,7 +85,7 @@ class TerminologyController extends Controller
      */
     public function updateCategory(Request $request, string $id)
     {
-        $category = TermCategory::findOrFail($id);
+        $category = TerminologyCategory::findOrFail($id);
         
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -103,7 +103,7 @@ class TerminologyController extends Controller
             // Check for existing slug
             $count = 0;
             $originalSlug = $validated['slug'];
-            while (TermCategory::where('slug', $validated['slug'])
+            while (TerminologyCategory::where('slug', $validated['slug'])
                 ->where('id', '!=', $id)
                 ->exists()) {
                 $count++;
@@ -122,7 +122,7 @@ class TerminologyController extends Controller
      */
     public function createTerm()
     {
-        $categories = TermCategory::where('active', true)
+        $categories = TerminologyCategory::where('active', true)
             ->orderBy('display_order')
             ->orderBy('name')
             ->get();
@@ -138,14 +138,14 @@ class TerminologyController extends Controller
     public function storeTerm(Request $request)
     {
         $validated = $request->validate([
-            'category_id' => 'required|exists:term_categories,id',
+            'category_id' => 'required|exists:terminology_categories,id',
             'term' => [
                 'required',
                 'string',
                 'max:255',
                 function ($attribute, $value, $fail) use ($request) {
                     // Check for uniqueness within the category
-                    $exists = Term::where('category_id', $request->category_id)
+                    $exists = Terminology::where('category_id', $request->category_id)
                         ->where('term', $value)
                         ->exists();
                         
@@ -159,7 +159,7 @@ class TerminologyController extends Controller
         
         $validated['active'] = true;
         
-        $term = Term::create($validated);
+        $term = Terminology::create($validated);
         
         return redirect()->route('admin.terminology.index')
             ->with('success', 'Term added successfully');
@@ -170,17 +170,17 @@ class TerminologyController extends Controller
      */
     public function updateTerm(Request $request, string $id)
     {
-        $term = Term::findOrFail($id);
+        $term = Terminology::findOrFail($id);
         
         $validated = $request->validate([
-            'category_id' => 'required|exists:term_categories,id',
+            'category_id' => 'required|exists:terminology_categories,id',
             'term' => [
                 'required',
                 'string',
                 'max:255',
                 function ($attribute, $value, $fail) use ($request, $term) {
                     // Check for uniqueness within the category, excluding this term
-                    $exists = Term::where('category_id', $request->category_id)
+                    $exists = Terminology::where('category_id', $request->category_id)
                         ->where('term', $value)
                         ->where('id', '!=', $term->id)
                         ->exists();
@@ -205,7 +205,7 @@ class TerminologyController extends Controller
      */
     public function destroyTerm(string $id)
     {
-        $term = Term::findOrFail($id);
+        $term = Terminology::findOrFail($id);
         $term->delete();
         
         return redirect()->route('admin.terminology.index')
@@ -217,7 +217,7 @@ class TerminologyController extends Controller
      */
     public function destroyCategory(string $id)
     {
-        $category = TermCategory::findOrFail($id);
+        $category = TerminologyCategory::findOrFail($id);
         
         // The terms will be deleted automatically due to onDelete('cascade')
         $category->delete();
@@ -231,7 +231,7 @@ class TerminologyController extends Controller
      */
     public function export()
     {
-        $categories = TermCategory::where('active', true)
+        $categories = TerminologyCategory::where('active', true)
             ->with(['activeTerms' => function($query) {
                 $query->orderBy('term');
             }])
@@ -279,7 +279,7 @@ class TerminologyController extends Controller
             
             // If in replace mode, delete all existing categories (will cascade to terms)
             if ($request->mode === 'replace') {
-                TermCategory::truncate();
+                TerminologyCategory::truncate();
             }
             
             $stats = [
@@ -289,7 +289,7 @@ class TerminologyController extends Controller
                 'terms_deleted' => 0,
             ];
             
-            $displayOrder = TermCategory::max('display_order') ?? 0;
+            $displayOrder = TerminologyCategory::max('display_order') ?? 0;
             
             // Process each category in the JSON
             foreach ($jsonData as $categorySlug => $terms) {
@@ -307,7 +307,7 @@ class TerminologyController extends Controller
                 $categoryName = ucwords(str_replace('_', ' ', $categorySlug));
                 
                 // Find or create the category
-                $category = TermCategory::firstOrNew(['slug' => $categorySlug]);
+                $category = TerminologyCategory::firstOrNew(['slug' => $categorySlug]);
                 $isNewCategory = !$category->exists;
                 
                 if ($isNewCategory) {

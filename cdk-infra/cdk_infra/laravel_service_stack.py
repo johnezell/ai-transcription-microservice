@@ -10,6 +10,7 @@ from aws_cdk import (
     aws_sqs as sqs,
     aws_servicediscovery as servicediscovery,
     aws_elasticloadbalancingv2 as elbv2,
+    aws_applicationautoscaling as appscaling,
     Duration,
     CfnOutput
 )
@@ -193,7 +194,7 @@ class LaravelServiceStack(Stack):
                 {"lower": 10, "change": +2},  # Add 2 tasks when there are at least 10 messages
                 {"lower": 20, "change": +4},  # Add 4 tasks when there are at least 20 messages
             ],
-            adjustment_type=ecs.AdjustmentType.CHANGE_IN_CAPACITY
+            adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         )
 
         CfnOutput(self, "LaravelNlbDnsName",

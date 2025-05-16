@@ -12,6 +12,7 @@ import tempfile
 import uuid
 from pathlib import Path
 import boto3
+import time
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -45,15 +46,26 @@ S3_JOBS_DIR = os.path.join(S3_BASE_DIR, 'jobs')
 LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://aws-transcription-laravel.local:80/api')
 AWS_BUCKET = os.environ.get('AWS_BUCKET')
 AWS_DEFAULT_REGION = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+TRANSCRIPTION_QUEUE_URL = os.environ.get('TRANSCRIPTION_QUEUE_URL')
+CALLBACK_QUEUE_URL = os.environ.get('CALLBACK_QUEUE_URL')
 
 # Ensure base directory exists
 os.makedirs(S3_JOBS_DIR, exist_ok=True)
 
+# Initialize S3 client
 s3_client = None
 if AWS_BUCKET:
     s3_client = boto3.client('s3', region_name=AWS_DEFAULT_REGION)
 else:
     logger.error("AWS_BUCKET environment variable not set. S3 operations will fail.")
+
+# Initialize SQS client
+sqs_client = None
+if AWS_DEFAULT_REGION:
+    sqs_client = boto3.client('sqs', region_name=AWS_DEFAULT_REGION)
+    logger.info(f"SQS client initialized with region {AWS_DEFAULT_REGION}")
+else:
+    logger.error("AWS_DEFAULT_REGION not set. SQS operations will fail.")
 
 # Lazy-load Whisper model to save memory
 @lru_cache(maxsize=1)
@@ -139,8 +151,46 @@ def save_srt(segments, output_path):
             f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
     logger.info(f"SRT file saved to: {output_path}")
 
+def send_callback_via_sqs(job_id, status, response_data=None, error_message=None):
+    """Send job status updates via SQS"""
+    if not sqs_client or not CALLBACK_QUEUE_URL:
+        logger.error(f"SQS client or CALLBACK_QUEUE_URL not set. Cannot send callback for job {job_id}.")
+        return False
+    
+    try:
+        message_body = {
+            'job_id': job_id,
+            'status': status,
+            'completed_at': datetime.now().isoformat() if status in ['completed', 'failed', 'transcribed'] else None,
+            'response_data': response_data,
+            'error_message': error_message
+        }
+        
+        response = sqs_client.send_message(
+            QueueUrl=CALLBACK_QUEUE_URL,
+            MessageBody=json.dumps(message_body),
+            MessageAttributes={
+                'ServiceType': {
+                    'DataType': 'String',
+                    'StringValue': 'transcription'
+                }
+            }
+        )
+        
+        logger.info(f"Sent callback to SQS for job {job_id} with status {status}. MessageId: {response.get('MessageId')}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send callback to SQS for job {job_id}: {str(e)}")
+        return False
+
 def update_job_status(job_id, status, response_data=None, error_message=None):
     """Update the job status in Laravel."""
+    # Try SQS first if it's available
+    if sqs_client and CALLBACK_QUEUE_URL:
+        if send_callback_via_sqs(job_id, status, response_data, error_message):
+            return
+    
+    # Legacy HTTP fallback
     if not LARAVEL_API_URL:
         logger.error("LARAVEL_API_URL not set, cannot update job status.")
         return
@@ -170,7 +220,9 @@ def health_check():
         'service': 'transcription-service',
         'timestamp': datetime.now().isoformat(),
         'laravel_api_url_set': bool(LARAVEL_API_URL),
-        'aws_bucket_set': bool(AWS_BUCKET)
+        'aws_bucket_set': bool(AWS_BUCKET),
+        'transcription_queue_url_set': bool(TRANSCRIPTION_QUEUE_URL),
+        'callback_queue_url_set': bool(CALLBACK_QUEUE_URL)
     })
 
 @app.route('/connectivity-test', methods=['GET'])
@@ -198,26 +250,23 @@ def test_laravel_connectivity():
         logger.error(f"Error connecting to Laravel API: {str(e)}")
         return False
 
-@app.route('/process', methods=['POST'])
-def process_transcription_route():
+def process_transcription_job(job_data):
     """Process a transcription job."""
-    data = request.json
+    if not job_data or 'job_id' not in job_data or 'audio_s3_key' not in job_data:
+        logger.error(f"Invalid job data: {job_data}")
+        return False
     
-    if not data or 'job_id' not in data or 'audio_s3_key' not in data:
-        logger.error(f"Invalid request. Missing job_id or audio_s3_key: {data}")
-        return jsonify({'success': False, 'message': 'Invalid request: job_id and audio_s3_key required.'}), 400
+    job_id = job_data['job_id']
+    audio_s3_key = job_data['audio_s3_key']
+    model_name = job_data.get('model_name', 'base')
+    initial_prompt = job_data.get('initial_prompt', None)
     
-    job_id = data['job_id']
-    audio_s3_key = data['audio_s3_key']
-    model_name = data.get('model_name', 'base')
-    initial_prompt = data.get('initial_prompt', None)
-    
-    logger.info(f"Received transcription job: {job_id} for S3 audio key: {audio_s3_key} with model: {model_name}")
+    logger.info(f"Processing transcription job: {job_id} for S3 audio key: {audio_s3_key} with model: {model_name}")
     
     if not s3_client or not AWS_BUCKET:
         logger.error("S3 client or AWS_BUCKET not configured for transcription service.")
         update_job_status(job_id, 'failed', None, "Transcription service S3 configuration error.")
-        return jsonify({'success': False, 'message': 'Transcription service S3 configuration error.'}), 500
+        return False
 
     s3_job_prefix = os.path.dirname(audio_s3_key) # e.g., s3/jobs/UUID
 
@@ -280,16 +329,109 @@ def process_transcription_route():
                 }
             }
             
-            # Update job status in Laravel - status 'transcribed' signals completion of this step
-            # Terminology recognition will be the next step triggered by Laravel if applicable.
+            # Update job status to 'transcribed' to signal completion
             update_job_status(job_id, 'transcribed', response_data)
-            
-            return jsonify({'success': True, 'job_id': job_id, 'data': response_data})
+            return True
             
         except Exception as e:
             logger.error(f"Error processing transcription for job {job_id}: {str(e)}", exc_info=True)
             update_job_status(job_id, 'failed', None, f"Transcription failed: {str(e)}")
-            return jsonify({'success': False, 'job_id': job_id, 'message': f'Transcription failed: {str(e)}'}), 500
+            return False
+
+@app.route('/process', methods=['POST'])
+def process_transcription_route():
+    """Process a transcription job via HTTP API."""
+    data = request.json
+    
+    if not data or 'job_id' not in data or 'audio_s3_key' not in data:
+        logger.error(f"Invalid request. Missing job_id or audio_s3_key: {data}")
+        return jsonify({'success': False, 'message': 'Invalid request: job_id and audio_s3_key required.'}), 400
+    
+    success = process_transcription_job(data)
+    
+    if success:
+        return jsonify({'success': True, 'job_id': data['job_id'], 'message': 'Transcription job processed successfully'})
+    else:
+        return jsonify({'success': False, 'job_id': data['job_id'], 'message': 'Transcription failed'}), 500
+
+@app.route('/start-sqs-listener', methods=['POST'])
+def start_sqs_listener():
+    """Endpoint to trigger SQS listener process (for manual startup)."""
+    if not sqs_client or not TRANSCRIPTION_QUEUE_URL:
+        return jsonify({
+            'success': False, 
+            'message': 'SQS client or queue URL not configured'
+        }), 500
+    
+    # Start the listener in a background thread
+    import threading
+    listener_thread = threading.Thread(target=listen_for_sqs_messages, daemon=True)
+    listener_thread.start()
+    
+    return jsonify({
+        'success': True,
+        'message': 'SQS listener started in background thread'
+    })
+
+def listen_for_sqs_messages():
+    """Listen for messages on the SQS queue and process them."""
+    if not sqs_client or not TRANSCRIPTION_QUEUE_URL:
+        logger.error("Cannot start SQS listener: SQS client or queue URL not configured")
+        return
+    
+    logger.info(f"Starting to listen for messages on queue: {TRANSCRIPTION_QUEUE_URL}")
+    
+    while True:
+        try:
+            # Receive message from SQS queue
+            response = sqs_client.receive_message(
+                QueueUrl=TRANSCRIPTION_QUEUE_URL,
+                AttributeNames=['All'],
+                MessageAttributeNames=['All'],
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=7200  # 2 hours for long transcription jobs
+            )
+            
+            messages = response.get('Messages', [])
+            
+            for message in messages:
+                logger.info(f"Received message: {message['MessageId']}")
+                receipt_handle = message['ReceiptHandle']
+                
+                try:
+                    body = json.loads(message['Body'])
+                    logger.info(f"Processing transcription job from SQS: {body}")
+                    
+                    success = process_transcription_job(body)
+                    
+                    # Delete the message from the queue if processed successfully
+                    if success:
+                        sqs_client.delete_message(
+                            QueueUrl=TRANSCRIPTION_QUEUE_URL,
+                            ReceiptHandle=receipt_handle
+                        )
+                        logger.info(f"Deleted message {message['MessageId']} from queue")
+                    else:
+                        logger.error(f"Failed to process job from message {message['MessageId']}")
+                        # The message will return to the queue after visibility timeout
+                except Exception as e:
+                    logger.error(f"Error processing message {message['MessageId']}: {str(e)}", exc_info=True)
+            
+            # Sleep briefly if no messages were received
+            if not messages:
+                time.sleep(1)
+                
+        except Exception as e:
+            logger.error(f"Error in SQS listener: {str(e)}", exc_info=True)
+            time.sleep(5)  # Wait before retrying
+
+# Start SQS listener in background thread when app starts
+if TRANSCRIPTION_QUEUE_URL and sqs_client:
+    import threading
+    listener_thread = threading.Thread(target=listen_for_sqs_messages, daemon=True)
+    listener_thread.start()
+    logger.info("Started SQS listener in background thread")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_ENV') == 'development') 

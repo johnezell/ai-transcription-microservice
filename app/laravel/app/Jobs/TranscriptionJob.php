@@ -156,11 +156,8 @@ class TranscriptionJob implements ShouldQueue
     {
         return new SqsClient([
             'version' => 'latest',
-            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'credentials' => [
-                'key' => env('AWS_ACCESS_KEY_ID'),
-                'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            ],
+            'region' => env('AWS_DEFAULT_REGION', 'us-east-1')
+            // No explicit credentials - will use ECS task role automatically
         ]);
     }
 

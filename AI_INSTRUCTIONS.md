@@ -18,9 +18,11 @@ This document contains key information and decisions to help the AI assistant ma
 *   **Shared Storage:** Primary shared storage for videos, intermediate files, and final data will be Amazon S3. EFS will not be used for this purpose. S3 bucket deployed.
 *   **Application Access (Laravel):** For the prototype, the Laravel application will NOT use an Application Load Balancer. Access will be via its private IP, accessible through the user's VPN connection.
 *   **Transcription Service:** Will use a self-hosted Whisper AI container, not the AWS Transcribe service.
+*   **Message Queuing:** SQS queues are used for inter-service communication, replacing direct HTTP calls to make the system more scalable and robust.
 *   **IAM Roles:**
     *   A common ECS Task Execution Role is used.
     *   A shared IAM Task Role is used for application services, granting S3 permissions (scoped to the application's data bucket).
+    *   SQS permissions are added to each service's task role as needed.
 *   **Networking:**
     *   Existing VPC is imported: `vpc-09422297ced61f9d2`
     *   VPN Access for User: Via IP `72.239.107.152/32` and/or IP `10.209.27.93/32` (from `truefire-vpn-sg` analysis) allowed in relevant SGs.
@@ -46,9 +48,9 @@ This document contains key information and decisions to help the AI assistant ma
 
 ## Current Status & Recommended Commits
 
-*   **Last Commit (Done by User):** `feat: Add Aurora DB, S3 bucket, and working VPN access for DB` (covered all infrastructure up to and including RDS & S3 bucket).
-*   **Current State:** Database connectivity confirmed. Base infrastructure (VPC, SGs, ECR, ECS Cluster, IAM Roles, Log Groups, S3 Bucket, RDS) is deployed and committed.
-*   **Next planned infrastructure step:** Define ECS Task Definitions and Fargate Services, starting with Laravel.
+*   **Last Commit (Done by User):** `feat: Implement SQS-based communication between services` (covers all infrastructure and code changes for SQS integration).
+*   **Current State:** SQS-based inter-service communication is implemented and working. Auto-scaling based on queue depth is configured.
+*   **Next planned infrastructure step:** Further optimizations and enhancements to the system for enterprise-level processing capability.
 
 ## S3 Bucket Configuration & Object ACLs
 
@@ -68,6 +70,32 @@ This document contains key information and decisions to help the AI assistant ma
     2.  Ensured Laravel's `config/filesystems.php` relies on environment variables (`env('AWS_BUCKET')`, `env('AWS_DEFAULT_REGION')`) which are injected by ECS.
     3.  Updated `docker/scripts/entrypoint.sh` to aggressively clear and re-cache Laravel configurations (`config:clear`, `config:cache`, etc.) on container startup.
 *   **Current State**: Laravel application now correctly uses the IAM Task Role for AWS SDK calls (confirmed by log showing assumed role ARN).
+
+## SQS-Based Inter-Service Communication
+
+*   **SQS Queues**: The following queues have been implemented:
+    *   `audio_extraction_queue` - For audio extraction job requests
+    *   `transcription_queue` - For transcription job requests
+    *   `terminology_queue` - For terminology recognition job requests
+    *   `callback_queue` - For service responses back to Laravel
+
+*   **CDK Configuration**: Each service stack has been updated to define appropriate SQS queues with dead-letter queues and visibility timeouts appropriate for the processing time of each service type.
+
+*   **Auto-Scaling**: ECS services are configured to scale based on queue depth, ensuring the system can handle varying loads efficiently.
+
+*   **Service Updates**:
+    *   All three Python microservices (audio extraction, transcription, terminology recognition) now consume messages from their respective SQS queues and run background listener threads.
+    *   Services send callbacks via the callback queue instead of direct HTTP calls.
+    *   Each service maintains HTTP endpoints for backward compatibility and local testing.
+
+*   **Laravel Application Updates**:
+    *   Job classes have been modified to send messages to SQS instead of making direct HTTP calls.
+    *   A new `ProcessCallbackQueueJob` has been created to handle responses from microservices.
+    *   A new Artisan command has been added for listening to the callback queue.
+
+*   **Environment Variables**:
+    *   `AUDIO_EXTRACTION_QUEUE_URL`, `TRANSCRIPTION_QUEUE_URL`, `TERMINOLOGY_QUEUE_URL`, and `CALLBACK_QUEUE_URL` are set for each service.
+    *   Services check for these environment variables and fall back to HTTP communication if not present.
 
 ## ECS Service Discovery & Inter-Service Communication
 
@@ -103,16 +131,26 @@ This document contains key information and decisions to help the AI assistant ma
 *   **Status**: Deployed and successfully transcribing audio. Video playback in UI is now stable.
 *   **Dockerfile**: `Dockerfile.transcription-service` (builds for `linux/amd64`).
 *   **Service Logic (`app/services/transcription/service.py`)**:
-    *   Receives `audio_s3_key` from Laravel's `TranscriptionJob`.
+    *   Receives `audio_s3_key` from Laravel's `TranscriptionJob` via SQS.
     *   Downloads audio from S3.
     *   Uses `openai-whisper` (e.g., "base" model) for transcription.
     *   Uploads transcript files (`.txt`, `.srt`, `.json`) to the same S3 "folder" as the source audio (e.g., `s3/jobs/<VIDEO_ID>/transcript.txt`).
-    *   Calls back to Laravel (`/api/transcription/{job_id}/status`) with status `transcribed` and paths to the S3 transcript files.
-*   **CDK Stack (`transcription_service_stack.py`)**: Defines Fargate service, task definition (with appropriate memory/CPU for Whisper), ECR image asset, IAM permissions for S3, and CloudMap service discovery (`transcription-service.local`).
+    *   Sends a callback message to the callback queue with status `transcribed` and paths to the S3 transcript files.
+*   **CDK Stack (`transcription_service_stack.py`)**: Defines Fargate service, task definition (with appropriate memory/CPU for Whisper), ECR image asset, IAM permissions for S3 and SQS, and CloudMap service discovery (`transcription-service.local`).
 *   **Inter-Service Communication**:
-    *   Laravel's `TranscriptionJob` calls `http://transcription-service.local:5000/process`.
-    *   Transcription service calls back to `http://aws-transcription-laravel-service.local:80/api/transcription/.../status`.
+    *   Laravel's `TranscriptionJob` sends a message to the transcription queue.
+    *   Transcription service consumes the message and processes it.
+    *   After processing, it sends a callback message to the callback queue.
 *   **Current Model**: Using Whisper "base" model.
+
+## Terminology Recognition Service
+
+*   **Status**: Deployed and successfully extracting terminology from transcripts.
+*   **Service Capabilities**:
+    *   Processes transcripts to identify predefined terminology.
+    *   Categorizes terms and provides counts and statistics.
+    *   Uses SQS for job reception and callback messaging.
+    *   Maintains HTTP endpoints for backward compatibility and health checks.
 
 ## Deployment Script
 
@@ -122,13 +160,11 @@ This document contains key information and decisions to help the AI assistant ma
 
 ## Next Steps (Current)
 
-*   **Log Cleanup**: Review and reduce verbose logging in Laravel (`Video.php` model accessors, `TranscriptionController.php`, `routes/api.php`) and Vue.js (`Show.vue`) now that major components are working.
-*   **Begin work on the Terminology Recognition Service** (to be made more abstract than just "music terms"):
-    *   Discuss service requirements, input (transcript S3 key), output (JSON of terms, categories, timestamps stored in S3 and/or DB).
-    *   Design Python service logic (Flask, NLP libraries like spaCy or NLTK, or simpler regex/keyword matching for V1).
-    *   Define Dockerfile.
-    *   Create CDK stack (`terminology_service_stack.py`).
-    *   Integrate with the Laravel workflow (new Job, update `TranscriptionController` to dispatch it after `transcribed` status).
+*   **Performance Testing**: Test the system with large volumes of videos to validate enterprise-level scalability.
+*   **Monitoring and Alerting**: Implement CloudWatch dashboards and alarms for key metrics like queue depth, processing times, and error rates.
+*   **Cost Optimization**: Analyze resource usage and adjust auto-scaling parameters for optimal cost-performance balance.
+*   **Enhanced Error Handling**: Improve error handling and retry logic in SQS message processing.
+*   **User Interface Enhancements**: Add progress indicators and better status messaging in the Laravel UI.
 *   **Commit all recent changes**.
 
 *(This file should be updated as the project progresses)* 

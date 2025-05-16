@@ -8,6 +8,7 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_sqs as sqs,
     aws_servicediscovery as servicediscovery,
+    aws_applicationautoscaling as appscaling,
     Duration
 )
 from constructs import Construct
@@ -108,5 +109,5 @@ class AudioExtractionServiceStack(Stack):
                 {"lower": 50, "change": +5},  # Add 5 tasks when there are at least 50 messages
                 {"lower": 100, "change": +8}  # Add 8 tasks when there are at least 100 messages
             ],
-            adjustment_type=ecs.AdjustmentType.CHANGE_IN_CAPACITY
+            adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         ) 

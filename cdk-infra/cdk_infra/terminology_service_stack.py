@@ -8,6 +8,7 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_sqs as sqs,
     aws_servicediscovery as servicediscovery,
+    aws_applicationautoscaling as appscaling,
     Duration
 )
 from constructs import Construct
@@ -108,5 +109,5 @@ class TerminologyServiceStack(Stack):
                 {"lower": 15, "change": +4},  # Add 4 tasks when there are at least 15 messages
                 {"lower": 30, "change": +6}   # Add 6 tasks when there are at least 30 messages
             ],
-            adjustment_type=ecs.AdjustmentType.CHANGE_IN_CAPACITY
+            adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         ) 

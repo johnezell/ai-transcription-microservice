@@ -9,6 +9,7 @@ from datetime import datetime
 import tempfile
 from pathlib import Path # Keep Path if used for temp file manipulations
 import boto3
+import time
 import spacy # Keep spacy for later, but V1 might not use it heavily yet
 # from spacy.matcher import PhraseMatcher # V1 might not use PhraseMatcher initially with hardcoded regex
 
@@ -24,12 +25,23 @@ LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL') # Expected to be http://aws-
 AWS_BUCKET = os.environ.get('AWS_BUCKET')
 AWS_DEFAULT_REGION = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
 TERMINOLOGY_EXPORT_ENDPOINT = f"{LARAVEL_API_URL}/terminology/export" if LARAVEL_API_URL else None
+TERMINOLOGY_QUEUE_URL = os.environ.get('TERMINOLOGY_QUEUE_URL')
+CALLBACK_QUEUE_URL = os.environ.get('CALLBACK_QUEUE_URL')
 
+# Initialize S3 client
 s3_client = None
 if AWS_BUCKET and AWS_DEFAULT_REGION:
     s3_client = boto3.client('s3', region_name=AWS_DEFAULT_REGION)
 else:
     logger.error("AWS_BUCKET or AWS_DEFAULT_REGION environment variables not set. S3 operations will fail.")
+
+# Initialize SQS client
+sqs_client = None
+if AWS_DEFAULT_REGION:
+    sqs_client = boto3.client('sqs', region_name=AWS_DEFAULT_REGION)
+    logger.info(f"SQS client initialized with region {AWS_DEFAULT_REGION}")
+else:
+    logger.error("AWS_DEFAULT_REGION not set. SQS operations will fail.")
 
 # Define V1 Terminology Categories and Keywords/Patterns
 # This can be expanded or moved to a config file/API later
@@ -137,8 +149,46 @@ def extract_terms_dynamically(transcript_text: str) -> dict:
         "terms": found_terms_details
     }
 
+def send_callback_via_sqs(job_id, status, response_data=None, error_message=None):
+    """Send job status updates via SQS"""
+    if not sqs_client or not CALLBACK_QUEUE_URL:
+        logger.error(f"SQS client or CALLBACK_QUEUE_URL not set. Cannot send callback for job {job_id}.")
+        return False
+    
+    try:
+        message_body = {
+            'job_id': job_id,
+            'status': status,
+            'completed_at': datetime.now().isoformat() if status in ['completed', 'failed', 'terminology_extracted'] else None,
+            'response_data': response_data,
+            'error_message': error_message
+        }
+        
+        response = sqs_client.send_message(
+            QueueUrl=CALLBACK_QUEUE_URL,
+            MessageBody=json.dumps(message_body),
+            MessageAttributes={
+                'ServiceType': {
+                    'DataType': 'String',
+                    'StringValue': 'terminology'
+                }
+            }
+        )
+        
+        logger.info(f"Sent callback to SQS for job {job_id} with status {status}. MessageId: {response.get('MessageId')}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send callback to SQS for job {job_id}: {str(e)}")
+        return False
+
 def update_job_status(job_id, status, response_data=None, error_message=None):
     """Update the job status in Laravel."""
+    # Try SQS first if it's available
+    if sqs_client and CALLBACK_QUEUE_URL:
+        if send_callback_via_sqs(job_id, status, response_data, error_message):
+            return
+    
+    # Legacy HTTP fallback
     if not LARAVEL_API_URL:
         logger.error(f"LARAVEL_API_URL not set for job {job_id}. Cannot update status.")
         return
@@ -175,7 +225,9 @@ def health_check():
         'timestamp': datetime.now().isoformat(),
         'laravel_api_url_set': bool(LARAVEL_API_URL),
         'aws_bucket_set': bool(AWS_BUCKET),
-        'dynamic_terms_loaded': bool(DYNAMIC_TERMINOLOGY)
+        'dynamic_terms_loaded': bool(DYNAMIC_TERMINOLOGY),
+        'terminology_queue_url_set': bool(TERMINOLOGY_QUEUE_URL),
+        'callback_queue_url_set': bool(CALLBACK_QUEUE_URL)
     })
 
 @app.route('/refresh-terms', methods=['POST']) # Added endpoint to manually refresh terms
@@ -187,21 +239,20 @@ def refresh_terms_route():
     else:
         return jsonify({'success': False, 'message': 'Failed to refresh terminology definitions.'}), 500
 
-@app.route('/process', methods=['POST'])
-def process_terminology_route():
-    data = request.json
-    if not data or 'job_id' not in data or 'transcript_s3_key' not in data:
-        logger.error(f"Invalid request payload: {data}")
-        return jsonify({'success': False, 'message': 'job_id and transcript_s3_key required'}), 400
-
-    job_id = data['job_id']
-    transcript_s3_key = data['transcript_s3_key'] # e.g., s3/jobs/VIDEO_ID/transcript.txt
-    logger.info(f"Received terminology recognition job ID: {job_id} for transcript S3 key: {transcript_s3_key}")
+def process_terminology_job(job_data):
+    """Process a terminology recognition job."""
+    if not job_data or 'job_id' not in job_data or 'transcript_s3_key' not in job_data:
+        logger.error(f"Invalid job data: {job_data}")
+        return False
+    
+    job_id = job_data['job_id']
+    transcript_s3_key = job_data['transcript_s3_key']
+    logger.info(f"Processing terminology recognition job ID: {job_id} for transcript S3 key: {transcript_s3_key}")
 
     if not s3_client or not AWS_BUCKET:
         logger.error("S3 client or AWS_BUCKET not configured for terminology service.")
         update_job_status(job_id, 'failed', error_message="Terminology service S3 configuration error.")
-        return jsonify({'success': False, 'message': 'Terminology service S3 configuration error.'}), 500
+        return False
 
     s3_job_prefix = os.path.dirname(transcript_s3_key) # e.g., s3/jobs/VIDEO_ID
     s3_terminology_json_key = os.path.join(s3_job_prefix, "terminology.json")
@@ -252,13 +303,106 @@ def process_terminology_route():
             # This status will be used by Laravel to know this stage is done.
             # Laravel's TranscriptionController will then decide if the overall video status is 'completed'.
             update_job_status(job_id, 'terminology_extracted', response_data_for_laravel)
-            
-            return jsonify({'success': True, 'job_id': job_id, 'data': response_data_for_laravel})
+            return True
             
         except Exception as e:
             logger.error(f"Error processing terminology for job {job_id}: {str(e)}", exc_info=True)
             update_job_status(job_id, 'failed', error_message=f"Terminology recognition failed: {str(e)}")
-            return jsonify({'success': False, 'job_id': job_id, 'message': f'Terminology recognition failed: {str(e)}'}), 500
+            return False
+
+@app.route('/process', methods=['POST'])
+def process_terminology_route():
+    """Process a terminology recognition job via HTTP API."""
+    data = request.json
+    if not data or 'job_id' not in data or 'transcript_s3_key' not in data:
+        logger.error(f"Invalid request payload: {data}")
+        return jsonify({'success': False, 'message': 'job_id and transcript_s3_key required'}), 400
+
+    success = process_terminology_job(data)
+    
+    if success:
+        return jsonify({'success': True, 'job_id': data['job_id'], 'message': 'Terminology recognition job processed successfully'})
+    else:
+        return jsonify({'success': False, 'job_id': data['job_id'], 'message': 'Terminology recognition failed'}), 500
+
+@app.route('/start-sqs-listener', methods=['POST'])
+def start_sqs_listener():
+    """Endpoint to trigger SQS listener process (for manual startup)."""
+    if not sqs_client or not TERMINOLOGY_QUEUE_URL:
+        return jsonify({
+            'success': False, 
+            'message': 'SQS client or queue URL not configured'
+        }), 500
+    
+    # Start the listener in a background thread
+    import threading
+    listener_thread = threading.Thread(target=listen_for_sqs_messages, daemon=True)
+    listener_thread.start()
+    
+    return jsonify({
+        'success': True,
+        'message': 'SQS listener started in background thread'
+    })
+
+def listen_for_sqs_messages():
+    """Listen for messages on the SQS queue and process them."""
+    if not sqs_client or not TERMINOLOGY_QUEUE_URL:
+        logger.error("Cannot start SQS listener: SQS client or queue URL not configured")
+        return
+    
+    logger.info(f"Starting to listen for messages on queue: {TERMINOLOGY_QUEUE_URL}")
+    
+    while True:
+        try:
+            # Receive message from SQS queue
+            response = sqs_client.receive_message(
+                QueueUrl=TERMINOLOGY_QUEUE_URL,
+                AttributeNames=['All'],
+                MessageAttributeNames=['All'],
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=1800  # 30 minutes
+            )
+            
+            messages = response.get('Messages', [])
+            
+            for message in messages:
+                logger.info(f"Received message: {message['MessageId']}")
+                receipt_handle = message['ReceiptHandle']
+                
+                try:
+                    body = json.loads(message['Body'])
+                    logger.info(f"Processing terminology job from SQS: {body}")
+                    
+                    success = process_terminology_job(body)
+                    
+                    # Delete the message from the queue if processed successfully
+                    if success:
+                        sqs_client.delete_message(
+                            QueueUrl=TERMINOLOGY_QUEUE_URL,
+                            ReceiptHandle=receipt_handle
+                        )
+                        logger.info(f"Deleted message {message['MessageId']} from queue")
+                    else:
+                        logger.error(f"Failed to process job from message {message['MessageId']}")
+                        # The message will return to the queue after visibility timeout
+                except Exception as e:
+                    logger.error(f"Error processing message {message['MessageId']}: {str(e)}", exc_info=True)
+            
+            # Sleep briefly if no messages were received
+            if not messages:
+                time.sleep(1)
+                
+        except Exception as e:
+            logger.error(f"Error in SQS listener: {str(e)}", exc_info=True)
+            time.sleep(5)  # Wait before retrying
+
+# Start SQS listener in background thread when app starts
+if TERMINOLOGY_QUEUE_URL and sqs_client:
+    import threading
+    listener_thread = threading.Thread(target=listen_for_sqs_messages, daemon=True)
+    listener_thread.start()
+    logger.info("Started SQS listener in background thread")
 
 # Removed old /refresh-terms and related spacy model loading for V1 simplicity.
 # If API-driven term definitions are re-added, that logic can be restored.

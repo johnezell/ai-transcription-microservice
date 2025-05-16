@@ -10,6 +10,8 @@ from aws_cdk import (
     aws_sqs as sqs,
     aws_servicediscovery as servicediscovery,
     aws_elasticloadbalancingv2 as elbv2,
+    aws_route53 as route53,
+    aws_route53_targets as route53_targets,
     aws_applicationautoscaling as appscaling,
     Duration,
     CfnOutput
@@ -31,6 +33,10 @@ class LaravelServiceStack(Stack):
                  transcription_queue: sqs.IQueue,
                  terminology_queue: sqs.IQueue,
                  callback_queue: sqs.IQueue,
+                 private_hosted_zone_id: str = "Z01552481DZW7076I1OSY",  # Private hosted zone ID
+                 public_hosted_zone_id: str = "Z07716653GDXJUDL4P879",  # Public hosted zone ID
+                 domain_name: str = "tfs.services",
+                 app_subdomain: str = "thoth",  # "thoth.tfs.services"
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -74,13 +80,13 @@ class LaravelServiceStack(Stack):
                 "APP_ENV": "production", # Set to "local" or "development" if needed for debugging
                 "APP_KEY": "base64:N2Zq9+SyE/2dYCwtKpuDMgh0rTPoxZFbST7XqF8GRYA=", # IMPORTANT: Replace with your actual Laravel App Key from .env
                 "APP_DEBUG": "false",
-                "APP_URL": "http://localhost", # This will be the service's internal DNS, not actually localhost
+                "APP_URL": f"http://{app_subdomain}.{domain_name}", # Use custom domain instead of localhost
                 
                 "LOG_CHANNEL": "stderr",
                 "LOG_LEVEL": "debug",
 
                 "DB_CONNECTION": "mysql",
-                # DB_HOST will be injected by SecretsManager
+                # DB_HOST will be injected by SecretsManager - using custom_host if available, falling back to host
                 # DB_PORT will be injected by SecretsManager
                 # DB_DATABASE will be injected by SecretsManager
                 # DB_USERNAME will be injected by SecretsManager
@@ -102,7 +108,8 @@ class LaravelServiceStack(Stack):
                 "TERMINOLOGY_SERVICE_URL": "http://terminology-service.local:5000" # New service URL
             },
             secrets={
-                "DB_HOST": ecs.Secret.from_secrets_manager(db_secret, "host"),
+                # Prefer custom_host if it exists and is not empty, otherwise fall back to host
+                "DB_HOST": ecs.Secret.from_secrets_manager(db_secret, "custom_host", "host"),
                 "DB_PORT": ecs.Secret.from_secrets_manager(db_secret, "port"),
                 "DB_DATABASE": ecs.Secret.from_secrets_manager(db_secret, "dbname"),
                 "DB_USERNAME": ecs.Secret.from_secrets_manager(db_secret, "username"),
@@ -196,6 +203,45 @@ class LaravelServiceStack(Stack):
             ],
             adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         )
+
+        # Function to create DNS record in a hosted zone
+        def create_dns_record(hosted_zone_id, zone_type):
+            if hosted_zone_id and domain_name and app_subdomain:
+                # Look up the hosted zone
+                hosted_zone = route53.HostedZone.from_hosted_zone_id(
+                    self, 
+                    f"Imported{zone_type}HostedZoneForNLB", 
+                    hosted_zone_id
+                )
+                
+                # Create a CNAME record for the custom domain
+                app_record = route53.CnameRecord(
+                    self,
+                    f"Laravel{zone_type}CnameRecord",
+                    zone=hosted_zone,
+                    record_name=app_subdomain,
+                    domain_name=self.nlb.load_balancer_dns_name,
+                    ttl=Duration.minutes(5)  # Short TTL for prototype
+                )
+                
+                # Create output for the custom domain
+                CfnOutput(self, f"Laravel{zone_type}CustomDomain",
+                    value=f"{app_subdomain}.{domain_name}",
+                    description=f"Custom domain for the Laravel application in {zone_type} zone",
+                    export_name=f"{app_name}-{zone_type.lower()}-app-endpoint"
+                )
+        
+        # Create records in both hosted zones if provided
+        if private_hosted_zone_id:
+            create_dns_record(private_hosted_zone_id, "Private")
+            
+        if public_hosted_zone_id:
+            create_dns_record(public_hosted_zone_id, "Public")
+            # Add a note about VPN requirement for public DNS
+            CfnOutput(self, "PublicDnsVpnNote",
+                value="NOTE: Even with public DNS, VPN connection to the VPC is required since the NLB is internal",
+                description="Important note about VPN requirement"
+            )
 
         CfnOutput(self, "LaravelNlbDnsName",
             value=self.nlb.load_balancer_dns_name,

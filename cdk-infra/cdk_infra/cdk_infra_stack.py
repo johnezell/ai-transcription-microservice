@@ -21,8 +21,7 @@ class CdkInfraStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        app_name = "aws-transcription"
-        db_name = "appdb" # Database name for Aurora
+        app_name = "aws-transcription"  # Reverted to original name for compatibility
         # These will be fetched from cdk.json or context shortly.
         # For now, ensure they are defined for clarity if used directly below.
         truefire_vpn_gateway_ip = self.node.try_get_context("truefire_vpn_gateway_ip") or "72.239.107.152/32" # Example, adjust as needed
@@ -35,11 +34,6 @@ class CdkInfraStack(Stack):
             vpc_id="vpc-09422297ced61f9d2" # Your VPC ID from plan.md
         )
         self.vpc = vpc
-
-        # Removed import of sg-09a118ae14a5c0955 as a peer SG
-        # vpn_sg_inter_account = ec2.SecurityGroup.from_security_group_id(self, "ImportedVpnInterAccountSg",
-        #     security_group_id="sg-09a118ae14a5c0955" 
-        # )
 
         # Laravel ECS Task Security Group (for private access to Laravel)
         laravel_ecs_task_sg = ec2.SecurityGroup(self, "LaravelEcsTaskSecurityGroup",
@@ -122,8 +116,6 @@ class CdkInfraStack(Stack):
             connection=ec2.Port.tcp(3306),
             description="Allow MySQL from user VPN client IP"
         )
-
-        # EFS Security Group and related EFS resources are removed as per decision to use S3.
 
         # SQS Queues for asynchronous microservice communication
         # Audio extraction queue
@@ -344,30 +336,10 @@ class CdkInfraStack(Stack):
         )
         self.terminology_log_group = terminology_log_group
 
-        # RDS Aurora Serverless v2 MySQL Cluster
-        db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
-            engine=rds.DatabaseClusterEngine.aurora_mysql(
-                version=rds.AuroraMysqlEngineVersion.VER_3_04_0  # Changed to MySQL 8.0.28 compatible
-            ),
-            credentials=rds.Credentials.from_generated_secret("dbAdmin"), # Stores master credentials in Secrets Manager
-            writer=rds.ClusterInstance.serverless_v2("writerInstance"), # Defines a Serverless v2 writer instance
-            serverless_v2_min_capacity=0.5, # Min ACUs
-            serverless_v2_max_capacity=1.0, # Max ACUs for prototype, can be increased
-            vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
-            security_groups=[rds_sg],
-            default_database_name=db_name,
-            removal_policy=RemovalPolicy.DESTROY,  # DESTROY for prototype, use SNAPSHOT or RETAIN for prod
-            backup=rds.BackupProps(
-                retention=aws_cdk.Duration.days(1)  # Explicitly using aws_cdk.Duration
-            )
-        )
-        self.db_cluster = db_cluster
-        # Expose the secret for the Laravel stack to use
-        self.db_cluster_secret = db_cluster.secret
+        # RDS Aurora Serverless database is now in a separate DatabaseStack
+        # We only need to expose the security group for use by that stack
 
-        # We can add outputs or use 'vpc' variable later to pass to other constructs
-        # For example, to see the VPC ID after synthesis/deployment:
+        # Outputs
         aws_cdk.CfnOutput(self, "VpcIdOutput",
             value=vpc.vpc_id,
             description="ID of the imported VPC"
@@ -439,23 +411,3 @@ class CdkInfraStack(Stack):
             value=shared_task_role.role_arn,
             description="ARN of the Shared Application Task Role"
         )
-        aws_cdk.CfnOutput(self, "DbClusterEndpointOutput",
-            value=db_cluster.cluster_endpoint.hostname,
-            description="Hostname of the DB Cluster Endpoint"
-        )
-        aws_cdk.CfnOutput(self, "DbClusterReadEndpointOutput",
-            value=db_cluster.cluster_read_endpoint.hostname,
-            description="Hostname of the DB Cluster Read Endpoint"
-        )
-        aws_cdk.CfnOutput(self, "DbClusterSecretArnOutput",
-            value=db_cluster.secret.secret_arn if db_cluster.secret else "N/A",
-            description="ARN of the DB Cluster master credentials secret in Secrets Manager"
-        )
-
-        # The code that defines your stack goes here
-
-        # example resource
-        # queue = sqs.Queue(
-        #     self, "CdkInfraQueue",
-        #     visibility_timeout=Duration.seconds(300),
-        # )

@@ -17,6 +17,12 @@ chmod -R 777 /var/www/bootstrap/cache
 # Ensure we are in the Laravel directory for artisan commands
 cd /var/www
 
+# First make sure the cache table exists
+echo "Creating cache table if it doesn't exist..."
+php artisan cache:table
+php artisan migrate --path=database/migrations/0001_01_01_000001_create_cache_table.php --force
+echo "Cache table creation completed."
+
 echo "Clearing all Laravel caches..."
 php artisan config:clear
 php artisan route:clear

@@ -357,10 +357,11 @@ class CdkInfraStack(Stack):
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             security_groups=[rds_sg],
             default_database_name=db_name,
-            removal_policy=RemovalPolicy.DESTROY,  # DESTROY for prototype, use SNAPSHOT or RETAIN for prod
+            removal_policy=RemovalPolicy.RETAIN,  # Changed from DESTROY to RETAIN for production use
             backup=rds.BackupProps(
-                retention=aws_cdk.Duration.days(1)  # Explicitly using aws_cdk.Duration
-            )
+                retention=aws_cdk.Duration.days(7)  # Increased from 1 day to 7 days for better protection
+            ),
+            deletion_protection=True  # Add deletion protection to prevent accidental deletion
         )
         self.db_cluster = db_cluster
         # Expose the secret for the Laravel stack to use

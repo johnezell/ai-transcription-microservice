@@ -37,9 +37,10 @@ main_infra_stack = CdkInfraStack(app, "CdkInfraStack",
 )
 
 # Create the separate database stack
+# NOTE: We're not passing the security group from CdkInfraStack anymore
+# DatabaseStack will create its own security group
 database_stack = DatabaseStack(app, "DatabaseStack",
     vpc=main_infra_stack.vpc,
-    database_security_group=main_infra_stack.rds_sg,
     app_name=app_name_from_context,
     private_hosted_zone_id=private_hosted_zone_id,
     public_hosted_zone_id=public_hosted_zone_id,
@@ -47,9 +48,6 @@ database_stack = DatabaseStack(app, "DatabaseStack",
     db_subdomain=db_subdomain,
     env=aws_env
 )
-
-# Add dependency to ensure the main stack is created first
-database_stack.add_dependency(main_infra_stack)
 
 # Instantiate the Laravel service stack, passing resources from the database stack
 laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",
@@ -69,6 +67,7 @@ laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",
     public_hosted_zone_id=public_hosted_zone_id,
     domain_name=domain_name,
     app_subdomain=app_subdomain,
+    db_subdomain=db_subdomain,
     env=aws_env
 )
 

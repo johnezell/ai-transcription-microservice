@@ -37,6 +37,7 @@ class LaravelServiceStack(Stack):
                  public_hosted_zone_id: str = "Z07716653GDXJUDL4P879",  # Public hosted zone ID
                  domain_name: str = "tfs.services",
                  app_subdomain: str = "thoth",  # "thoth.tfs.services"
+                 db_subdomain: str = "db-thoth", # Database subdomain
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -66,6 +67,53 @@ class LaravelServiceStack(Stack):
             execution_role=ecs_task_execution_role,
             task_role=shared_task_role
         )
+        
+        # Get the custom domain for the database from the parameters
+        db_custom_domain = f"{db_subdomain}.{domain_name}" if domain_name and db_subdomain else None
+
+        # Create the base environment variables
+        environment = {
+            "APP_NAME": "Laravel Transcription Service",
+            "APP_ENV": "production", # Set to "local" or "development" if needed for debugging
+            "APP_KEY": "base64:N2Zq9+SyE/2dYCwtKpuDMgh0rTPoxZFbST7XqF8GRYA=", # IMPORTANT: Replace with your actual Laravel App Key from .env
+            "APP_DEBUG": "false",
+            "APP_URL": f"http://{app_subdomain}.{domain_name}", # Use custom domain instead of localhost
+            
+            "LOG_CHANNEL": "stderr",
+            "LOG_LEVEL": "debug",
+
+            "DB_CONNECTION": "mysql",
+            "AWS_BUCKET": app_data_bucket.bucket_name,
+            "AWS_DEFAULT_REGION": self.region,
+            "AWS_USE_PATH_STYLE_ENDPOINT": "false",
+
+            # SQS queue URLs for asynchronous communication
+            "AUDIO_EXTRACTION_QUEUE_URL": audio_extraction_queue.queue_url,
+            "TRANSCRIPTION_QUEUE_URL": transcription_queue.queue_url,
+            "TERMINOLOGY_QUEUE_URL": terminology_queue.queue_url,
+            "CALLBACK_QUEUE_URL": callback_queue.queue_url,
+
+            # Keep service URLs for backward compatibility and health checks
+            "AUDIO_SERVICE_URL": "http://audio-extraction-service.local:5000",
+            "TRANSCRIPTION_SERVICE_URL": "http://transcription-service.local:5000",
+            "TERMINOLOGY_SERVICE_URL": "http://terminology-service.local:5000" # New service URL
+        }
+        
+        # Add DB_HOST to environment variables if we have a custom domain
+        if db_custom_domain:
+            environment["DB_HOST"] = db_custom_domain
+        
+        # Create the base secrets dictionary without DB_HOST
+        secrets = {
+            "DB_PORT": ecs.Secret.from_secrets_manager(db_secret, "port"),
+            "DB_DATABASE": ecs.Secret.from_secrets_manager(db_secret, "dbname"),
+            "DB_USERNAME": ecs.Secret.from_secrets_manager(db_secret, "username"),
+            "DB_PASSWORD": ecs.Secret.from_secrets_manager(db_secret, "password")
+        }
+        
+        # Only add DB_HOST to secrets if we're not using the custom domain
+        if not db_custom_domain:
+            secrets["DB_HOST"] = ecs.Secret.from_secrets_manager(db_secret, "host")
 
         # Add container to the task definition
         laravel_container = laravel_task_definition.add_container("LaravelWebAppContainer",
@@ -75,46 +123,8 @@ class LaravelServiceStack(Stack):
                 log_group=laravel_log_group
             ),
             port_mappings=[ecs.PortMapping(container_port=80)],
-            environment={
-                "APP_NAME": "Laravel Transcription Service",
-                "APP_ENV": "production", # Set to "local" or "development" if needed for debugging
-                "APP_KEY": "base64:N2Zq9+SyE/2dYCwtKpuDMgh0rTPoxZFbST7XqF8GRYA=", # IMPORTANT: Replace with your actual Laravel App Key from .env
-                "APP_DEBUG": "false",
-                "APP_URL": f"http://{app_subdomain}.{domain_name}", # Use custom domain instead of localhost
-                
-                "LOG_CHANNEL": "stderr",
-                "LOG_LEVEL": "debug",
-
-                "DB_CONNECTION": "mysql",
-                # DB_HOST will be injected by SecretsManager - using custom_host if available, falling back to host
-                # DB_PORT will be injected by SecretsManager
-                # DB_DATABASE will be injected by SecretsManager
-                # DB_USERNAME will be injected by SecretsManager
-                # DB_PASSWORD will be injected by SecretsManager
-
-                "AWS_BUCKET": app_data_bucket.bucket_name,
-                "AWS_DEFAULT_REGION": self.region,
-                "AWS_USE_PATH_STYLE_ENDPOINT": "false",
-
-                # SQS queue URLs for asynchronous communication
-                "AUDIO_EXTRACTION_QUEUE_URL": audio_extraction_queue.queue_url,
-                "TRANSCRIPTION_QUEUE_URL": transcription_queue.queue_url,
-                "TERMINOLOGY_QUEUE_URL": terminology_queue.queue_url,
-                "CALLBACK_QUEUE_URL": callback_queue.queue_url,
-
-                # Keep service URLs for backward compatibility and health checks
-                "AUDIO_SERVICE_URL": "http://audio-extraction-service.local:5000",
-                "TRANSCRIPTION_SERVICE_URL": "http://transcription-service.local:5000",
-                "TERMINOLOGY_SERVICE_URL": "http://terminology-service.local:5000" # New service URL
-            },
-            secrets={
-                # Use the custom_host key instead of trying to use fallback logic here
-                "DB_HOST": ecs.Secret.from_secrets_manager(db_secret, "custom_host"),
-                "DB_PORT": ecs.Secret.from_secrets_manager(db_secret, "port"),
-                "DB_DATABASE": ecs.Secret.from_secrets_manager(db_secret, "dbname"),
-                "DB_USERNAME": ecs.Secret.from_secrets_manager(db_secret, "username"),
-                "DB_PASSWORD": ecs.Secret.from_secrets_manager(db_secret, "password")
-            }
+            environment=environment,
+            secrets=secrets
         )
 
         # Grant SQS permissions to the Laravel task

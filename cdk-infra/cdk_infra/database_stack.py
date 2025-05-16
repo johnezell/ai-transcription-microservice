@@ -14,7 +14,6 @@ from constructs import Construct
 class DatabaseStack(Stack):
     def __init__(self, scope: Construct, construct_id: str,
                  vpc: ec2.IVpc,
-                 database_security_group: ec2.ISecurityGroup,
                  app_name: str,
                  private_hosted_zone_id: str = None,
                  public_hosted_zone_id: str = None,
@@ -26,7 +25,43 @@ class DatabaseStack(Stack):
         # Database name derived from app name
         db_name = f"{app_name.replace('-', '_')}_db"
         
+        # Create our own security group for the database
+        # No longer using the security group from CdkInfraStack
+        database_security_group = ec2.SecurityGroup(self, "DatabaseSecurityGroup",
+            vpc=vpc,
+            description="Security group for the RDS database",
+            allow_all_outbound=True
+        )
+        
+        # Allow MySQL traffic from anywhere in the VPC
+        # This is a temporary broad rule for development
+        # TODO: In production, replace with more specific sources
+        database_security_group.add_ingress_rule(
+            peer=ec2.Peer.ipv4(vpc.vpc_cidr_block),
+            connection=ec2.Port.tcp(3306),
+            description="Allow MySQL traffic from anywhere in the VPC"
+        )
+        
+        # Also allow from specific external IPs for debugging/vpn access
+        truefire_vpn_gateway_ip = "72.239.107.152/32"  # Example, adjust as needed
+        user_vpn_client_ip = "10.209.27.93/32"  # Example, adjust as needed
+        
+        # Allow MySQL traffic from the TrueFire VPN Gateway IP
+        database_security_group.add_ingress_rule(
+            peer=ec2.Peer.ipv4(truefire_vpn_gateway_ip), 
+            connection=ec2.Port.tcp(3306),
+            description="Allow MySQL from TrueFire VPN Gateway IP"
+        )
+        
+        # Allow MySQL traffic from specific user VPN client IP
+        database_security_group.add_ingress_rule(
+            peer=ec2.Peer.ipv4(user_vpn_client_ip),
+            connection=ec2.Port.tcp(3306),
+            description="Allow MySQL from user VPN client IP"
+        )
+        
         # Create a secret with fixed credentials for the prototype phase
+        # Important: Don't include custom_host in the initial secret to avoid circular dependency
         db_credentials = secretsmanager.Secret(self, "DBCredentialsSecret",
             secret_name=f"{app_name}-db-credentials",
             description="Hardcoded credentials for prototype database access",
@@ -42,6 +77,7 @@ class DatabaseStack(Stack):
         )
         
         # Override the generated password with the hardcoded one
+        # IMPORTANT: Don't include custom_host here to avoid circular dependency
         cfn_secret = db_credentials.node.default_child
         cfn_secret.add_override("Properties.GenerateSecretString", {
             "SecretStringTemplate": '{"username": "admin"}',
@@ -49,7 +85,17 @@ class DatabaseStack(Stack):
             "PasswordLength": 16,
             "ExcludePunctuation": False
         })
-        cfn_secret.add_override("Properties.SecretString", '{"username": "admin", "password": "Thx11381!"}')
+        
+        # Create base JSON without custom_host
+        base_json_string = '{' + \
+            f'"username":"admin",' + \
+            f'"password":"Thx11381!",' + \
+            f'"host":"",' + \
+            f'"port":"3306",' + \
+            f'"dbname":"{db_name}"' + \
+            '}'
+        
+        cfn_secret.add_override("Properties.SecretString", base_json_string)
 
         # RDS Aurora Serverless v2 MySQL Cluster with termination protection
         self.db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
@@ -70,33 +116,19 @@ class DatabaseStack(Stack):
                 retention=Duration.days(7)  # Increased backup retention for better recovery options
             )
         )
-
-        # Create a custom domain string for the database
-        custom_domain = f"{db_subdomain}.{domain_name}" if domain_name and db_subdomain else None
         
-        # Create a more complete secret for Laravel with both the actual endpoint and the custom domain
-        # Note: Secret will need a dependency on Route53 record creation before using custom domain
-        final_credentials_json = {
-            "username": "admin",
-            "password": "Thx11381!",
-            "host": self.db_cluster.cluster_endpoint.hostname,
-            "port": "3306",
-            "dbname": db_name,
-            "custom_host": custom_domain
-        }
-        
-        # Create a formatted JSON string
-        json_string = '{' + \
+        # Update the secret with the actual RDS endpoint
+        # But still don't include custom_host to avoid circular dependency
+        updated_json = '{' + \
             f'"username":"admin",' + \
             f'"password":"Thx11381!",' + \
             f'"host":"{self.db_cluster.cluster_endpoint.hostname}",' + \
             f'"port":"3306",' + \
-            f'"dbname":"{db_name}",' + \
-            f'"custom_host":"{custom_domain if custom_domain else ""}"' + \
+            f'"dbname":"{db_name}"' + \
             '}'
             
-        # Override with complete JSON
-        cfn_secret.add_override("Properties.SecretString", json_string)
+        # Update the secret with the RDS endpoint
+        cfn_secret.add_override("Properties.SecretString", updated_json)
 
         # Export the DB cluster secret for other stacks to use
         self.db_cluster_secret = db_credentials
@@ -149,6 +181,17 @@ class DatabaseStack(Stack):
             
         if public_hosted_zone_id:
             create_dns_record(public_hosted_zone_id, "Public")
+        
+        # Instead of updating the secret with the custom domain (which would create a circular dependency),
+        # create an output with the custom domain information that can be used by applications
+        custom_domain = f"{db_subdomain}.{domain_name}" if domain_name and db_subdomain else None
+        
+        if custom_domain:
+            CfnOutput(self, "CustomDomainOutput",
+                value=custom_domain,
+                description="Custom domain for the database (use this instead of host in the secret)",
+                export_name=f"{app_name}-db-custom-domain"
+            )
         
         # Outputs for other stacks to reference
         CfnOutput(self, "DbCredentialsOutput",

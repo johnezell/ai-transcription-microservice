@@ -52,6 +52,7 @@ class TranscriptionServiceStack(Stack):
         transcription_task_definition = ecs.Ec2TaskDefinition(self, "TranscriptionTaskDef",
             execution_role=ecs_task_execution_role,
             task_role=shared_task_role, # Role with S3 access
+            network_mode=ecs.NetworkMode.AWS_VPC,  # Use awsvpc networking mode for VPC integration
         )
 
         # Container Definition with GPU requirements

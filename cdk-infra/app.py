@@ -9,7 +9,6 @@ from cdk_infra.audio_extraction_service_stack import AudioExtractionServiceStack
 from cdk_infra.transcription_service_stack import TranscriptionServiceStack
 from cdk_infra.terminology_service_stack import TerminologyServiceStack
 from cdk_infra.monitoring_stack import MonitoringStack
-from cdk_infra.database_stack import DatabaseStack
 
 # Define the AWS environment (account and region)
 # Using your Account ID and the region from plan.md
@@ -26,30 +25,18 @@ domain_name = "tfs.services"
 db_subdomain = "db-thoth"
 app_subdomain = "thoth"
 
-# Instantiate the main infrastructure stack
+# Instantiate the main infrastructure stack with database resources
 main_infra_stack = CdkInfraStack(app, "CdkInfraStack",
-    # Pass the environment to the stack
-    env=aws_env
-    # If you don't specify 'env', this stack will be environment-agnostic.
-    # However, some features (like importing existing resources) require a
-    # specific environment.
-    # For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html
-)
-
-# Create the separate database stack
-# NOTE: We're not passing the security group from CdkInfraStack anymore
-# DatabaseStack will create its own security group
-database_stack = DatabaseStack(app, "DatabaseStack",
-    vpc=main_infra_stack.vpc,
-    app_name=app_name_from_context,
+    # Pass parameters for database configuration
     private_hosted_zone_id=private_hosted_zone_id,
     public_hosted_zone_id=public_hosted_zone_id,
     domain_name=domain_name,
     db_subdomain=db_subdomain,
+    # Pass the environment to the stack
     env=aws_env
 )
 
-# Instantiate the Laravel service stack, passing resources from the database stack
+# Instantiate the Laravel service stack, passing resources from the main stack
 laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",
     vpc=main_infra_stack.vpc,
     cluster=main_infra_stack.cluster,
@@ -57,7 +44,7 @@ laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",
     ecs_task_execution_role=main_infra_stack.ecs_task_execution_role,
     shared_task_role=main_infra_stack.shared_task_role,
     laravel_log_group=main_infra_stack.laravel_log_group,
-    db_secret=database_stack.db_cluster_secret,  # Use database from the new stack
+    db_secret=main_infra_stack.db_cluster_secret,  # Now using the secret from the main stack
     app_data_bucket=main_infra_stack.app_data_bucket,
     audio_extraction_queue=main_infra_stack.audio_extraction_queue,
     transcription_queue=main_infra_stack.transcription_queue,
@@ -127,7 +114,6 @@ monitoring_stack = MonitoringStack(app, "MonitoringStack",
 
 # Add dependencies
 laravel_service_stack.add_dependency(main_infra_stack)
-laravel_service_stack.add_dependency(database_stack)  # Laravel depends on database
 audio_extraction_service_stack.add_dependency(main_infra_stack)
 audio_extraction_service_stack.add_dependency(laravel_service_stack)
 transcription_service_stack.add_dependency(main_infra_stack)

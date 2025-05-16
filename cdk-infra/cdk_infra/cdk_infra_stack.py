@@ -11,14 +11,21 @@ from aws_cdk import (
     aws_rds as rds,
     aws_secretsmanager as secretsmanager,
     aws_s3 as s3,
+    aws_route53 as route53,
     Duration,
     RemovalPolicy,
+    CfnOutput
 )
 from constructs import Construct
 
 class CdkInfraStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, 
+                private_hosted_zone_id: str = None,
+                public_hosted_zone_id: str = None,
+                domain_name: str = None,
+                db_subdomain: str = "db-thoth",
+                **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         app_name = "aws-transcription"  # Reverted to original name for compatibility
@@ -336,78 +343,234 @@ class CdkInfraStack(Stack):
         )
         self.terminology_log_group = terminology_log_group
 
-        # RDS Aurora Serverless database is now in a separate DatabaseStack
-        # We only need to expose the security group for use by that stack
+        # === DATABASE RESOURCES (moved from separate DatabaseStack) ===
+        
+        # Database name derived from app name
+        db_name = f"{app_name.replace('-', '_')}_db"
+        
+        # Create a secret with fixed credentials for the prototype phase
+        db_credentials = secretsmanager.Secret(self, "DBCredentialsSecret",
+            secret_name=f"{app_name}-db-credentials",
+            description="Hardcoded credentials for prototype database access",
+            generate_secret_string=secretsmanager.SecretStringGenerator(
+                secret_string_template='{"username": "admin"}',
+                generate_string_key="password",
+                exclude_punctuation=False,
+                exclude_characters="",
+                password_length=16,
+                require_each_included_type=True,
+                include_space=False
+            )
+        )
+        
+        # Override the generated password with the hardcoded one
+        cfn_secret = db_credentials.node.default_child
+        cfn_secret.add_override("Properties.GenerateSecretString", {
+            "SecretStringTemplate": '{"username": "admin"}',
+            "GenerateStringKey": "password",
+            "PasswordLength": 16,
+            "ExcludePunctuation": False
+        })
+        
+        # Create base JSON without custom_host
+        base_json_string = '{' + \
+            f'"username":"admin",' + \
+            f'"password":"Thx11381!",' + \
+            f'"host":"",' + \
+            f'"port":"3306",' + \
+            f'"dbname":"{db_name}"' + \
+            '}'
+        
+        cfn_secret.add_override("Properties.SecretString", base_json_string)
 
-        # Outputs
-        aws_cdk.CfnOutput(self, "VpcIdOutput",
+        # RDS Aurora Serverless v2 MySQL Cluster with termination protection
+        self.db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
+            engine=rds.DatabaseClusterEngine.aurora_mysql(
+                version=rds.AuroraMysqlEngineVersion.VER_3_04_0  # MySQL 8.0.28 compatible
+            ),
+            credentials=rds.Credentials.from_secret(db_credentials), # Use our hardcoded credentials
+            writer=rds.ClusterInstance.serverless_v2("writerInstance"), # Defines a Serverless v2 writer instance
+            serverless_v2_min_capacity=0.5, # Min ACUs
+            serverless_v2_max_capacity=1.0, # Max ACUs
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
+            security_groups=[rds_sg],
+            default_database_name=db_name,
+            removal_policy=RemovalPolicy.RETAIN,  # Changed to RETAIN to prevent accidental deletion
+            deletion_protection=True,  # Enable termination protection
+            backup=rds.BackupProps(
+                retention=Duration.days(7)  # Increased backup retention for better recovery options
+            )
+        )
+        
+        # Update the secret with the actual RDS endpoint
+        updated_json = '{' + \
+            f'"username":"admin",' + \
+            f'"password":"Thx11381!",' + \
+            f'"host":"{self.db_cluster.cluster_endpoint.hostname}",' + \
+            f'"port":"3306",' + \
+            f'"dbname":"{db_name}"' + \
+            '}'
+            
+        # Update the secret with the RDS endpoint
+        cfn_secret.add_override("Properties.SecretString", updated_json)
+
+        # Export the DB cluster secret for other stacks to use
+        self.db_cluster_secret = db_credentials
+
+        # Add a comment to indicate these are hardcoded credentials for prototype only
+        CfnOutput(self, "PrototypeWarningOutput",
+            value="WARNING: Using hardcoded credentials for prototype only. Change for production!",
+            description="Warning about hardcoded credentials"
+        )
+        
+        # Create custom DNS records for the database in both private and public hosted zones
+        self.db_custom_endpoint = None
+        
+        # Function to create DNS record in a hosted zone
+        def create_dns_record(hosted_zone_id, zone_type):
+            if hosted_zone_id and domain_name:
+                # Look up the hosted zone by ID and zone name (using fromHostedZoneAttributes instead of fromHostedZoneId)
+                hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+                    self, 
+                    f"Imported{zone_type}HostedZone", 
+                    hosted_zone_id=hosted_zone_id,
+                    zone_name=domain_name
+                )
+                
+                # Create the full database domain name
+                full_db_domain = f"{db_subdomain}.{domain_name}"
+                
+                # Create a CNAME record pointing to the database endpoint
+                db_record = route53.CnameRecord(
+                    self,
+                    f"Database{zone_type}CnameRecord",
+                    zone=hosted_zone,
+                    record_name=db_subdomain,
+                    domain_name=self.db_cluster.cluster_endpoint.hostname,
+                    ttl=Duration.minutes(5)  # Short TTL for prototype
+                )
+                
+                self.db_custom_endpoint = full_db_domain
+                
+                # Output the custom domain endpoint for this zone
+                CfnOutput(self, f"{zone_type}CustomDatabaseEndpoint",
+                    value=full_db_domain,
+                    description=f"Custom domain name for database connection in {zone_type} zone",
+                    export_name=f"{app_name}-{zone_type.lower()}-custom-db-endpoint"
+                )
+        
+        # Create records in both hosted zones if provided
+        if private_hosted_zone_id:
+            create_dns_record(private_hosted_zone_id, "Private")
+            
+        if public_hosted_zone_id:
+            create_dns_record(public_hosted_zone_id, "Public")
+        
+        # For the custom domain information
+        custom_domain = f"{db_subdomain}.{domain_name}" if domain_name and db_subdomain else None
+        
+        if custom_domain:
+            CfnOutput(self, "CustomDomainOutput",
+                value=custom_domain,
+                description="Custom domain for the database (use this instead of host in the secret)",
+                export_name=f"{app_name}-db-custom-domain"
+            )
+        
+        CfnOutput(self, "DbCredentialsOutput",
+            value="Username: admin, Password: Thx11381! (For prototype only, do not use in production)",
+            description="Hardcoded database credentials for prototype use"
+        )
+        
+        CfnOutput(self, "DbClusterEndpointOutput",
+            value=self.db_cluster.cluster_endpoint.hostname,
+            description="Hostname of the DB Cluster Endpoint",
+            export_name=f"{app_name}-db-cluster-endpoint"
+        )
+        
+        CfnOutput(self, "DbClusterReadEndpointOutput",
+            value=self.db_cluster.cluster_read_endpoint.hostname,
+            description="Hostname of the DB Cluster Read Endpoint",
+            export_name=f"{app_name}-db-cluster-read-endpoint"
+        )
+        
+        CfnOutput(self, "DbClusterSecretArnOutput",
+            value=db_credentials.secret_arn,
+            description="ARN of the DB Cluster master credentials secret in Secrets Manager",
+            export_name=f"{app_name}-db-cluster-secret-arn"
+        )
+        
+        # === END DATABASE RESOURCES ===
+
+        # Other Outputs
+        CfnOutput(self, "VpcIdOutput",
             value=vpc.vpc_id,
             description="ID of the imported VPC"
         )
-        aws_cdk.CfnOutput(self, "LaravelEcsTaskSecurityGroupIdOutput",
+        CfnOutput(self, "LaravelEcsTaskSecurityGroupIdOutput",
             value=laravel_ecs_task_sg.security_group_id,
             description="ID of the Laravel ECS Task Security Group"
         )
-        aws_cdk.CfnOutput(self, "InternalServicesSecurityGroupIdOutput",
+        CfnOutput(self, "InternalServicesSecurityGroupIdOutput",
             value=internal_services_sg.security_group_id,
             description="ID of the Internal Services Security Group"
         )
-        aws_cdk.CfnOutput(self, "RdsSecurityGroupIdOutput",
+        CfnOutput(self, "RdsSecurityGroupIdOutput",
             value=rds_sg.security_group_id,
             description="ID of the RDS Security Group"
         )
-        aws_cdk.CfnOutput(self, "AppDataBucketNameOutput",
+        CfnOutput(self, "AppDataBucketNameOutput",
             value=app_data_bucket.bucket_name,
             description="Name of the application data S3 bucket"
         )
         
         # SQS Queue ARN outputs
-        aws_cdk.CfnOutput(self, "AudioExtractionQueueUrlOutput",
+        CfnOutput(self, "AudioExtractionQueueUrlOutput",
             value=audio_extraction_queue.queue_url,
             description="URL of the Audio Extraction SQS Queue"
         )
-        aws_cdk.CfnOutput(self, "TranscriptionQueueUrlOutput",
+        CfnOutput(self, "TranscriptionQueueUrlOutput",
             value=transcription_queue.queue_url,
             description="URL of the Transcription SQS Queue"
         )
-        aws_cdk.CfnOutput(self, "TerminologyQueueUrlOutput",
+        CfnOutput(self, "TerminologyQueueUrlOutput",
             value=terminology_queue.queue_url,
             description="URL of the Terminology SQS Queue"
         )
-        aws_cdk.CfnOutput(self, "CallbackQueueUrlOutput",
+        CfnOutput(self, "CallbackQueueUrlOutput",
             value=callback_queue.queue_url,
             description="URL of the Callback SQS Queue"
         )
         
-        aws_cdk.CfnOutput(self, "LaravelRepoUriOutput",
+        CfnOutput(self, "LaravelRepoUriOutput",
             value=laravel_repo.repository_uri,
             description="URI of the Laravel ECR repository"
         )
-        aws_cdk.CfnOutput(self, "AudioExtractionRepoUriOutput",
+        CfnOutput(self, "AudioExtractionRepoUriOutput",
             value=audio_extraction_repo.repository_uri,
             description="URI of the Audio Extraction ECR repository"
         )
-        aws_cdk.CfnOutput(self, "TranscriptionServiceRepoUriOutput",
+        CfnOutput(self, "TranscriptionServiceRepoUriOutput",
             value=transcription_service_repo.repository_uri,
             description="URI of the Transcription Service (Whisper AI) ECR repository"
         )
-        aws_cdk.CfnOutput(self, "MusicTermRepoUriOutput",
+        CfnOutput(self, "MusicTermRepoUriOutput",
             value=music_term_repo.repository_uri,
             description="URI of the Music Term Recognition ECR repository (OLD - to be removed/replaced)"
         )
-        aws_cdk.CfnOutput(self, "TerminologyServiceRepoUriOutput",
+        CfnOutput(self, "TerminologyServiceRepoUriOutput",
             value=terminology_service_repo.repository_uri,
             description="URI of the Terminology Service ECR repository"
         )
-        aws_cdk.CfnOutput(self, "EcsClusterNameOutput",
+        CfnOutput(self, "EcsClusterNameOutput",
             value=self.cluster.cluster_name,
             description="Name of the ECS Cluster"
         )
-        aws_cdk.CfnOutput(self, "EcsTaskExecutionRoleArnOutput",
+        CfnOutput(self, "EcsTaskExecutionRoleArnOutput",
             value=ecs_task_execution_role.role_arn,
             description="ARN of the ECS Task Execution Role"
         )
-        aws_cdk.CfnOutput(self, "SharedAppTaskRoleArnOutput",
+        CfnOutput(self, "SharedAppTaskRoleArnOutput",
             value=shared_task_role.role_arn,
             description="ARN of the Shared Application Task Role"
         )

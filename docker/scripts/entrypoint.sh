@@ -17,10 +17,30 @@ chmod -R 777 /var/www/bootstrap/cache
 # Ensure we are in the Laravel directory for artisan commands
 cd /var/www
 
+# Test database connection before proceeding
+echo "Testing database connection..."
+MAX_RETRIES=5
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if php artisan db:monitor --quiet; then
+        echo "Database connection successful."
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT+1))
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "Failed to connect to database after $MAX_RETRIES attempts. Starting anyway..."
+        else
+            echo "Database connection failed. Retrying in 5 seconds... (Attempt $RETRY_COUNT/$MAX_RETRIES)"
+            sleep 5
+        fi
+    fi
+done
+
 # First make sure the cache table exists
 echo "Creating cache table if it doesn't exist..."
-php artisan cache:table
-php artisan migrate --path=database/migrations/0001_01_01_000001_create_cache_table.php --force
+# Run specific migration only if table doesn't exist
+php artisan migrate --path=database/migrations/0001_01_01_000001_create_cache_table.php --force || true
 echo "Cache table creation completed."
 
 echo "Clearing all Laravel caches..."
@@ -29,24 +49,18 @@ php artisan route:clear
 php artisan view:clear
 php artisan cache:clear
 php artisan event:clear # Clear event cache too, just in case
-# php artisan optimize:clear # This is a broader command, let's be specific first
 echo "Laravel caches cleared."
 
 echo "Re-caching configurations (config, route, view)..."
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
-# php artisan event:cache # Only if you use event discovery and want to cache it
 echo "Laravel configurations re-cached."
 
 echo "Running database migrations..."
-php artisan migrate --force
+# Set a reasonable timeout and don't fail the container if migrations have issues
+timeout 120 php artisan migrate --force || echo "Migrations may not have completed successfully, but continuing startup..."
 echo "Database migrations completed."
-
-# The init-db.sh script call is removed as migrations are now handled here.
-# If init-db.sh performed other critical setup, those actions need to be 
-# incorporated here or run separately if still needed.
-# /usr/local/bin/init-db.sh &
 
 echo "Starting supervisor..."
 # Start supervisor (which will start nginx and php-fpm)

@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Storage;
+use Aws\Sqs\SqsClient;
 
 class TerminologyRecognitionJob implements ShouldQueue
 {
@@ -99,41 +100,67 @@ class TerminologyRecognitionJob implements ShouldQueue
             'progress_percentage' => 85 
         ]);
 
-        $terminologyServiceUrl = env('TERMINOLOGY_SERVICE_URL');
-        $payload = [
-            'job_id' => (string) $this->video->id,
-            'transcript_s3_key' => $this->video->transcript_path, 
-        ];
+        $queueUrl = env('TERMINOLOGY_QUEUE_URL');
+        
+        if (empty($queueUrl)) {
+            Log::error('[TerminologyRecognitionJob] Terminology queue URL is not defined.', ['video_id' => $this->video->id]);
+            $this->failJob('Terminology queue URL is not defined.');
+            return;
+        }
 
-        Log::info('[TerminologyRecognitionJob] Dispatching request to Terminology Service.', [
-            'video_id' => $this->video->id,
-            'service_url' => $terminologyServiceUrl,
-            'payload' => $payload
+        $messageBody = json_encode([
+            'job_id' => (string) $this->video->id,
+            'transcript_s3_key' => $this->video->transcript_path,
+            'timestamp' => now()->toIso8601String()
         ]);
 
         try {
-            $response = Http::timeout(300) // Timeout for terminology processing
-                            ->post("{$terminologyServiceUrl}/process", $payload);
+            Log::info('[TerminologyRecognitionJob] Sending message to Terminology SQS queue.', [
+                'video_id' => $this->video->id,
+                'queue_url' => $queueUrl,
+                'message_contents' => json_decode($messageBody, true)
+            ]);
 
-            if ($response->successful()) {
-                Log::info('[TerminologyRecognitionJob] Successfully dispatched request to Terminology Service.', [
-                    'video_id' => $this->video->id,
-                    'response_status' => $response->status(),
-                ]);
-                // Actual status update to 'terminology_extracted' or 'completed' will happen via callback
-            } else {
-                $errorMessage = 'Terminology service returned an error.';
-                try { $errorMessage .= ' Status: ' . $response->status() . ' Body: ' . $response->body(); } catch (\Exception $_) {}
-                Log::error($errorMessage, ['video_id' => $this->video->id]);
-                $this->failJob($errorMessage);
-            }
+            $sqsClient = $this->getSqsClient();
+            $result = $sqsClient->sendMessage([
+                'QueueUrl' => $queueUrl,
+                'MessageBody' => $messageBody,
+                'MessageAttributes' => [
+                    'JobType' => [
+                        'DataType' => 'String',
+                        'StringValue' => 'terminology',
+                    ],
+                ],
+            ]);
+
+            Log::info('[TerminologyRecognitionJob] Successfully sent message to Terminology SQS queue.', [
+                'video_id' => $this->video->id,
+                'message_id' => $result->get('MessageId')
+            ]);
         } catch (\Exception $e) {
-            Log::error('[TerminologyRecognitionJob] Exception calling Terminology Service.', [
+            Log::error('[TerminologyRecognitionJob] Exception sending message to Terminology SQS queue.', [
                 'video_id' => $this->video->id,
                 'error' => $e->getMessage()
             ]);
-            $this->failJob('Exception calling Terminology Service: ' . $e->getMessage());
+            $this->failJob('Exception sending message to Terminology SQS queue: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Get SQS client instance.
+     *
+     * @return \Aws\Sqs\SqsClient
+     */
+    protected function getSqsClient(): SqsClient
+    {
+        return new SqsClient([
+            'version' => 'latest',
+            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+            'credentials' => [
+                'key' => env('AWS_ACCESS_KEY_ID'),
+                'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            ],
+        ]);
     }
 
     protected function failJob(string $errorMessage): void

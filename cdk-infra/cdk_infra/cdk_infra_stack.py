@@ -2,7 +2,7 @@ import aws_cdk
 from aws_cdk import (
     # Duration,
     Stack,
-    # aws_sqs as sqs,
+    aws_sqs as sqs,
     aws_ec2 as ec2,
     aws_ecr as ecr,
     aws_ecs as ecs,
@@ -125,6 +125,67 @@ class CdkInfraStack(Stack):
 
         # EFS Security Group and related EFS resources are removed as per decision to use S3.
 
+        # SQS Queues for asynchronous microservice communication
+        # Audio extraction queue
+        audio_extraction_queue = sqs.Queue(self, "AudioExtractionQueue",
+            queue_name=f"{app_name}-audio-extraction-queue",
+            visibility_timeout=Duration.seconds(3600),  # 1 hour visibility for long-running extractions
+            retention_period=Duration.days(14),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=5,
+                queue=sqs.Queue(self, "AudioExtractionDLQ",
+                    queue_name=f"{app_name}-audio-extraction-dlq",
+                    retention_period=Duration.days(14)
+                )
+            )
+        )
+        self.audio_extraction_queue = audio_extraction_queue
+
+        # Transcription queue
+        transcription_queue = sqs.Queue(self, "TranscriptionQueue",
+            queue_name=f"{app_name}-transcription-queue", 
+            visibility_timeout=Duration.seconds(7200),  # 2 hours visibility for long-running transcriptions
+            retention_period=Duration.days(14),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=3,
+                queue=sqs.Queue(self, "TranscriptionDLQ",
+                    queue_name=f"{app_name}-transcription-dlq",
+                    retention_period=Duration.days(14)
+                )
+            )
+        )
+        self.transcription_queue = transcription_queue
+
+        # Terminology recognition queue
+        terminology_queue = sqs.Queue(self, "TerminologyQueue",
+            queue_name=f"{app_name}-terminology-queue",
+            visibility_timeout=Duration.seconds(1800),  # 30 minutes visibility
+            retention_period=Duration.days(14),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=3,
+                queue=sqs.Queue(self, "TerminologyDLQ",
+                    queue_name=f"{app_name}-terminology-dlq",
+                    retention_period=Duration.days(14)
+                )
+            )
+        )
+        self.terminology_queue = terminology_queue
+
+        # Callback queue (for microservices to send results back to Laravel)
+        callback_queue = sqs.Queue(self, "CallbackQueue",
+            queue_name=f"{app_name}-callback-queue",
+            visibility_timeout=Duration.seconds(300),  # 5 minutes visibility
+            retention_period=Duration.days(14),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=5,
+                queue=sqs.Queue(self, "CallbackDLQ",
+                    queue_name=f"{app_name}-callback-dlq",
+                    retention_period=Duration.days(14)
+                )
+            )
+        )
+        self.callback_queue = callback_queue
+
         # ECR Repositories
         laravel_repo = ecr.Repository(self, "LaravelEcrRepo",
             repository_name=f"{app_name}-laravel",
@@ -234,6 +295,17 @@ class CdkInfraStack(Stack):
         )
         # Grant S3 permissions to the specific app data bucket
         app_data_bucket.grant_read_write(shared_task_role)
+        
+        # Grant SQS permissions to shared task role
+        audio_extraction_queue.grant_send_messages(shared_task_role)
+        audio_extraction_queue.grant_consume_messages(shared_task_role)
+        transcription_queue.grant_send_messages(shared_task_role)
+        transcription_queue.grant_consume_messages(shared_task_role)
+        terminology_queue.grant_send_messages(shared_task_role)
+        terminology_queue.grant_consume_messages(shared_task_role)
+        callback_queue.grant_send_messages(shared_task_role)
+        callback_queue.grant_consume_messages(shared_task_role)
+        
         # Transcribe permissions removed as per user request for self-hosted Whisper AI
         self.shared_task_role = shared_task_role
 
@@ -316,6 +388,25 @@ class CdkInfraStack(Stack):
             value=app_data_bucket.bucket_name,
             description="Name of the application data S3 bucket"
         )
+        
+        # SQS Queue ARN outputs
+        aws_cdk.CfnOutput(self, "AudioExtractionQueueUrlOutput",
+            value=audio_extraction_queue.queue_url,
+            description="URL of the Audio Extraction SQS Queue"
+        )
+        aws_cdk.CfnOutput(self, "TranscriptionQueueUrlOutput",
+            value=transcription_queue.queue_url,
+            description="URL of the Transcription SQS Queue"
+        )
+        aws_cdk.CfnOutput(self, "TerminologyQueueUrlOutput",
+            value=terminology_queue.queue_url,
+            description="URL of the Terminology SQS Queue"
+        )
+        aws_cdk.CfnOutput(self, "CallbackQueueUrlOutput",
+            value=callback_queue.queue_url,
+            description="URL of the Callback SQS Queue"
+        )
+        
         aws_cdk.CfnOutput(self, "LaravelRepoUriOutput",
             value=laravel_repo.repository_uri,
             description="URI of the Laravel ECR repository"

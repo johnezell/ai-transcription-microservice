@@ -6,6 +6,7 @@ from aws_cdk import (
     aws_logs as logs,
     aws_ecr_assets as ecr_assets,
     aws_s3 as s3,
+    aws_sqs as sqs,
     aws_servicediscovery as servicediscovery,
     Duration
 )
@@ -21,6 +22,8 @@ class TerminologyServiceStack(Stack):
                  app_data_bucket: s3.IBucket,
                  terminology_log_group: logs.ILogGroup, # Dedicated log group
                  laravel_service_discovery_name: str, # e.g., "aws-transcription-laravel-service.local"
+                 terminology_queue: sqs.IQueue, # SQS queue for terminology jobs
+                 callback_queue: sqs.IQueue, # SQS queue for callbacks to Laravel
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -56,6 +59,8 @@ class TerminologyServiceStack(Stack):
                 "AWS_DEFAULT_REGION": self.region,
                 "LARAVEL_API_URL": f"http://{laravel_service_discovery_name}:80/api", # For callbacks
                 "FLASK_ENV": "production", # Override to 'development' for debug mode if needed via CDK context
+                "TERMINOLOGY_QUEUE_URL": terminology_queue.queue_url,
+                "CALLBACK_QUEUE_URL": callback_queue.queue_url
             }
         )
 
@@ -67,6 +72,10 @@ class TerminologyServiceStack(Stack):
             start_period=Duration.seconds(60) # spaCy model loading might take some time
         )
 
+        # SQS Queue Access Policies
+        terminology_queue.grant_consume_messages(task_definition.task_role)
+        callback_queue.grant_send_messages(task_definition.task_role)
+
         # Fargate Service with Service Discovery
         self.fargate_service = ecs.FargateService(self, "TerminologyFargateService",
             cluster=cluster,
@@ -74,7 +83,7 @@ class TerminologyServiceStack(Stack):
             security_groups=[internal_services_sg],
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             assign_public_ip=False,
-            desired_count=1, 
+            desired_count=2, # Increased for SQS-based processing
             service_name=f"{app_name_context}-terminology-service", # e.g., aws-transcription-terminology-service
             cloud_map_options=ecs.CloudMapOptions(
                 name="terminology-service", # Will be resolvable at terminology-service.local
@@ -82,4 +91,22 @@ class TerminologyServiceStack(Stack):
                 dns_ttl=Duration.seconds(60)
             ),
             enable_execute_command=True
+        )
+        
+        # Auto-scaling based on SQS queue depth
+        scaling = self.fargate_service.auto_scale_task_count(
+            min_capacity=2,
+            max_capacity=10  # Scale up to handle terminology processing
+        )
+        
+        scaling.scale_on_metric("TerminologyQueueMessagesVisibleScaling",
+            metric=terminology_queue.metric_approximate_number_of_messages_visible(),
+            scaling_steps=[
+                {"upper": 0, "change": 0},  # Scale to base capacity when queue is empty
+                {"lower": 1, "change": +1},  # Add 1 task when there's at least 1 message
+                {"lower": 5, "change": +2},  # Add 2 tasks when there are at least 5 messages
+                {"lower": 15, "change": +4},  # Add 4 tasks when there are at least 15 messages
+                {"lower": 30, "change": +6}   # Add 6 tasks when there are at least 30 messages
+            ],
+            adjustment_type=ecs.AdjustmentType.CHANGE_IN_CAPACITY
         ) 

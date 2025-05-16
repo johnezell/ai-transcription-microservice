@@ -6,9 +6,19 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Models\Video;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\ProcessCallbackQueueJob;
 
 class Kernel extends ConsoleKernel
 {
+    /**
+     * The Artisan commands provided by your application.
+     *
+     * @var array
+     */
+    protected $commands = [
+        \App\Console\Commands\ListenCallbackQueueCommand::class,
+    ];
+
     /**
      * Define the application's command schedule.
      */
@@ -39,6 +49,9 @@ class Kernel extends ConsoleKernel
                 }
             }
         })->everyTenMinutes();
+
+        // Process the SQS callback queue every minute
+        $schedule->job(new ProcessCallbackQueueJob)->everyMinute();
     }
 
     /**

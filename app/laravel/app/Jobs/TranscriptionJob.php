@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Storage;
+use Aws\Sqs\SqsClient;
 
 class TranscriptionJob implements ShouldQueue
 {
@@ -89,7 +90,7 @@ class TranscriptionJob implements ShouldQueue
         // Update video status to 'transcribing'
         $this->video->update(['status' => 'transcribing']);
         
-        $transcriptionLog = \App\Models\TranscriptionLog::firstOrCreate(
+        $transcriptionLog = TranscriptionLog::firstOrCreate(
             ['video_id' => $this->video->id],
             ['job_id' => $this->video->id, 'started_at' => now()]
         );
@@ -99,49 +100,74 @@ class TranscriptionJob implements ShouldQueue
             'progress_percentage' => 60 // Example progress: Transcription process initiated
         ]);
 
-        $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service.local:5000');
-        $payload = [
+        $queueUrl = env('TRANSCRIPTION_QUEUE_URL');
+        
+        if (empty($queueUrl)) {
+            Log::error('[TranscriptionJob] Transcription queue URL is not defined.', ['video_id' => $this->video->id]);
+            $this->failJob('Transcription queue URL is not defined.');
+            return;
+        }
+
+        $messageBody = json_encode([
             'job_id' => (string) $this->video->id,
             'audio_s3_key' => $this->video->audio_path, // Pass the S3 key of the audio file
-            'model_name' => 'base' // Or make this configurable, e.g., via $this->video->model_preference
-        ];
-
-        Log::info('[TranscriptionJob] Dispatching request to Transcription Service.', [
-            'video_id' => $this->video->id,
-            'service_url' => $transcriptionServiceUrl,
-            'payload' => $payload
+            'model_name' => 'base', // Or make this configurable, e.g., via $this->video->model_preference
+            'timestamp' => now()->toIso8601String()
         ]);
 
         try {
-            $response = Http::timeout(3600) // Increased timeout for potentially long transcription
-                            ->post("{$transcriptionServiceUrl}/process", $payload);
+            Log::info('[TranscriptionJob] Sending message to Transcription SQS queue.', [
+                'video_id' => $this->video->id,
+                'queue_url' => $queueUrl,
+                'message_contents' => json_decode($messageBody, true)
+            ]);
 
-            if ($response->successful()) {
-                Log::info('[TranscriptionJob] Successfully dispatched request to Transcription Service.', [
-                    'video_id' => $this->video->id,
-                    'response_status' => $response->status(),
-                    // 'response_body' => $response->json() // Service will call back with full data
-                ]);
-                // Status will be updated by callback from transcription service
-            } else {
-                $errorMessage = 'Transcription service returned an error.';
-                try { $errorMessage .= ' Status: ' . $response->status() . ' Body: ' . $response->body(); } catch (\Exception $_) {}
-                Log::error($errorMessage, ['video_id' => $this->video->id]);
-                $this->failJob($errorMessage);
-            }
+            $sqsClient = $this->getSqsClient();
+            $result = $sqsClient->sendMessage([
+                'QueueUrl' => $queueUrl,
+                'MessageBody' => $messageBody,
+                'MessageAttributes' => [
+                    'JobType' => [
+                        'DataType' => 'String',
+                        'StringValue' => 'transcription',
+                    ],
+                ],
+            ]);
+
+            Log::info('[TranscriptionJob] Successfully sent message to Transcription SQS queue.', [
+                'video_id' => $this->video->id,
+                'message_id' => $result->get('MessageId')
+            ]);
         } catch (\Exception $e) {
-            Log::error('[TranscriptionJob] Exception calling Transcription Service.', [
+            Log::error('[TranscriptionJob] Exception sending message to Transcription SQS queue.', [
                 'video_id' => $this->video->id,
                 'error' => $e->getMessage()
             ]);
-            $this->failJob('Exception calling Transcription Service: ' . $e->getMessage());
+            $this->failJob('Exception sending message to Transcription SQS queue: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Get SQS client instance.
+     *
+     * @return \Aws\Sqs\SqsClient
+     */
+    protected function getSqsClient(): SqsClient
+    {
+        return new SqsClient([
+            'version' => 'latest',
+            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+            'credentials' => [
+                'key' => env('AWS_ACCESS_KEY_ID'),
+                'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            ],
+        ]);
     }
 
     protected function failJob(string $errorMessage): void
     {
         $this->video->update(['status' => 'failed', 'error_message' => $errorMessage]);
-        $transcriptionLog = \App\Models\TranscriptionLog::where('video_id', $this->video->id)->first();
+        $transcriptionLog = TranscriptionLog::where('video_id', $this->video->id)->first();
         if ($transcriptionLog) {
             $transcriptionLog->update([
                 'status' => 'failed',

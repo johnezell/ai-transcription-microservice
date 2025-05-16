@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Storage;
+use Aws\Sqs\SqsClient;
 
 class AudioExtractionJob implements ShouldQueue
 {
@@ -98,33 +99,68 @@ class AudioExtractionJob implements ShouldQueue
         );
         $log->update(['audio_extraction_started_at' => now(), 'status' => 'processing']);
 
-        $audioServiceUrl = env('AUDIO_SERVICE_URL');
-        $payload = [
+        $queueUrl = env('AUDIO_EXTRACTION_QUEUE_URL');
+        
+        if (empty($queueUrl)) {
+            Log::error('[AudioExtractionJob] Audio extraction queue URL is not defined.', ['video_id' => $this->video->id]);
+            $this->failJob('Audio extraction queue URL is not defined.');
+            return;
+        }
+
+        $messageBody = json_encode([
             'job_id' => (string) $this->video->id,
             'video_s3_key' => $this->video->storage_path,
-            'app_data_bucket' => env('AWS_BUCKET') 
-        ];
-
-        Log::info('Dispatching audio extraction request to service', [
-            'video_id' => $this->video->id,
-            'service_url' => $audioServiceUrl,
-            'payload' => $payload
+            'app_data_bucket' => env('AWS_BUCKET'),
+            'timestamp' => now()->toIso8601String()
         ]);
 
         try {
-            $response = Http::timeout(300)->post($audioServiceUrl . '/process', $payload);
-            if ($response->successful()) {
-                Log::info('Successfully dispatched audio extraction request', ['video_id' => $this->video->id, 'response' => $response->json()]);
-            } else {
-                $errorMessage = 'Audio extraction service returned an error.';
-                try { $errorMessage .= ' Status: ' . $response->status() . ' Body: ' . $response->body(); } catch (\Exception $_) {}
-                Log::error($errorMessage, ['video_id' => $this->video->id]);
-                $this->failJob($errorMessage);
-            }
+            Log::info('[AudioExtractionJob] Sending message to Audio Extraction SQS queue.', [
+                'video_id' => $this->video->id,
+                'queue_url' => $queueUrl,
+                'message_contents' => json_decode($messageBody, true)
+            ]);
+
+            $sqsClient = $this->getSqsClient();
+            $result = $sqsClient->sendMessage([
+                'QueueUrl' => $queueUrl,
+                'MessageBody' => $messageBody,
+                'MessageAttributes' => [
+                    'JobType' => [
+                        'DataType' => 'String',
+                        'StringValue' => 'audio_extraction',
+                    ],
+                ],
+            ]);
+
+            Log::info('[AudioExtractionJob] Successfully sent message to Audio Extraction SQS queue.', [
+                'video_id' => $this->video->id,
+                'message_id' => $result->get('MessageId')
+            ]);
         } catch (\Exception $e) {
-            Log::error('Exception calling Audio Extraction Service.', ['video_id' => $this->video->id, 'error' => $e->getMessage()]);
-            $this->failJob('Exception calling Audio Extraction Service: ' . $e->getMessage());
+            Log::error('[AudioExtractionJob] Exception sending message to Audio Extraction SQS queue.', [
+                'video_id' => $this->video->id,
+                'error' => $e->getMessage()
+            ]);
+            $this->failJob('Exception sending message to Audio Extraction SQS queue: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Get SQS client instance.
+     *
+     * @return \Aws\Sqs\SqsClient
+     */
+    protected function getSqsClient(): SqsClient
+    {
+        return new SqsClient([
+            'version' => 'latest',
+            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+            'credentials' => [
+                'key' => env('AWS_ACCESS_KEY_ID'),
+                'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            ],
+        ]);
     }
 
     protected function failJob(string $errorMessage): void

@@ -7,6 +7,7 @@ from aws_cdk import (
     aws_ecr_assets as ecr_assets,
     aws_secretsmanager as secretsmanager,
     aws_s3 as s3,
+    aws_sqs as sqs,
     aws_servicediscovery as servicediscovery,
     aws_elasticloadbalancingv2 as elbv2,
     Duration,
@@ -25,6 +26,10 @@ class LaravelServiceStack(Stack):
                  laravel_log_group: logs.ILogGroup,
                  db_secret: secretsmanager.ISecret,
                  app_data_bucket: s3.IBucket,
+                 audio_extraction_queue: sqs.IQueue,
+                 transcription_queue: sqs.IQueue,
+                 terminology_queue: sqs.IQueue,
+                 callback_queue: sqs.IQueue,
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -84,6 +89,13 @@ class LaravelServiceStack(Stack):
                 "AWS_DEFAULT_REGION": self.region,
                 "AWS_USE_PATH_STYLE_ENDPOINT": "false",
 
+                # SQS queue URLs for asynchronous communication
+                "AUDIO_EXTRACTION_QUEUE_URL": audio_extraction_queue.queue_url,
+                "TRANSCRIPTION_QUEUE_URL": transcription_queue.queue_url,
+                "TERMINOLOGY_QUEUE_URL": terminology_queue.queue_url,
+                "CALLBACK_QUEUE_URL": callback_queue.queue_url,
+
+                # Keep service URLs for backward compatibility and health checks
                 "AUDIO_SERVICE_URL": "http://audio-extraction-service.local:5000",
                 "TRANSCRIPTION_SERVICE_URL": "http://transcription-service.local:5000",
                 "TERMINOLOGY_SERVICE_URL": "http://terminology-service.local:5000" # New service URL
@@ -96,6 +108,12 @@ class LaravelServiceStack(Stack):
                 "DB_PASSWORD": ecs.Secret.from_secrets_manager(db_secret, "password")
             }
         )
+
+        # Grant SQS permissions to the Laravel task
+        audio_extraction_queue.grant_send_messages(laravel_task_definition.task_role)
+        transcription_queue.grant_send_messages(laravel_task_definition.task_role)
+        terminology_queue.grant_send_messages(laravel_task_definition.task_role)
+        callback_queue.grant_consume_messages(laravel_task_definition.task_role)
 
         # Create an internal Network Load Balancer
         self.nlb = elbv2.NetworkLoadBalancer(self, "LaravelNlb",
@@ -122,7 +140,7 @@ class LaravelServiceStack(Stack):
             security_groups=[laravel_ecs_task_sg],
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             assign_public_ip=False, # No public IP needed as per plan (VPN access)
-            desired_count=1, # Start with one task
+            desired_count=2, # Increased for handling SQS callback messages
             service_name=f"{app_name}-laravel-service",
             cloud_map_options=ecs.CloudMapOptions(
                 name=f"{app_name}-laravel-service", # Register with this name in the .local namespace
@@ -159,6 +177,23 @@ class LaravelServiceStack(Stack):
             peer=ec2.Peer.ipv4(vpc.vpc_cidr_block),
             connection=ec2.Port.tcp(80),
             description="Allow TCP traffic from anywhere in the VPC to Laravel tasks via NLB"
+        )
+
+        # Auto-scaling for Laravel based on SQS queue depth (for the callback queue)
+        scaling = laravel_fargate_service.auto_scale_task_count(
+            min_capacity=2,
+            max_capacity=10
+        )
+        
+        scaling.scale_on_metric("CallbackQueueMessagesVisibleScaling",
+            metric=callback_queue.metric_approximate_number_of_messages_visible(),
+            scaling_steps=[
+                {"upper": 0, "change": 0},  # Scale to base capacity when queue is empty
+                {"lower": 1, "change": +1},  # Add 1 task when there's at least 1 message
+                {"lower": 10, "change": +2},  # Add 2 tasks when there are at least 10 messages
+                {"lower": 20, "change": +4},  # Add 4 tasks when there are at least 20 messages
+            ],
+            adjustment_type=ecs.AdjustmentType.CHANGE_IN_CAPACITY
         )
 
         CfnOutput(self, "LaravelNlbDnsName",

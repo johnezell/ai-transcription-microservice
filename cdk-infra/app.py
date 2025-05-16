@@ -37,6 +37,10 @@ laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",
     laravel_log_group=main_infra_stack.laravel_log_group,
     db_secret=main_infra_stack.db_cluster_secret,
     app_data_bucket=main_infra_stack.app_data_bucket,
+    audio_extraction_queue=main_infra_stack.audio_extraction_queue,
+    transcription_queue=main_infra_stack.transcription_queue,
+    terminology_queue=main_infra_stack.terminology_queue,
+    callback_queue=main_infra_stack.callback_queue,
     env=aws_env
 )
 
@@ -50,6 +54,8 @@ audio_extraction_service_stack = AudioExtractionServiceStack(app, "AudioExtracti
     app_data_bucket=main_infra_stack.app_data_bucket,
     audio_extraction_log_group=main_infra_stack.audio_extraction_log_group,
     laravel_service_discovery_name=f"{app_name_from_context}-laravel-service.local",
+    audio_extraction_queue=main_infra_stack.audio_extraction_queue,
+    callback_queue=main_infra_stack.callback_queue,
     env=aws_env
 )
 
@@ -63,6 +69,8 @@ transcription_service_stack = TranscriptionServiceStack(app, "TranscriptionServi
     app_data_bucket=main_infra_stack.app_data_bucket,
     transcription_log_group=main_infra_stack.transcription_service_log_group,
     laravel_service_discovery_name=f"{app_name_from_context}-laravel-service.local",
+    transcription_queue=main_infra_stack.transcription_queue,
+    callback_queue=main_infra_stack.callback_queue,
     env=aws_env
 )
 
@@ -76,6 +84,8 @@ terminology_service_stack = TerminologyServiceStack(app, "TerminologyServiceStac
     app_data_bucket=main_infra_stack.app_data_bucket,
     terminology_log_group=main_infra_stack.terminology_log_group,
     laravel_service_discovery_name=f"{app_name_from_context}-laravel-service.local",
+    terminology_queue=main_infra_stack.terminology_queue,
+    callback_queue=main_infra_stack.callback_queue,
     env=aws_env
 )
 

@@ -24,6 +24,7 @@ COST_MAP = {
     's3_storage': 0.023,          # Per GB-month
     's3_requests': 0.0000004,     # Per PUT/GET request
     'sqs_requests': 0.0000004,    # Per SQS request
+    'g4dn_xlarge': 0.526,         # Per hour for g4dn.xlarge instance with GPU
 }
 
 def lambda_handler(event, context):
@@ -159,27 +160,45 @@ def calculate_job_costs(job_id, metrics):
     try:
         cost_breakdown = {
             'compute_cost': 0.0,
+            'gpu_cost': 0.0,
             'storage_cost': 0.0,
             'network_cost': 0.0,
             'api_cost': 0.0,
             'total_cost': 0.0
         }
         
-        # Calculate Fargate compute costs (CPU and memory)
+        # Get instance type used for this job
+        instance_type = get_instance_type_for_job(job_id)
+        uses_gpu = instance_type and instance_type.startswith('g')
+        
+        # Calculate compute costs based on instance type
         audio_extraction_time = metrics.get('AudioExtractionProcessingTime', {}).get('Sum', 0) / 3600  # Convert to hours
         transcription_time = metrics.get('TranscriptionProcessingTime', {}).get('Sum', 0) / 3600  # Convert to hours
         terminology_time = metrics.get('TerminologyProcessingTime', {}).get('Sum', 0) / 3600  # Convert to hours
         
-        # Assuming a certain amount of CPU and memory for each service
-        # This should be adjusted based on actual task definitions
-        compute_cost = (
-            (audio_extraction_time * COST_MAP['fargate_cpu'] * 0.5) +  # 0.5 vCPU
-            (audio_extraction_time * COST_MAP['fargate_memory'] * 1) +  # 1 GB memory
-            (transcription_time * COST_MAP['fargate_cpu'] * 1) +  # 1 vCPU
-            (transcription_time * COST_MAP['fargate_memory'] * 2) +  # 2 GB memory
-            (terminology_time * COST_MAP['fargate_cpu'] * 0.5) +  # 0.5 vCPU
-            (terminology_time * COST_MAP['fargate_memory'] * 1)   # 1 GB memory
-        )
+        # Check if GPU was used for this job
+        if uses_gpu and instance_type == 'g4dn.xlarge':
+            # For GPU instances, we count the full instance cost
+            gpu_cost = transcription_time * COST_MAP['g4dn_xlarge']
+            cost_breakdown['gpu_cost'] = gpu_cost
+            
+            # Only count other services as Fargate
+            compute_cost = (
+                (audio_extraction_time * COST_MAP['fargate_cpu'] * 0.5) +  # 0.5 vCPU
+                (audio_extraction_time * COST_MAP['fargate_memory'] * 1) +  # 1 GB memory
+                (terminology_time * COST_MAP['fargate_cpu'] * 0.5) +  # 0.5 vCPU
+                (terminology_time * COST_MAP['fargate_memory'] * 1)   # 1 GB memory
+            )
+        else:
+            # Traditional Fargate-based cost calculation
+            compute_cost = (
+                (audio_extraction_time * COST_MAP['fargate_cpu'] * 0.5) +  # 0.5 vCPU
+                (audio_extraction_time * COST_MAP['fargate_memory'] * 1) +  # 1 GB memory
+                (transcription_time * COST_MAP['fargate_cpu'] * 1) +  # 1 vCPU
+                (transcription_time * COST_MAP['fargate_memory'] * 2) +  # 2 GB memory
+                (terminology_time * COST_MAP['fargate_cpu'] * 0.5) +  # 0.5 vCPU
+                (terminology_time * COST_MAP['fargate_memory'] * 1)   # 1 GB memory
+            )
         
         cost_breakdown['compute_cost'] = compute_cost
         
@@ -198,6 +217,7 @@ def calculate_job_costs(job_id, metrics):
         # Calculate total cost
         cost_breakdown['total_cost'] = sum([
             cost_breakdown['compute_cost'],
+            cost_breakdown['gpu_cost'],
             cost_breakdown['storage_cost'],
             cost_breakdown['api_cost'],
             cost_breakdown['network_cost']
@@ -210,44 +230,101 @@ def calculate_job_costs(job_id, metrics):
         logger.error(f"Error calculating costs for job {job_id}: {str(e)}")
         return {'total_cost': 0.0}
 
+def get_instance_type_for_job(job_id):
+    """Determine the instance type used to process this job"""
+    try:
+        # In a real implementation, this would query a database or parse logs
+        # to find out which EC2 instance type was used for this transcription job
+        
+        # For now, we'll check if the job ID contains 'gpu' as a simple heuristic
+        # This should be replaced with actual logic to track instance types
+        if 'gpu' in job_id.lower():
+            return 'g4dn.xlarge'
+        
+        # Look for the instance type in metrics
+        response = cloudwatch.get_metric_data(
+            MetricDataQueries=[
+                {
+                    'Id': 'instanceType',
+                    'MetricStat': {
+                        'Metric': {
+                            'Namespace': NAMESPACE,
+                            'MetricName': 'InstanceType',
+                            'Dimensions': [
+                                {
+                                    'Name': 'JobId',
+                                    'Value': job_id
+                                }
+                            ]
+                        },
+                        'Period': 3600,
+                        'Stat': 'Average'
+                    },
+                    'ReturnData': True
+                }
+            ],
+            StartTime=datetime.now() - timedelta(days=7),
+            EndTime=datetime.now()
+        )
+        
+        # Add logic to check ECS task metadata for the instance type
+        # This would require adding custom metrics when running transcription jobs
+        
+        return None  # Default to None, meaning Fargate
+        
+    except Exception as e:
+        logger.error(f"Error determining instance type for job {job_id}: {str(e)}")
+        return None
+
 def publish_cost_metrics(job_id, cost_estimate):
     """Publish the cost estimates to CloudWatch metrics for visualization"""
     try:
-        # Publish each cost component as a separate metric
+        metric_data = [
+            {
+                'MetricName': 'ComputeCost',
+                'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
+                'Value': cost_estimate['compute_cost'],
+                'Unit': 'None'
+            },
+            {
+                'MetricName': 'StorageCost',
+                'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
+                'Value': cost_estimate['storage_cost'],
+                'Unit': 'None'
+            },
+            {
+                'MetricName': 'NetworkCost',
+                'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
+                'Value': cost_estimate['network_cost'],
+                'Unit': 'None'
+            },
+            {
+                'MetricName': 'ApiCost',
+                'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
+                'Value': cost_estimate['api_cost'],
+                'Unit': 'None'
+            },
+            {
+                'MetricName': 'TotalCost',
+                'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
+                'Value': cost_estimate['total_cost'],
+                'Unit': 'None'
+            }
+        ]
+        
+        # Add GPU cost if present
+        if cost_estimate.get('gpu_cost', 0) > 0:
+            metric_data.append({
+                'MetricName': 'GPUCost',
+                'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
+                'Value': cost_estimate['gpu_cost'],
+                'Unit': 'None'
+            })
+        
+        # Publish to CloudWatch
         cloudwatch.put_metric_data(
             Namespace=COST_METRICS_NAMESPACE,
-            MetricData=[
-                {
-                    'MetricName': 'ComputeCost',
-                    'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
-                    'Value': cost_estimate['compute_cost'],
-                    'Unit': 'None'
-                },
-                {
-                    'MetricName': 'StorageCost',
-                    'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
-                    'Value': cost_estimate['storage_cost'],
-                    'Unit': 'None'
-                },
-                {
-                    'MetricName': 'NetworkCost',
-                    'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
-                    'Value': cost_estimate['network_cost'],
-                    'Unit': 'None'
-                },
-                {
-                    'MetricName': 'ApiCost',
-                    'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
-                    'Value': cost_estimate['api_cost'],
-                    'Unit': 'None'
-                },
-                {
-                    'MetricName': 'TotalCost',
-                    'Dimensions': [{'Name': 'JobId', 'Value': job_id}],
-                    'Value': cost_estimate['total_cost'],
-                    'Unit': 'None'
-                }
-            ]
+            MetricData=metric_data
         )
         
         logger.info(f"Published cost metrics for job {job_id}")

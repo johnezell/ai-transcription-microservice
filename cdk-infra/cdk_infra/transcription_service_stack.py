@@ -35,24 +35,33 @@ class TranscriptionServiceStack(Stack):
         transcription_image_asset = ecr_assets.DockerImageAsset(self, "TranscriptionServiceImageAsset",
             directory="..",  # Relative to 'cdk-infra', so it points to the workspace root
             file="Dockerfile.transcription-service", # Corrected Dockerfile name
-            platform=ecr_assets.Platform.LINUX_AMD64 # Build for Fargate
+            platform=ecr_assets.Platform.LINUX_AMD64 # Build for x86 architecture
         )
 
-        # Task Definition for Transcription Service
-        transcription_task_definition = ecs.FargateTaskDefinition(self, "TranscriptionTaskDef",
-            memory_limit_mib=2048, # Increased memory for Whisper (e.g., base model)
-            cpu=1024,              # 1 vCPU
+        # Create a launch template for GPU instances (G4dn)
+        gpu_launch_template = ec2.LaunchTemplate(self, "GPULaunchTemplate",
+            instance_type=ec2.InstanceType("g4dn.xlarge"),  # G4dn has NVIDIA T4 GPUs
+            machine_image=ecs.EcsOptimizedImage.amazon_linux2(
+                hardware_type=ecs.AmiHardwareType.GPU
+            ),
+            # Add user data to install NVIDIA drivers if needed
+            user_data=ec2.UserData.for_linux()
+        )
+
+        # Task Definition for Transcription Service - use EC2 for GPU support
+        transcription_task_definition = ecs.Ec2TaskDefinition(self, "TranscriptionTaskDef",
             execution_role=ecs_task_execution_role,
-            task_role=shared_task_role # Role with S3 access
+            task_role=shared_task_role, # Role with S3 access
         )
 
-        # Container Definition
+        # Container Definition with GPU requirements
         transcription_container = transcription_task_definition.add_container("TranscriptionServiceContainer",
             image=ecs.ContainerImage.from_docker_image_asset(transcription_image_asset),
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix=f"{app_name_context}-transcription",
                 log_group=transcription_log_group
             ),
+            gpu_count=1,  # Allocate 1 GPU to the container
             port_mappings=[ecs.PortMapping(container_port=5000)], # Flask app runs on port 5000
             environment={
                 "AWS_BUCKET": app_data_bucket.bucket_name,
@@ -60,8 +69,9 @@ class TranscriptionServiceStack(Stack):
                 "LARAVEL_API_URL": f"http://{laravel_service_discovery_name}:80/api",
                 "FLASK_ENV": "production",
                 "TRANSCRIPTION_QUEUE_URL": transcription_queue.queue_url,
-                "CALLBACK_QUEUE_URL": callback_queue.queue_url
-                # "WHISPER_MODEL_NAME": "base" # Optional: to configure Whisper model via env var
+                "CALLBACK_QUEUE_URL": callback_queue.queue_url,
+                "CUDA_VISIBLE_DEVICES": "0",  # Make CUDA visible to the container
+                "WHISPER_MODEL_NAME": "medium"  # Use a more accurate model with GPU power
             }
         )
 
@@ -77,39 +87,41 @@ class TranscriptionServiceStack(Stack):
         transcription_queue.grant_consume_messages(transcription_task_definition.task_role)
         callback_queue.grant_send_messages(transcription_task_definition.task_role)
 
-        # Fargate Service with Service Discovery
-        self.fargate_service = ecs.FargateService(self, "TranscriptionFargateService",
+        # Add capacity provider strategy to prioritize GPU instances
+        # This requires adding GPU instances to your ECS cluster
+        self.ec2_service = ecs.Ec2Service(self, "TranscriptionGPUService",
             cluster=cluster,
             task_definition=transcription_task_definition,
             security_groups=[internal_services_sg],
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
-            assign_public_ip=False,
-            desired_count=2, # Increased for SQS-based processing
+            desired_count=1,  # Start with 1 GPU instance
             service_name=f"{app_name_context}-transcription-service",
             cloud_map_options=ecs.CloudMapOptions(
                 name="transcription-service", 
-                dns_record_type=servicediscovery.DnsRecordType.A,
+                dns_record_type=servicediscovery.DnsRecordType.SRV,
                 dns_ttl=Duration.seconds(60)
             ),
-            enable_execute_command=True
+            enable_execute_command=True,
+            # Ensure tasks are placed on instances with the required capacity
+            placement_constraints=[
+                ecs.PlacementConstraint.member_of("attribute:ecs.instance-type =~ g4dn.*")
+            ]
         )
         
         # Auto-scaling based on SQS queue depth
-        scaling = self.fargate_service.auto_scale_task_count(
-            min_capacity=3,
-            max_capacity=50  # Increased from 20 to 50 for CPU-intensive transcription processing
+        scaling = self.ec2_service.auto_scale_task_count(
+            min_capacity=0,  # Allow scaling to zero when idle for cost savings
+            max_capacity=10  # Limit GPU instances for cost control
         )
         
         scaling.scale_on_metric("TranscriptionQueueMessagesVisibleScaling",
             metric=transcription_queue.metric_approximate_number_of_messages_visible(),
             scaling_steps=[
-                {"upper": 0, "change": 0},  # Scale to base capacity when queue is empty
-                {"lower": 1, "change": +1},  # Add 1 task when there's at least 1 message
-                {"lower": 5, "change": +3},  # Add 3 tasks when there are at least 5 messages
-                {"lower": 20, "change": +7},  # Add 7 tasks when there are at least 20 messages
-                {"lower": 50, "change": +15}, # Add 15 tasks when there are at least 50 messages
-                {"lower": 100, "change": +25}, # Add 25 tasks when there are at least 100 messages
-                {"lower": 200, "change": +35}  # Add 35 tasks when there are at least 200 messages
+                {"upper": 0, "change": -1},  # Scale down when queue is empty
+                {"lower": 1, "change": +1},  # Add 1 task for just 1 message (faster scale-up)
+                {"lower": 5, "change": +2},  # Add 2 tasks when there are at least 5 messages
+                {"lower": 20, "change": +3}, # Add 3 tasks when there are at least 20 messages
+                {"lower": 50, "change": +5}  # Add 5 tasks when there are at least 50 messages
             ],
             adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         ) 

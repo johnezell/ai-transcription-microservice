@@ -482,20 +482,6 @@ onBeforeUnmount(() => {
                                     />
                                 </div>
                                 
-                                <!-- Full Transcript Text -->
-                                <div v-if="videoData.transcript_text" class="mt-6">
-                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                                    </div>
-                                    
-                                    <!-- Synchronized Transcript (improved implementation) -->
-                                    <SynchronizedTranscript
-                                        :video-ref="videoElement"
-                                        :srt-url="videoData.subtitles_url"
-                                        :transcript-json-url="videoData.transcript_json_url"
-                                        :transcript-text="videoData.transcript_text"
-                                    />
-                                </div>
-                                
                                 <!-- Terminology Viewer (renamed from MusicTermsViewer) -->
                                 <div v-if="videoData.has_terminology || videoData.has_music_terms" class="mt-8">
                                     <TerminologyViewer 

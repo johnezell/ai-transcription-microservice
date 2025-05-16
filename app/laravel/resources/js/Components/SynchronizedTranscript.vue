@@ -28,8 +28,14 @@
         </div>
       </template>
       
-      <template v-else-if="segments.length === 0">
-        <p class="text-center text-gray-500 py-6">No synchronized transcript available</p>
+      <template v-else-if="isLoadingError">
+        <p class="text-center text-red-500 py-6">
+          Error loading transcript data: {{ loadingErrorMessage }}
+        </p>
+      </template>
+      
+      <template v-else-if="segments.length === 0 && !loading">
+        <p class="text-center text-gray-500 py-6">No synchronized transcript available or transcript is empty.</p>
       </template>
       
       <template v-else>
@@ -111,62 +117,90 @@ export default {
       autoScroll: true,
       segmentRefs: [],
       updateInterval: null,
-      lastTime: 0
+      lastTime: 0,
+      isLoadingError: false,
+      loadingErrorMessage: ''
     };
   },
   
   watch: {
     transcriptJsonUrl: {
       immediate: true,
-      handler(newVal) {
+      handler(newVal, oldVal) {
+        console.log(`[SynchronizedTranscript.vue DEBUG] transcriptJsonUrl watcher. New: ${newVal}, Old: ${oldVal}`);
         if (newVal) {
           this.fetchTranscriptJson();
         } else if (this.srtUrl) {
-          // Fall back to SRT if no JSON
+          console.log('[SynchronizedTranscript.vue DEBUG] No JSON URL, falling back to SRT URL:', this.srtUrl);
           this.fetchSRT();
         } else {
-          // Use plain transcript if no structured data available
-          this.segments = [{
+          console.log('[SynchronizedTranscript.vue DEBUG] No JSON or SRT URL, using plain transcriptText.');
+          this.segments = this.transcriptText ? [{
             start: 0,
             end: 0,
-            text: this.transcriptText || 'No transcript available',
+            text: this.transcriptText,
             words: []
-          }];
+          }] : [];
+          if (this.segments.length === 0) {
+             console.warn('[SynchronizedTranscript.vue DEBUG] transcriptText is also empty.');
+          }
           this.loading = false;
         }
       }
+    },
+    srtUrl: {
+      handler(newVal, oldVal) {
+        if (newVal && !this.transcriptJsonUrl && this.segments.length === 0 && !this.loading) {
+            console.log(`[SynchronizedTranscript.vue DEBUG] srtUrl watcher triggered. New: ${newVal}`);
+            this.fetchSRT();
+        }
+      }
+    },
+    transcriptText: {
+        handler(newVal, oldVal) {
+            if (newVal && !this.transcriptJsonUrl && !this.srtUrl && this.segments.length === 0 && !this.loading) {
+                console.log('[SynchronizedTranscript.vue DEBUG] transcriptText watcher triggered, using it as fallback.');
+                this.segments = newVal ? [{ start: 0, end: 0, text: newVal, words: [] }] : [];
+                this.loading = false;
+            }
+        }
     }
   },
   
   mounted() {
-    // Set up video time tracking with more precision
+    console.log('[SynchronizedTranscript.vue DEBUG] Component mounted. Props received:', {
+      transcriptJsonUrl: this.transcriptJsonUrl,
+      srtUrl: this.srtUrl,
+      transcriptText: this.transcriptText ? `(length: ${this.transcriptText.length}) "${this.transcriptText.substring(0,30)}..."` : 'EMPTY',
+      videoRefExists: !!this.videoRef
+    });
+
+    if (!this.transcriptJsonUrl && !this.srtUrl && (!this.transcriptText || this.transcriptText.trim() === '')) {
+        console.warn('[SynchronizedTranscript.vue DEBUG] Mounted: No transcript data source (JSON URL, SRT URL, or text) provided or text is empty.');
+        this.loading = false; 
+        this.segments = []; // Ensure segments is empty if no data
+    }
+    
     if (this.videoRef) {
-      // Use both timeupdate and more frequent checks for smoother updates
       this.videoRef.addEventListener('timeupdate', this.updateCurrentPosition);
-      
-      // More frequent updates for better responsiveness
       this.updateInterval = setInterval(this.checkCurrentPosition, 100);
+    } else {
+        console.error('[SynchronizedTranscript.vue DEBUG] videoRef is NOT available on mount!');
     }
   },
   
   beforeUnmount() {
-    // Clean up event listeners
     if (this.videoRef) {
       this.videoRef.removeEventListener('timeupdate', this.updateCurrentPosition);
     }
-    
-    // Clear the interval
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
     }
   },
   
   methods: {
-    // More frequent position check for smoother word highlighting
     checkCurrentPosition() {
       if (!this.videoRef || !this.videoRef.currentTime) return;
-      
-      // Only update if time has changed enough to matter
       if (Math.abs(this.videoRef.currentTime - this.lastTime) > 0.05) {
         this.updateCurrentPosition();
         this.lastTime = this.videoRef.currentTime;
@@ -174,25 +208,35 @@ export default {
     },
     
     async fetchTranscriptJson() {
+      if (!this.transcriptJsonUrl) {
+        console.warn('[SynchronizedTranscript.vue DEBUG] fetchTranscriptJson called but transcriptJsonUrl is missing.');
+        if (this.srtUrl) { this.fetchSRT(); } 
+        else { 
+            this.segments = this.transcriptText ? [{ start: 0, end: 0, text: this.transcriptText, words: [] }] : []; 
+            this.loading = false; 
+        }
+        return;
+      }
       try {
         this.loading = true;
+        this.isLoadingError = false; this.loadingErrorMessage = '';
+        console.log(`[SynchronizedTranscript.vue DEBUG] Fetching JSON from: ${this.transcriptJsonUrl}`);
         const response = await fetch(this.transcriptJsonUrl);
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status} fetching transcript JSON from ${this.transcriptJsonUrl}`);
+        }
         this.rawTranscriptData = await response.json();
+        console.log('[SynchronizedTranscript.vue DEBUG] Fetched rawTranscriptData (JSON):', this.rawTranscriptData);
         this.parseTranscriptJson(this.rawTranscriptData);
       } catch (error) {
-        console.error('Error fetching transcript JSON:', error);
-        
-        // Fallback to SRT if available
+        console.error('[SynchronizedTranscript.vue DEBUG] Error fetching transcript JSON:', error.message);
+        this.isLoadingError = true; this.loadingErrorMessage = error.message;
         if (this.srtUrl) {
+          console.log('[SynchronizedTranscript.vue DEBUG] Falling back to SRT due to JSON fetch error.');
           this.fetchSRT();
         } else {
-          // Or fall back to plain text
-          this.segments = [{
-            start: 0,
-            end: 0,
-            text: this.transcriptText || 'Error loading transcript',
-            words: []
-          }];
+          this.segments = this.transcriptText ? [{ start: 0, end: 0, text: this.transcriptText, words: [] }] : [];
+          if (this.segments.length === 0) console.warn('[SynchronizedTranscript.vue DEBUG] transcriptText also empty on JSON error fallback.');
           this.loading = false;
         }
       }
@@ -200,46 +244,50 @@ export default {
     
     parseTranscriptJson(data) {
       if (!data || !data.segments || !Array.isArray(data.segments)) {
-        console.error('Invalid transcript JSON format');
+        console.error('[SynchronizedTranscript.vue DEBUG] Invalid transcript JSON format received:', data);
+        this.segments = []; // Set to empty array on invalid format
         this.loading = false;
+        this.isLoadingError = true; this.loadingErrorMessage = 'Invalid transcript JSON format';
         return;
       }
-      
-      this.segments = data.segments.map(segment => {
-        // Process each segment to ensure it has all needed properties
-        return {
-          start: segment.start || 0,
-          end: segment.end || 0,
-          text: segment.text || '',
-          words: Array.isArray(segment.words) ? segment.words.map(word => {
-            return {
-              word: word.word || word.text || '',
-              start: word.start || 0,
-              end: word.end || 0,
-              probability: word.probability || null
-            };
-          }) : []
-        };
-      });
-      
+      this.segments = data.segments.map(segment => ({
+        start: segment.start || 0,
+        end: segment.end || 0,
+        text: segment.text || '',
+        words: Array.isArray(segment.words) ? segment.words.map(word => ({
+          word: word.word || word.text || '',
+          start: word.start || 0,
+          end: word.end || 0,
+          probability: word.probability || null
+        })) : []
+      }));
+      console.log('[SynchronizedTranscript.vue DEBUG] Parsed segments from JSON:', this.segments.length > 0 ? this.segments[0] : 'No segments after parse');
       this.loading = false;
     },
     
     async fetchSRT() {
+      if (!this.srtUrl) {
+        console.warn('[SynchronizedTranscript.vue DEBUG] fetchSRT called but srtUrl is missing.');
+        this.segments = this.transcriptText ? [{ start: 0, end: 0, text: this.transcriptText, words: [] }] : [];
+        this.loading = false;
+        return;
+      }
       try {
         this.loading = true;
+        this.isLoadingError = false; this.loadingErrorMessage = '';
+        console.log(`[SynchronizedTranscript.vue DEBUG] Fetching SRT from: ${this.srtUrl}`);
         const response = await fetch(this.srtUrl);
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status} fetching SRT from ${this.srtUrl}`);
+        }
         const srtContent = await response.text();
+        console.log('[SynchronizedTranscript.vue DEBUG] Fetched SRT content (first 100 chars):', srtContent.substring(0,100));
         this.parseSRT(srtContent);
       } catch (error) {
-        console.error('Error fetching SRT file:', error);
-        // Fallback to plain transcript
-        this.segments = [{
-          start: 0,
-          end: 0,
-          text: this.transcriptText || 'Error loading transcript',
-          words: []
-        }];
+        console.error('[SynchronizedTranscript.vue DEBUG] Error fetching SRT:', error.message);
+        this.isLoadingError = true; this.loadingErrorMessage = error.message;
+        this.segments = this.transcriptText ? [{ start: 0, end: 0, text: this.transcriptText, words: [] }] : [];
+        if (this.segments.length === 0) console.warn('[SynchronizedTranscript.vue DEBUG] transcriptText also empty on SRT error fallback.');
       } finally {
         this.loading = false;
       }
@@ -248,30 +296,20 @@ export default {
     parseSRT(srtContent) {
       const segments = [];
       const blocks = srtContent.trim().split(/\n\s*\n/);
-      
       blocks.forEach(block => {
         const lines = block.split('\n');
         if (lines.length >= 3) {
-          // Parse time codes (format: 00:00:00,000 --> 00:00:00,000)
           const timeCodes = lines[1].split(' --> ');
           if (timeCodes.length === 2) {
             const start = this.parseTimeCode(timeCodes[0]);
             const end = this.parseTimeCode(timeCodes[1]);
-            
-            // Join the remaining lines as the text
             const text = lines.slice(2).join(' ');
-            
-            segments.push({ 
-              start, 
-              end, 
-              text,
-              words: [] // SRT doesn't have word-level timing
-            });
+            segments.push({ start, end, text, words: [] });
           }
         }
       });
-      
       this.segments = segments;
+      console.log('[SynchronizedTranscript.vue DEBUG] Parsed segments from SRT:', this.segments.length > 0 ? this.segments[0] : 'No segments after parse');
     },
     
     parseTimeCode(timeCode) {

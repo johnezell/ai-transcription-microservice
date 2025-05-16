@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TranscriptionTimeline from '@/Components/TranscriptionTimeline.vue';
@@ -13,7 +13,7 @@ const props = defineProps({
     video: Object,
 });
 
-const videoData = ref(props.video);
+const videoData = ref(JSON.parse(JSON.stringify(props.video)));
 const timelineData = ref({
     timing: {},
     progress_percentage: 0,
@@ -29,6 +29,52 @@ const transcriptData = ref(null);
 const overallConfidence = ref(null);
 const processingMusicTerms = ref(false);
 const processingTerminology = ref(false);
+
+// NEW: Computed property for the transcript text to pass to SynchronizedTranscript
+const effectiveTranscriptText = computed(() => {
+    if (transcriptData.value && typeof transcriptData.value.text === 'string') {
+        console.log('[Show.vue DEBUG] Using text from fetched transcriptData.value.text');
+        return transcriptData.value.text;
+    }
+    // Fallback to videoData.transcript_text if you still want to support it via API
+    // or if transcript.json hasn't loaded/parsed yet, but this might be null based on current backend.
+    if (videoData.value.transcript_text) {
+        console.log('[Show.vue DEBUG] Falling back to videoData.value.transcript_text');
+        return videoData.value.transcript_text;
+    }
+    console.log('[Show.vue DEBUG] effectiveTranscriptText is currently null/undefined');
+    return null; 
+});
+
+// Watcher to ensure transcriptData (parsed full JSON) is available when transcript_json_url is set
+watch(() => videoData.value.transcript_json_url, (newUrl, oldUrl) => {
+    if (newUrl && newUrl !== oldUrl) {
+        console.log('[Show.vue DEBUG] transcript_json_url changed, fetching transcript data:', newUrl);
+        fetchTranscriptData();
+    } else if (!newUrl) {
+        transcriptData.value = null; // Clear if URL is removed
+    }
+}, { immediate: true });
+
+// Debugging props for SynchronizedTranscript
+watch(
+    () => ({
+        transcriptJsonUrl: videoData.value.transcript_json_url,
+        srtUrl: videoData.value.subtitles_url,
+        // transcriptText is still passed as a potential fallback for SynchronizedTranscript
+        transcriptText: videoData.value.transcript_text, 
+        videoElementAvailable: !!videoElement.value,
+        // Render SynchronizedTranscript if transcript_json_url is available, as it's the primary source for segments
+        shouldRenderSynchronizedTranscript: !!videoData.value.transcript_json_url 
+    }),
+    (propsForSyncTranscript) => {
+        console.log('[Show.vue DEBUG] Props for SynchronizedTranscript check:', propsForSyncTranscript);
+        if (!propsForSyncTranscript.shouldRenderSynchronizedTranscript) {
+            console.warn('[Show.vue DEBUG] SynchronizedTranscript will NOT render because videoData.transcript_json_url is falsy.');
+        }
+    },
+    { deep: true, immediate: true }
+);
 
 // Check if this is a newly uploaded video that needs monitoring
 const isNewVideo = computed(() => {
@@ -125,31 +171,17 @@ async function fetchStatus() {
                     videoData.value.music_terms_metadata = data.video.music_terms_metadata;
                 }
                 
-                // Copy URLs if they exist
+                // Comment out verbose URL comparison logs in fetchStatus
                 if (data.video.url) {
-                    const oldUrlString = videoData.value.url || 'null_or_empty';
-                    const newUrlString = data.video.url;
                     const oldBaseUrl = videoData.value.url ? videoData.value.url.split('?')[0] : null;
                     const newBaseUrl = data.video.url.split('?')[0];
-
-                    console.log('[Show.vue DEBUG] Comparing video URLs:', { 
-                        currentVideoDataUrl: oldUrlString,
-                        newUrlFromApi: newUrlString,
-                        oldBaseUrl: oldBaseUrl, 
-                        newBaseUrl: newBaseUrl,
-                        isDifferent: oldBaseUrl !== newBaseUrl,
-                        isCurrentMissing: !videoData.value.url
-                    });
-
+                    // console.log('[Show.vue DEBUG] Comparing video URLs:', { oldBaseUrl, newBaseUrl }); 
                     if (!videoData.value.url || oldBaseUrl !== newBaseUrl) {
-                        console.log('[Show.vue DEBUG] Updating videoData.url because it was missing or base changed. New URL:', data.video.url);
+                        // console.log('[Show.vue DEBUG] Updating videoData.url.');
                         videoData.value.url = data.video.url;
-                    } else {
-                        console.log('[Show.vue DEBUG] videoData.url base is the same, NOT updating to prevent restart.');
                     }
                 }
 
-                // Similarly for audio_url
                 if (data.video.audio_url) {
                     const oldBaseAudioUrl = videoData.value.audio_url ? videoData.value.audio_url.split('?')[0] : null;
                     const newBaseAudioUrl = data.video.audio_url.split('?')[0];
@@ -210,6 +242,9 @@ async function fetchStatus() {
                 // Fetch complete video data instead of reloading
                 fetchVideoDetails();
             }
+
+            // Ensure fetchTranscriptData is called if transcript_json_url becomes available or changes
+            const oldJsonUrl = videoData.value.transcript_json_url;
         }
     } catch (error) {
         console.error('Error fetching status:', error);
@@ -237,50 +272,31 @@ async function fetchVideoDetails() {
         if (data.success && data.video) {
             const newVideoDataFromApi = data.video;
             
-            // *** ADDED LOGGING FOR TRANSCRIPT_TEXT ***
             console.log('[Show.vue DEBUG - fetchVideoDetails] API response for video details:', newVideoDataFromApi);
-            console.log('[Show.vue DEBUG - fetchVideoDetails] transcript_text from API:', newVideoDataFromApi.transcript_text ? `'${newVideoDataFromApi.transcript_text.substring(0, 50)}...'` : 'MISSING or EMPTY');
+            console.log('[Show.vue DEBUG - fetchVideoDetails] transcript_text from API:', newVideoDataFromApi.transcript_text ? `(length: ${newVideoDataFromApi.transcript_text.length}) '${newVideoDataFromApi.transcript_text.substring(0, 30)}...'` : 'MISSING or EMPTY');
             console.log('[Show.vue DEBUG - fetchVideoDetails] transcript_json_url from API:', newVideoDataFromApi.transcript_json_url || 'MISSING or EMPTY');
 
-            // Selectively update videoData.value to avoid unnecessary video restarts
             Object.keys(newVideoDataFromApi).forEach(key => {
                 if (key === 'url' || key === 'audio_url') {
                     const currentFullUrl = videoData.value[key];
                     const newFullUrl = newVideoDataFromApi[key];
-
-                    // *** NEW DETAILED LOGGING FOR fetchVideoDetails ***
-                    console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] Comparing:`, {
-                        currentKnownUrl: currentFullUrl || 'null_or_empty',
-                        newUrlFromApi: newFullUrl || 'null_or_empty'
-                    });
-
-                    if (newFullUrl) { // Only proceed if the new URL exists
+                    // Commenting out verbose URL comparison logs
+                    // console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] Comparing:`, { currentFullUrl, newFullUrl });
+                    if (newFullUrl) {
                         const oldBase = currentFullUrl ? currentFullUrl.split('?')[0] : null;
                         const newBase = newFullUrl.split('?')[0];
-
-                        console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] Base URLs:`, {
-                            oldBase: oldBase,
-                            newBase: newBase,
-                            isDifferent: oldBase !== newBase,
-                            isCurrentMissing: !currentFullUrl
-                        });
-
+                        // console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] Base URLs:`, { oldBase, newBase });
                         if (!currentFullUrl || oldBase !== newBase) {
-                            console.log(`[Show.vue DEBUG from fetchVideoDetails] Updating videoData.${key} because it was missing or base changed. New URL:`, newFullUrl);
+                            // console.log(`[Show.vue DEBUG from fetchVideoDetails] Updating videoData.${key}.`);
                             videoData.value[key] = newFullUrl;
-                        } else {
-                            console.log(`[Show.vue DEBUG from fetchVideoDetails] videoData.${key} base is the same, NOT updating.`);
                         }
-                    } else {
-                        console.log(`[Show.vue DEBUG - fetchVideoDetails - ${key}] New URL from API is null/empty, not updating.`);
                     }
                 } else {
-                    // For all other keys, update directly
                     videoData.value[key] = newVideoDataFromApi[key];
                 }
             });
 
-            if (videoData.value.transcript_json_url) { // Check after potential update from API
+            if (videoData.value.transcript_json_url) {
                 await fetchTranscriptData();
             }
         } else {
@@ -317,35 +333,24 @@ function applyManualTranscriptUrl() {
 // Add a function to fetch and process transcript JSON data
 async function fetchTranscriptData() {
     if (!videoData.value.transcript_json_url) {
+        console.warn('[Show.vue DEBUG - fetchTranscriptData] Called without transcript_json_url.');
+        transcriptData.value = null;
         return;
     }
-    
+    console.log(`[Show.vue DEBUG - fetchTranscriptData] Fetching from: ${videoData.value.transcript_json_url}`);
     try {
-        let url = videoData.value.transcript_json_url;
-        
-        // If it's an absolute URL, convert to a relative path
-        if (url.startsWith('http')) {
-            try {
-                const parsedUrl = new URL(url);
-                const pathMatch = parsedUrl.pathname.match(/\/storage\/(.+)/);
-                if (pathMatch && pathMatch[1]) {
-                    url = `/storage/${pathMatch[1]}`;
-                }
-            } catch (e) {
-                // Handle URL parsing errors
-            }
-        }
-        
-        const response = await fetch(url);
-        
+        const response = await fetch(videoData.value.transcript_json_url);
         if (!response.ok) {
-            throw new Error('Failed to fetch transcript data');
+            transcriptData.value = null;
+            throw new Error(`Failed to fetch transcript data from ${videoData.value.transcript_json_url}. Status: ${response.status}`);
         }
-        
-        transcriptData.value = await response.json();
-        calculateOverallConfidence();
+        const jsonData = await response.json();
+        console.log('[Show.vue DEBUG - fetchTranscriptData] Successfully fetched and parsed transcript.json');
+        transcriptData.value = jsonData; // Store the full parsed JSON
+        calculateOverallConfidence(); 
     } catch (error) {
-        console.error('Error fetching transcript data:', error);
+        console.error('[Show.vue DEBUG - fetchTranscriptData] Error:', error);
+        transcriptData.value = null;
     }
 }
 
@@ -413,13 +418,9 @@ async function triggerTerminologyRecognition() {
 }
 
 onMounted(() => {
-    // Get initial status immediately
-    fetchStatus();
-    
-    // Fetch transcript data if available
-    fetchTranscriptData();
-    
-    // Then start polling after a short delay to ensure backend has time to update
+    // fetchTranscriptData is now triggered by the watcher on videoData.value.transcript_json_url
+    // if props.video.transcript_json_url is available on mount.
+    fetchStatus(); // Initial fetch for status, which might update URLs
     setTimeout(() => {
         startPolling();
     }, 1000);
@@ -471,20 +472,13 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
                                 
-                                <!-- Advanced Subtitles component with proper heading -->
+                                <!-- Synchronized Transcript (for segment-by-segment clicking) -->
                                 <div v-if="videoData.transcript_json_url && videoElement" class="mt-6">
-                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                                        <h3 class="text-lg font-medium flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
-                                            </svg>
-                                            Interactive Transcript
-                                        </h3>
-                                    </div>
-                                    <AdvancedSubtitles
+                                    <SynchronizedTranscript
                                         :video-ref="videoElement"
+                                        :srt-url="videoData.subtitles_url" 
                                         :transcript-json-url="videoData.transcript_json_url"
-                                        :transcript-json-api-url="videoData.transcript_json_api_url"
+                                        :transcript-text="videoData.transcript_text"
                                     />
                                 </div>
                                 

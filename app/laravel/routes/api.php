@@ -186,21 +186,27 @@ Route::get('/videos/{id}', function($id) {
         ], 404);
     }
     
-    // Get full video details with all accessors
+    // Prepare video data, ensuring all necessary attributes and accessors are included
+    $videoData = $video->toArray(); // Start with base model attributes
+    
+    // Add presigned URLs and other dynamic properties from accessors
+    $videoData['url'] = $video->url; 
+    $videoData['audio_url'] = $video->audio_url; 
+    $videoData['transcript_url'] = $video->transcript_url; 
+    $videoData['subtitles_url'] = $video->subtitles_url; 
+    $videoData['transcript_json_url'] = $video->transcript_json_url; 
+    $videoData['transcript_json_api_url'] = $video->transcript_json_api_url; 
+    $videoData['terminology_url'] = $video->terminology_url; 
+    $videoData['terminology_json_api_url'] = $video->terminology_json_api_url; 
+    $videoData['formatted_duration'] = $video->formatted_duration;
+    $videoData['is_processing'] = $video->is_processing;
+    
+    // Explicitly add transcript_text (this will use an accessor or direct column value)
+    $videoData['transcript_text'] = $video->transcript_text; 
+
     return response()->json([
         'success' => true,
-        'video' => $video->toArray() + [
-            'url' => $video->url,
-            'audio_url' => $video->audio_url,
-            'transcript_url' => $video->transcript_url,
-            'subtitles_url' => $video->subtitles_url,
-            'transcript_json_url' => $video->transcript_json_url,
-            'transcript_json_api_url' => $video->transcript_json_api_url,
-            'terminology_url' => $video->terminology_url,
-            'terminology_json_api_url' => $video->terminology_json_api_url,
-            'formatted_duration' => $video->formatted_duration,
-            'is_processing' => $video->is_processing,
-        ]
+        'video' => $videoData
     ]);
 });
 

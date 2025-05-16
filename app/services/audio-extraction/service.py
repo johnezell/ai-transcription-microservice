@@ -9,9 +9,10 @@ from datetime import datetime
 import tempfile
 import boto3 # Added for S3 interaction
 import time
+import threading
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Create Flask app
@@ -38,6 +39,14 @@ if AWS_DEFAULT_REGION:
     logger.info(f"SQS client initialized with region {AWS_DEFAULT_REGION}")
 else:
     logger.error("AWS_DEFAULT_REGION not set. SQS operations will fail.")
+
+# Initialize CloudWatch client
+cloudwatch_client = boto3.client('cloudwatch', region_name=AWS_DEFAULT_REGION)
+
+# Start SQS listener when the app starts
+@app.before_first_request
+def start_listeners():
+    threading.Thread(target=listen_for_sqs_messages, daemon=True).start()
 
 def convert_to_wav(input_path, output_path):
     """Convert media to WAV format optimized for transcription."""
@@ -158,6 +167,51 @@ def health_check():
         'callback_queue_url_set': bool(CALLBACK_QUEUE_URL)
     })
 
+def publish_job_metrics(job_id, processing_time):
+    """
+    Publish job processing metrics to CloudWatch
+    """
+    try:
+        # Publish the processing time metric
+        cloudwatch_client.put_metric_data(
+            Namespace='TranscriptionService',
+            MetricData=[
+                {
+                    'MetricName': 'AudioExtractionProcessingTime',
+                    'Dimensions': [
+                        {
+                            'Name': 'JobId',
+                            'Value': job_id
+                        }
+                    ],
+                    'Value': processing_time,
+                    'Unit': 'Seconds'
+                }
+            ]
+        )
+        
+        # Also publish a count metric for total jobs processed
+        cloudwatch_client.put_metric_data(
+            Namespace='TranscriptionService',
+            MetricData=[
+                {
+                    'MetricName': 'JobsProcessed',
+                    'Dimensions': [
+                        {
+                            'Name': 'ServiceType',
+                            'Value': 'AudioExtraction'
+                        }
+                    ],
+                    'Value': 1,
+                    'Unit': 'Count'
+                }
+            ]
+        )
+        
+        logger.info(f"Published metrics for job {job_id}: processing_time={processing_time}s")
+    except Exception as e:
+        logger.error(f"Failed to publish metrics for job {job_id}: {str(e)}")
+
 def process_audio_job(job_data):
     """Process an audio extraction job."""
     if not job_data or 'job_id' not in job_data or 'video_s3_key' not in job_data:
@@ -180,6 +234,9 @@ def process_audio_job(job_data):
         s3_audio_key = os.path.join(os.path.dirname(s3_video_key), "audio.wav") # e.g., s3/jobs/UUID/audio.wav
 
         try:
+            # Record start time for metrics
+            start_time = time.time()
+            
             logger.info(f"Downloading video from S3: bucket={AWS_BUCKET}, key={s3_video_key} to {local_video_path}")
             s3_client.download_file(AWS_BUCKET, s3_video_key, local_video_path)
             logger.info(f"Successfully downloaded {s3_video_key} to {local_video_path}")
@@ -194,6 +251,12 @@ def process_audio_job(job_data):
             logger.info(f"Uploading extracted audio to S3: bucket={AWS_BUCKET}, key={s3_audio_key} from {local_audio_path}")
             s3_client.upload_file(local_audio_path, AWS_BUCKET, s3_audio_key)
             logger.info(f"Successfully uploaded {local_audio_path} to S3 key {s3_audio_key}")
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            
+            # Publish metrics
+            publish_job_metrics(job_id, processing_time)
             
             response_data = {
                 'message': 'Audio extraction completed successfully and uploaded to S3.',

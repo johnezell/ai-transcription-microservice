@@ -8,6 +8,7 @@ from cdk_infra.laravel_service_stack import LaravelServiceStack
 from cdk_infra.audio_extraction_service_stack import AudioExtractionServiceStack
 from cdk_infra.transcription_service_stack import TranscriptionServiceStack
 from cdk_infra.terminology_service_stack import TerminologyServiceStack
+from cdk_infra.monitoring_stack import MonitoringStack
 
 # Define the AWS environment (account and region)
 # Using your Account ID and the region from plan.md
@@ -89,6 +90,15 @@ terminology_service_stack = TerminologyServiceStack(app, "TerminologyServiceStac
     env=aws_env
 )
 
+# Monitoring and dashboard stack
+monitoring_stack = MonitoringStack(app, "MonitoringStack",
+    audio_extraction_queue=main_infra_stack.audio_extraction_queue,
+    transcription_queue=main_infra_stack.transcription_queue,
+    terminology_queue=main_infra_stack.terminology_queue,
+    callback_queue=main_infra_stack.callback_queue,
+    env=aws_env
+)
+
 # Add dependencies
 laravel_service_stack.add_dependency(main_infra_stack)
 audio_extraction_service_stack.add_dependency(main_infra_stack)
@@ -97,5 +107,6 @@ transcription_service_stack.add_dependency(main_infra_stack)
 transcription_service_stack.add_dependency(laravel_service_stack)
 terminology_service_stack.add_dependency(main_infra_stack)
 terminology_service_stack.add_dependency(laravel_service_stack)
+monitoring_stack.add_dependency(main_infra_stack)
 
 app.synth()

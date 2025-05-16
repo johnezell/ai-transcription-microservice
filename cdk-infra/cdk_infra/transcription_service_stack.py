@@ -96,8 +96,8 @@ class TranscriptionServiceStack(Stack):
         
         # Auto-scaling based on SQS queue depth
         scaling = self.fargate_service.auto_scale_task_count(
-            min_capacity=2,
-            max_capacity=20  # Higher capacity for transcription which can be more CPU/GPU intensive
+            min_capacity=3,
+            max_capacity=50  # Increased from 20 to 50 for CPU-intensive transcription processing
         )
         
         scaling.scale_on_metric("TranscriptionQueueMessagesVisibleScaling",
@@ -105,9 +105,11 @@ class TranscriptionServiceStack(Stack):
             scaling_steps=[
                 {"upper": 0, "change": 0},  # Scale to base capacity when queue is empty
                 {"lower": 1, "change": +1},  # Add 1 task when there's at least 1 message
-                {"lower": 5, "change": +2},  # Add 2 tasks when there are at least 5 messages
-                {"lower": 20, "change": +5},  # Add 5 tasks when there are at least 20 messages
-                {"lower": 50, "change": +10}  # Add 10 tasks when there are at least 50 messages
+                {"lower": 5, "change": +3},  # Add 3 tasks when there are at least 5 messages
+                {"lower": 20, "change": +7},  # Add 7 tasks when there are at least 20 messages
+                {"lower": 50, "change": +15}, # Add 15 tasks when there are at least 50 messages
+                {"lower": 100, "change": +25}, # Add 25 tasks when there are at least 100 messages
+                {"lower": 200, "change": +35}  # Add 35 tasks when there are at least 200 messages
             ],
             adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         ) 

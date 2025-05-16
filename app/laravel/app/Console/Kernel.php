@@ -17,6 +17,7 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         \App\Console\Commands\ListenCallbackQueueCommand::class,
+        \App\Console\Commands\TestSqsCommand::class,
     ];
 
     /**

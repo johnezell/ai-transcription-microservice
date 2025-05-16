@@ -96,8 +96,8 @@ class AudioExtractionServiceStack(Stack):
 
         # Auto-scaling based on SQS queue depth
         scaling = self.fargate_service.auto_scale_task_count(
-            min_capacity=2,
-            max_capacity=10
+            min_capacity=3,
+            max_capacity=25  # Increased from 10 to 25 for better handling of large batches
         )
         
         scaling.scale_on_metric("QueueMessagesVisibleScaling",
@@ -105,9 +105,10 @@ class AudioExtractionServiceStack(Stack):
             scaling_steps=[
                 {"upper": 0, "change": 0},  # Scale to base capacity when queue is empty
                 {"lower": 1, "change": +1},  # Add 1 task when there's at least 1 message
-                {"lower": 10, "change": +2},  # Add 2 tasks when there are at least 10 messages
-                {"lower": 50, "change": +5},  # Add 5 tasks when there are at least 50 messages
-                {"lower": 100, "change": +8}  # Add 8 tasks when there are at least 100 messages
+                {"lower": 10, "change": +3},  # Add 3 tasks when there are at least 10 messages
+                {"lower": 50, "change": +7},  # Add 7 tasks when there are at least 50 messages
+                {"lower": 100, "change": +12}, # Add 12 tasks when there are at least 100 messages
+                {"lower": 200, "change": +20}  # Add 20 tasks when there are at least 200 messages
             ],
             adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         ) 

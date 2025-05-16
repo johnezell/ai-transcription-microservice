@@ -96,8 +96,8 @@ class TerminologyServiceStack(Stack):
         
         # Auto-scaling based on SQS queue depth
         scaling = self.fargate_service.auto_scale_task_count(
-            min_capacity=2,
-            max_capacity=10  # Scale up to handle terminology processing
+            min_capacity=3,
+            max_capacity=20  # Increased from 10 to 20 for better handling of large batches
         )
         
         scaling.scale_on_metric("TerminologyQueueMessagesVisibleScaling",
@@ -106,8 +106,10 @@ class TerminologyServiceStack(Stack):
                 {"upper": 0, "change": 0},  # Scale to base capacity when queue is empty
                 {"lower": 1, "change": +1},  # Add 1 task when there's at least 1 message
                 {"lower": 5, "change": +2},  # Add 2 tasks when there are at least 5 messages
-                {"lower": 15, "change": +4},  # Add 4 tasks when there are at least 15 messages
-                {"lower": 30, "change": +6}   # Add 6 tasks when there are at least 30 messages
+                {"lower": 15, "change": +5},  # Add 5 tasks when there are at least 15 messages
+                {"lower": 30, "change": +8},  # Add 8 tasks when there are at least 30 messages
+                {"lower": 60, "change": +12}, # Add 12 tasks when there are at least 60 messages
+                {"lower": 120, "change": +15} # Add 15 tasks when there are at least 120 messages
             ],
             adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY
         ) 

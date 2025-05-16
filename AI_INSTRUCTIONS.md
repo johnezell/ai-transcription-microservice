@@ -19,6 +19,8 @@ This document contains key information and decisions to help the AI assistant ma
 *   **Application Access (Laravel):** For the prototype, the Laravel application will NOT use an Application Load Balancer. Access will be via its private IP, accessible through the user's VPN connection.
 *   **Transcription Service:** Will use a self-hosted Whisper AI container, not the AWS Transcribe service.
 *   **Message Queuing:** SQS queues are used for inter-service communication, replacing direct HTTP calls to make the system more scalable and robust.
+*   **Auto-Scaling:** All services scale based on SQS queue depth, with different configurations for each service to handle large-volume processing.
+*   **Monitoring & Cost Analysis:** CloudWatch dashboard provides visibility into queue depths, service metrics, and per-job cost tracking.
 *   **IAM Roles:**
     *   A common ECS Task Execution Role is used.
     *   A shared IAM Task Role is used for application services, granting S3 permissions (scoped to the application's data bucket).
@@ -48,9 +50,9 @@ This document contains key information and decisions to help the AI assistant ma
 
 ## Current Status & Recommended Commits
 
-*   **Last Commit (Done by User):** `feat: Implement SQS-based communication between services` (covers all infrastructure and code changes for SQS integration).
-*   **Current State:** SQS-based inter-service communication is implemented and working. Auto-scaling based on queue depth is configured.
-*   **Next planned infrastructure step:** Further optimizations and enhancements to the system for enterprise-level processing capability.
+*   **Last Commit (Done by User):** `feat: Implement enhanced scaling and monitoring` (covers all infrastructure and code changes for autoscaling, monitoring, and cost tracking).
+*   **Current State:** SQS-based inter-service communication with enhanced autoscaling for large volumes of videos. Cost tracking and monitoring dashboards implemented. Ready for enterprise-level processing.
+*   **Next planned infrastructure step:** Final production readiness checks and optimizations.
 
 ## S3 Bucket Configuration & Object ACLs
 
@@ -96,6 +98,68 @@ This document contains key information and decisions to help the AI assistant ma
 *   **Environment Variables**:
     *   `AUDIO_EXTRACTION_QUEUE_URL`, `TRANSCRIPTION_QUEUE_URL`, `TERMINOLOGY_QUEUE_URL`, and `CALLBACK_QUEUE_URL` are set for each service.
     *   Services check for these environment variables and fall back to HTTP communication if not present.
+
+## Enhanced Auto-Scaling Configuration
+
+*   **Audio Extraction Service**:
+    *   Minimum capacity: 3 instances
+    *   Maximum capacity: 25 instances
+    *   Scaling steps:
+        *   +1 task when queue has 1+ messages
+        *   +3 tasks when queue has 10+ messages
+        *   +7 tasks when queue has 50+ messages
+        *   +12 tasks when queue has 100+ messages
+        *   +20 tasks when queue has 200+ messages
+
+*   **Transcription Service**:
+    *   Minimum capacity: 3 instances
+    *   Maximum capacity: 50 instances
+    *   Scaling steps:
+        *   +1 task when queue has 1+ messages
+        *   +3 tasks when queue has 5+ messages
+        *   +7 tasks when queue has 20+ messages
+        *   +15 tasks when queue has 50+ messages
+        *   +25 tasks when queue has 100+ messages
+        *   +35 tasks when queue has 200+ messages
+
+*   **Terminology Service**:
+    *   Minimum capacity: 3 instances
+    *   Maximum capacity: 20 instances
+    *   Scaling steps:
+        *   +1 task when queue has 1+ messages
+        *   +2 tasks when queue has 5+ messages
+        *   +5 tasks when queue has 15+ messages
+        *   +8 tasks when queue has 30+ messages
+        *   +12 tasks when queue has 60+ messages
+        *   +15 tasks when queue has 120+ messages
+
+*   **Scaling Behavior**: All services automatically scale down when queue depth decreases, returning to base capacity when idle to control costs.
+
+## Monitoring and Cost Tracking
+
+*   **CloudWatch Dashboard**: Comprehensive dashboard showing:
+    *   SQS queue depths for all four queues
+    *   ECS task counts for all services
+    *   CPU and memory utilization by service
+    *   Job cost metrics
+
+*   **Custom Metrics**: Added to Python microservices to track:
+    *   Processing time per job
+    *   Audio extraction metrics
+    *   Transcription real-time ratio
+    *   Job completion counts
+
+*   **Cost Tracking Lambda**:
+    *   Runs every 6 hours to calculate costs for completed jobs
+    *   Breaks down costs by compute, storage, network, and API usage
+    *   Publishes metrics to CloudWatch for visualization
+    *   Helps analyze cost per job for business reporting
+
+*   **CloudWatch Alarms**: Can be set up to notify on:
+    *   Excessive queue depth
+    *   Service errors
+    *   Cost thresholds
+    *   Resource utilization anomalies
 
 ## ECS Service Discovery & Inter-Service Communication
 
@@ -160,11 +224,17 @@ This document contains key information and decisions to help the AI assistant ma
 
 ## Next Steps (Current)
 
-*   **Performance Testing**: Test the system with large volumes of videos to validate enterprise-level scalability.
-*   **Monitoring and Alerting**: Implement CloudWatch dashboards and alarms for key metrics like queue depth, processing times, and error rates.
-*   **Cost Optimization**: Analyze resource usage and adjust auto-scaling parameters for optimal cost-performance balance.
-*   **Enhanced Error Handling**: Improve error handling and retry logic in SQS message processing.
-*   **User Interface Enhancements**: Add progress indicators and better status messaging in the Laravel UI.
+*   **Final Production Readiness**:
+    *   Review security configurations before production deployment.
+    *   Set up long-term monitoring and alerting.
+    *   Document operational procedures in detail.
+*   **User Training**:
+    *   Comprehensive documentation for end users.
+    *   Training sessions for system administrators.
+*   **Future Enhancements**:
+    *   Add support for additional languages.
+    *   Implement batch processing optimization.
+    *   Explore GPU-based transcription for further performance improvements.
 *   **Commit all recent changes**.
 
 *(This file should be updated as the project progresses)* 

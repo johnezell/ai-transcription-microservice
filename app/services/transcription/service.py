@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 import boto3
 import time
+import threading
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -32,7 +33,7 @@ import re
 from typing import Dict, List, Union, Optional, Any
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Create Flask app
@@ -53,19 +54,9 @@ CALLBACK_QUEUE_URL = os.environ.get('CALLBACK_QUEUE_URL')
 os.makedirs(S3_JOBS_DIR, exist_ok=True)
 
 # Initialize S3 client
-s3_client = None
-if AWS_BUCKET:
-    s3_client = boto3.client('s3', region_name=AWS_DEFAULT_REGION)
-else:
-    logger.error("AWS_BUCKET environment variable not set. S3 operations will fail.")
-
-# Initialize SQS client
-sqs_client = None
-if AWS_DEFAULT_REGION:
-    sqs_client = boto3.client('sqs', region_name=AWS_DEFAULT_REGION)
-    logger.info(f"SQS client initialized with region {AWS_DEFAULT_REGION}")
-else:
-    logger.error("AWS_DEFAULT_REGION not set. SQS operations will fail.")
+s3_client = boto3.client('s3', region_name=AWS_DEFAULT_REGION)
+sqs_client = boto3.client('sqs', region_name=AWS_DEFAULT_REGION)
+cloudwatch_client = boto3.client('cloudwatch', region_name=AWS_DEFAULT_REGION)
 
 # Lazy-load Whisper model to save memory
 @lru_cache(maxsize=1)
@@ -250,6 +241,59 @@ def test_laravel_connectivity():
         logger.error(f"Error connecting to Laravel API: {str(e)}")
         return False
 
+def publish_job_metrics(job_id, processing_time, audio_duration=None):
+    """
+    Publish job processing metrics to CloudWatch
+    """
+    try:
+        metrics = [
+            {
+                'MetricName': 'TranscriptionProcessingTime',
+                'Dimensions': [
+                    {
+                        'Name': 'JobId',
+                        'Value': job_id
+                    }
+                ],
+                'Value': processing_time,
+                'Unit': 'Seconds'
+            },
+            {
+                'MetricName': 'JobsProcessed',
+                'Dimensions': [
+                    {
+                        'Name': 'ServiceType',
+                        'Value': 'Transcription'
+                    }
+                ],
+                'Value': 1,
+                'Unit': 'Count'
+            }
+        ]
+        
+        if audio_duration:
+            metrics.append({
+                'MetricName': 'RealTimeRatio',
+                'Dimensions': [
+                    {
+                        'Name': 'JobId',
+                        'Value': job_id
+                    }
+                ],
+                'Value': processing_time / audio_duration if audio_duration > 0 else 0,
+                'Unit': 'None'
+            })
+        
+        # Publish metrics
+        cloudwatch_client.put_metric_data(
+            Namespace='TranscriptionService',
+            MetricData=metrics
+        )
+        
+        logger.info(f"Published metrics for job {job_id}: processing_time={processing_time}s")
+    except Exception as e:
+        logger.error(f"Failed to publish metrics for job {job_id}: {str(e)}")
+
 def process_transcription_job(job_data):
     """Process a transcription job."""
     if not job_data or 'job_id' not in job_data or 'audio_s3_key' not in job_data:
@@ -287,7 +331,19 @@ def process_transcription_job(job_data):
 
             update_job_status(job_id, 'transcribing')
             
+            # Record start time for metrics
+            start_time = time.time()
+            
             transcription_result = process_audio(local_audio_path, model_name, initial_prompt)
+            
+            # After transcription is complete, calculate processing time and publish metrics
+            processing_time = time.time() - start_time
+            
+            # Get audio duration if available
+            audio_duration = job_data.get('audio_duration', 0)
+            
+            # Publish metrics
+            publish_job_metrics(job_id, processing_time, audio_duration)
             
             # Save transcripts locally first
             with open(local_transcript_txt_path, 'w', encoding='utf-8') as f:
@@ -326,7 +382,9 @@ def process_transcription_job(job_data):
                     'service': 'transcription-service',
                     'processed_by': 'Whisper-based transcription',
                     'model': model_name
-                }
+                },
+                'processing_time': processing_time,
+                'real_time_ratio': processing_time / audio_duration if audio_duration > 0 else None
             }
             
             # Update job status to 'transcribed' to signal completion
@@ -432,6 +490,11 @@ if TRANSCRIPTION_QUEUE_URL and sqs_client:
     listener_thread = threading.Thread(target=listen_for_sqs_messages, daemon=True)
     listener_thread.start()
     logger.info("Started SQS listener in background thread")
+
+# Start SQS listener when the app starts
+@app.before_first_request
+def start_listeners():
+    threading.Thread(target=listen_for_sqs_messages, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_ENV') == 'development') 

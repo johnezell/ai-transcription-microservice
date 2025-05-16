@@ -1,11 +1,44 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 
 const showingNavigationDropdown = ref(false);
+const showingImportSourcesDropdown = ref(false);
+
+// Function to safely check if a route exists
+const routeExists = (name) => {
+    try {
+        router.check(name);
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+// Route existence flags
+const truefireIndexExists = routeExists('truefire.index');
+const channelsIndexExists = routeExists('channels.index');
+
+// Function to close dropdown when clicking outside
+const closeDropdownOnOutsideClick = (event) => {
+    // Only close if dropdown is open and click is outside the dropdown
+    if (showingImportSourcesDropdown.value && !event.target.closest('.import-sources-dropdown')) {
+        showingImportSourcesDropdown.value = false;
+    }
+};
+
+// Add and remove event listener
+onMounted(() => {
+    window.addEventListener('click', closeDropdownOnOutsideClick);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('click', closeDropdownOnOutsideClick);
+});
 </script>
 
 <template>
@@ -43,6 +76,47 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Courses
                                 </NavLink>
+                                
+                                <!-- Import Sources Dropdown -->
+                                <div v-if="truefireIndexExists || channelsIndexExists" class="hidden sm:flex sm:items-center">
+                                    <div class="relative import-sources-dropdown">
+                                        <button 
+                                            @click.stop="showingImportSourcesDropdown = !showingImportSourcesDropdown" 
+                                            class="inline-flex items-center px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out border border-transparent rounded-md hover:text-gray-700 focus:outline-none"
+                                            :class="{ 'text-indigo-600': (truefireIndexExists && route().current('truefire.*')) || (channelsIndexExists && route().current('channels.*')) }"
+                                        >
+                                            Import Sources
+                                            <svg class="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                            </svg>
+                                        </button>
+
+                                        <div 
+                                            v-show="showingImportSourcesDropdown" 
+                                            class="absolute z-50 mt-2 w-48 rounded-md shadow-lg origin-top-right right-0"
+                                        >
+                                            <div class="rounded-md ring-1 ring-black ring-opacity-5 py-1 bg-white">
+                                                <Link 
+                                                    v-if="truefireIndexExists"
+                                                    :href="route('truefire.index')" 
+                                                    class="block px-4 py-2 text-sm leading-5 text-gray-700 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 transition duration-150 ease-in-out"
+                                                    :class="{ 'bg-gray-100': route().current('truefire.index') }"
+                                                >
+                                                    TrueFire Courses
+                                                </Link>
+                                                <Link 
+                                                    v-if="channelsIndexExists"
+                                                    :href="route('channels.index')" 
+                                                    class="block px-4 py-2 text-sm leading-5 text-gray-700 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 transition duration-150 ease-in-out"
+                                                    :class="{ 'bg-gray-100': route().current('channels.index') }"
+                                                >
+                                                    Channel Content
+                                                </Link>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <NavLink
                                     :href="route('enhancement-ideas.index')"
                                     :active="route().current('enhancement-ideas.*')"
@@ -122,6 +196,30 @@ const showingNavigationDropdown = ref(false);
                         >
                             Courses
                         </ResponsiveNavLink>
+                        
+                        <!-- Import Sources Section -->
+                        <div v-if="truefireIndexExists || channelsIndexExists" class="pt-4 pb-1 border-t border-gray-200">
+                            <div class="px-4">
+                                <div class="font-medium text-base text-gray-800">Import Sources</div>
+                            </div>
+                            <div class="mt-3 space-y-1">
+                                <ResponsiveNavLink
+                                    v-if="truefireIndexExists"
+                                    :href="route('truefire.index')"
+                                    :active="route().current('truefire.index')"
+                                >
+                                    TrueFire Courses
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    v-if="channelsIndexExists"
+                                    :href="route('channels.index')"
+                                    :active="route().current('channels.index')"
+                                >
+                                    Channel Content
+                                </ResponsiveNavLink>
+                            </div>
+                        </div>
+                        
                         <ResponsiveNavLink
                             :href="route('enhancement-ideas.index')"
                             :active="route().current('enhancement-ideas.*')"

@@ -7,9 +7,11 @@ Route::post('/truefire/import-bulk', [App\Http\Controllers\TrueFireController::c
 
 // Channel Routes
 Route::get('/channels', [App\Http\Controllers\ChannelController::class, 'index'])->name('channels.index');
+Route::get('/channels/selection', [App\Http\Controllers\ChannelController::class, 'selection'])->name('channels.selection');
 Route::get('/channels/{id}', [App\Http\Controllers\ChannelController::class, 'show'])->name('channels.show');
 Route::get('/courses/{courseId}/segments', [App\Http\Controllers\ChannelController::class, 'getCourseSegments'])->name('channels.course.segments');
 Route::get('/courses/segments', [App\Http\Controllers\ChannelController::class, 'getAllCoursesWithSegments'])->name('channels.all');
 Route::get('/courses/segments/example', [App\Http\Controllers\ChannelController::class, 'runExampleQuery'])->name('channels.example');
 Route::get('/courses/segments/nested', [App\Http\Controllers\ChannelController::class, 'getNestedStructure'])->name('channels.nested');
-Route::post('/segments/import/{segmentId}', [App\Http\Controllers\ChannelController::class, 'importSegment'])->name('channels.import.segment'); 
+Route::post('/segments/import/{segmentId}', [App\Http\Controllers\ChannelController::class, 'importSegment'])->name('channels.import.segment');
+Route::post('/segments/import-bulk', [App\Http\Controllers\ChannelController::class, 'importSegmentsBulk'])->name('channels.import.segments.bulk'); 

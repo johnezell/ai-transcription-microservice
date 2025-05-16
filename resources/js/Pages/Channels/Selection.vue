@@ -2,13 +2,13 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { ref, onMounted } from 'vue';
-import { trueFireApi } from '@/api';
+import { channelsApi } from '@/api';
 
 // State management
 const courses = ref([]);
 const loading = ref(true);
 const error = ref(null);
-const selectedLessons = ref({});
+const selectedSegments = ref({});
 const expandedCourses = ref({});
 const importStatus = ref({ 
   processing: false, 
@@ -21,10 +21,10 @@ const importStatus = ref({
 onMounted(async () => {
   try {
     loading.value = true;
-    const response = await trueFireApi.getCourses();
+    const response = await channelsApi.getCourses();
     courses.value = response.data;
   } catch (err) {
-    error.value = err.message || 'Unable to load TrueFire courses';
+    error.value = err.message || 'Unable to load Channel courses';
     console.error(err);
   } finally {
     loading.value = false;
@@ -36,45 +36,45 @@ function toggleCourse(courseId) {
     expandedCourses.value[courseId] = !expandedCourses.value[courseId];
 }
 
-// Toggle lesson selection
-function toggleLesson(courseId, lessonId) {
-    if (!selectedLessons.value[courseId]) {
-        selectedLessons.value[courseId] = {};
+// Toggle segment selection
+function toggleSegment(courseId, segmentId) {
+    if (!selectedSegments.value[courseId]) {
+        selectedSegments.value[courseId] = {};
     }
-    selectedLessons.value[courseId][lessonId] = !selectedLessons.value[courseId][lessonId];
+    selectedSegments.value[courseId][segmentId] = !selectedSegments.value[courseId][segmentId];
 }
 
-// Select/deselect all lessons in a course
-function toggleAllLessons(courseId) {
+// Select/deselect all segments in a course
+function toggleAllSegments(courseId) {
     const course = courses.value.find(c => c.id === courseId);
-    if (!course || !course.lessons) return;
+    if (!course || !course.segments) return;
     
-    if (!selectedLessons.value[courseId]) {
-        selectedLessons.value[courseId] = {};
+    if (!selectedSegments.value[courseId]) {
+        selectedSegments.value[courseId] = {};
     }
     
-    // Check if all lessons are already selected
-    const allSelected = course.lessons.every(lesson => 
-        selectedLessons.value[courseId][lesson.id]
+    // Check if all segments are already selected
+    const allSelected = course.segments.every(segment => 
+        selectedSegments.value[courseId][segment.id]
     );
     
     // Toggle accordingly
-    course.lessons.forEach(lesson => {
-        selectedLessons.value[courseId][lesson.id] = !allSelected;
+    course.segments.forEach(segment => {
+        selectedSegments.value[courseId][segment.id] = !allSelected;
     });
 }
 
-// Check if a lesson is selected
-function isLessonSelected(courseId, lessonId) {
-    return selectedLessons.value[courseId] && selectedLessons.value[courseId][lessonId];
+// Check if a segment is selected
+function isSegmentSelected(courseId, segmentId) {
+    return selectedSegments.value[courseId] && selectedSegments.value[courseId][segmentId];
 }
 
-// Count selected lessons
+// Count selected segments
 function getSelectedCount() {
     let count = 0;
-    for (const courseId in selectedLessons.value) {
-        for (const lessonId in selectedLessons.value[courseId]) {
-            if (selectedLessons.value[courseId][lessonId]) {
+    for (const courseId in selectedSegments.value) {
+        for (const segmentId in selectedSegments.value[courseId]) {
+            if (selectedSegments.value[courseId][segmentId]) {
                 count++;
             }
         }
@@ -82,33 +82,33 @@ function getSelectedCount() {
     return count;
 }
 
-// Import selected lessons
-async function importSelectedLessons() {
-    const lessonIds = [];
-    for (const courseId in selectedLessons.value) {
-        for (const lessonId in selectedLessons.value[courseId]) {
-            if (selectedLessons.value[courseId][lessonId]) {
-                lessonIds.push(parseInt(lessonId));
+// Import selected segments
+async function importSelectedSegments() {
+    const segmentIds = [];
+    for (const courseId in selectedSegments.value) {
+        for (const segmentId in selectedSegments.value[courseId]) {
+            if (selectedSegments.value[courseId][segmentId]) {
+                segmentIds.push(parseInt(segmentId));
             }
         }
     }
     
-    if (lessonIds.length === 0) {
+    if (segmentIds.length === 0) {
         return;
     }
     
     try {
         importStatus.value.processing = true;
-        const response = await trueFireApi.importLessonsBulk(lessonIds);
+        const response = await channelsApi.importSegmentsBulk(segmentIds);
         importStatus.value.success = true;
         importStatus.value.message = response.data.message;
         importStatus.value.count = response.data.count;
         
         // Clear selections after successful import
-        selectedLessons.value = {};
+        selectedSegments.value = {};
     } catch (err) {
         importStatus.value.success = false;
-        importStatus.value.message = err.message || 'Failed to import lessons';
+        importStatus.value.message = err.message || 'Failed to import segments';
         console.error(err);
     } finally {
         importStatus.value.processing = false;
@@ -117,20 +117,20 @@ async function importSelectedLessons() {
 </script>
 
 <template>
-    <Head title="Select TrueFire Lessons" />
+    <Head title="Select Channel Segments" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex justify-between items-center">
                 <h2 class="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">
-                    Select TrueFire Lessons to Import
+                    Select Channel Segments to Import
                 </h2>
                 <div v-if="getSelectedCount() > 0" class="flex items-center gap-4">
                     <span class="text-sm text-gray-600 dark:text-gray-400">
-                        {{ getSelectedCount() }} lesson{{ getSelectedCount() > 1 ? 's' : '' }} selected
+                        {{ getSelectedCount() }} segment{{ getSelectedCount() > 1 ? 's' : '' }} selected
                     </span>
                     <button 
-                        @click="importSelectedLessons" 
+                        @click="importSelectedSegments" 
                         :disabled="importStatus.processing"
                         class="inline-flex items-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-green-500 active:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 transition ease-in-out duration-150"
                     >
@@ -185,7 +185,7 @@ async function importSelectedLessons() {
                                     </div>
                                     <div>
                                         <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200">{{ course.title }}</h3>
-                                        <p class="text-sm text-gray-600 dark:text-gray-400">{{ course.lessons ? course.lessons.length : 0 }} lessons • {{ course.instructor }}</p>
+                                        <p class="text-sm text-gray-600 dark:text-gray-400">{{ course.segments ? course.segments.length : 0 }} segments • {{ course.instructor }}</p>
                                     </div>
                                 </div>
                                 <div class="text-gray-600 dark:text-gray-400">
@@ -198,33 +198,32 @@ async function importSelectedLessons() {
                                 </div>
                             </div>
                             
-                            <div v-if="expandedCourses[course.id] && course.lessons && course.lessons.length > 0" class="mt-4 pl-4">
-                                <!-- Lesson controls -->
+                            <div v-if="expandedCourses[course.id] && course.segments && course.segments.length > 0" class="mt-4 pl-4">
+                                <!-- Segment controls -->
                                 <div class="flex justify-between items-center mb-2 border-b border-gray-100 dark:border-gray-700 pb-2">
                                     <button 
-                                        @click.stop="toggleAllLessons(course.id)" 
+                                        @click.stop="toggleAllSegments(course.id)" 
                                         class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400"
                                     >
-                                        Select All Lessons
+                                        Select All Segments
                                     </button>
                                 </div>
                                 
-                                <!-- Lesson list -->
+                                <!-- Segment list -->
                                 <div class="divide-y divide-gray-100 dark:divide-gray-700">
-                                    <div v-for="lesson in course.lessons" :key="lesson.id" class="py-3 flex items-center justify-between">
+                                    <div v-for="segment in course.segments" :key="segment.id" class="py-3 flex items-center justify-between">
                                         <div class="flex items-center">
                                             <input 
                                                 type="checkbox" 
-                                                :id="`lesson-${lesson.id}`" 
-                                                :checked="isLessonSelected(course.id, lesson.id)"
-                                                @change="toggleLesson(course.id, lesson.id)"
+                                                :id="`segment-${segment.id}`" 
+                                                :checked="isSegmentSelected(course.id, segment.id)"
+                                                @change="toggleSegment(course.id, segment.id)"
                                                 class="mr-3 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                             >
-                                            <label :for="`lesson-${lesson.id}`" class="block">
-                                                <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ lesson.sequence_number }}. {{ lesson.title }}</span>
+                                            <label :for="`segment-${segment.id}`" class="block">
+                                                <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ segment.sequence_number }}. {{ segment.title }}</span>
                                                 <span class="flex mt-1">
-                                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ lesson.duration_minutes }} minutes</span>
-                                                    <span v-if="lesson.is_free_preview" class="ml-2 text-xs text-green-600 dark:text-green-400">Free Preview</span>
+                                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ segment.duration_minutes }} minutes</span>
                                                 </span>
                                             </label>
                                         </div>

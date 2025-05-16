@@ -108,8 +108,8 @@ class LaravelServiceStack(Stack):
                 "TERMINOLOGY_SERVICE_URL": "http://terminology-service.local:5000" # New service URL
             },
             secrets={
-                # Prefer custom_host if it exists and is not empty, otherwise fall back to host
-                "DB_HOST": ecs.Secret.from_secrets_manager(db_secret, "custom_host", "host"),
+                # Use the custom_host key instead of trying to use fallback logic here
+                "DB_HOST": ecs.Secret.from_secrets_manager(db_secret, "custom_host"),
                 "DB_PORT": ecs.Secret.from_secrets_manager(db_secret, "port"),
                 "DB_DATABASE": ecs.Secret.from_secrets_manager(db_secret, "dbname"),
                 "DB_USERNAME": ecs.Secret.from_secrets_manager(db_secret, "username"),
@@ -207,11 +207,12 @@ class LaravelServiceStack(Stack):
         # Function to create DNS record in a hosted zone
         def create_dns_record(hosted_zone_id, zone_type):
             if hosted_zone_id and domain_name and app_subdomain:
-                # Look up the hosted zone
-                hosted_zone = route53.HostedZone.from_hosted_zone_id(
+                # Look up the hosted zone using fromHostedZoneAttributes instead of fromHostedZoneId
+                hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
                     self, 
                     f"Imported{zone_type}HostedZoneForNLB", 
-                    hosted_zone_id
+                    hosted_zone_id=hosted_zone_id,
+                    zone_name=domain_name
                 )
                 
                 # Create a CNAME record for the custom domain

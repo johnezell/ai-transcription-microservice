@@ -349,6 +349,8 @@ class CdkInfraStack(Stack):
         db_name = f"{app_name.replace('-', '_')}_db"
         
         # Create a secret with fixed credentials for the prototype phase
+        # Important: We're not granting any permissions on this secret to other resources yet
+        # to avoid circular dependencies
         db_credentials = secretsmanager.Secret(self, "DBCredentialsSecret",
             secret_name=f"{app_name}-db-credentials",
             description="Hardcoded credentials for prototype database access",
@@ -383,6 +385,9 @@ class CdkInfraStack(Stack):
         
         cfn_secret.add_override("Properties.SecretString", base_json_string)
 
+        # Export the DB cluster secret for other stacks to use
+        self.db_cluster_secret = db_credentials
+        
         # RDS Aurora Serverless v2 MySQL Cluster with termination protection
         self.db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
             engine=rds.DatabaseClusterEngine.aurora_mysql(
@@ -403,7 +408,8 @@ class CdkInfraStack(Stack):
             )
         )
         
-        # Update the secret with the actual RDS endpoint
+        # Update the secret with the actual RDS endpoint, but not yet with any custom domain
+        # to avoid circular dependencies
         updated_json = '{' + \
             f'"username":"admin",' + \
             f'"password":"Thx11381!",' + \
@@ -415,68 +421,25 @@ class CdkInfraStack(Stack):
         # Update the secret with the RDS endpoint
         cfn_secret.add_override("Properties.SecretString", updated_json)
 
-        # Export the DB cluster secret for other stacks to use
-        self.db_cluster_secret = db_credentials
-
         # Add a comment to indicate these are hardcoded credentials for prototype only
         CfnOutput(self, "PrototypeWarningOutput",
             value="WARNING: Using hardcoded credentials for prototype only. Change for production!",
             description="Warning about hardcoded credentials"
         )
         
-        # Create custom DNS records for the database in both private and public hosted zones
-        self.db_custom_endpoint = None
+        # Create db_custom_endpoint variable without DNS yet
+        db_custom_domain = f"{db_subdomain}.{domain_name}" if domain_name and db_subdomain else None
+        self.db_custom_endpoint = db_custom_domain
         
-        # Function to create DNS record in a hosted zone
-        def create_dns_record(hosted_zone_id, zone_type):
-            if hosted_zone_id and domain_name:
-                # Look up the hosted zone by ID and zone name (using fromHostedZoneAttributes instead of fromHostedZoneId)
-                hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
-                    self, 
-                    f"Imported{zone_type}HostedZone", 
-                    hosted_zone_id=hosted_zone_id,
-                    zone_name=domain_name
-                )
-                
-                # Create the full database domain name
-                full_db_domain = f"{db_subdomain}.{domain_name}"
-                
-                # Create a CNAME record pointing to the database endpoint
-                db_record = route53.CnameRecord(
-                    self,
-                    f"Database{zone_type}CnameRecord",
-                    zone=hosted_zone,
-                    record_name=db_subdomain,
-                    domain_name=self.db_cluster.cluster_endpoint.hostname,
-                    ttl=Duration.minutes(5)  # Short TTL for prototype
-                )
-                
-                self.db_custom_endpoint = full_db_domain
-                
-                # Output the custom domain endpoint for this zone
-                CfnOutput(self, f"{zone_type}CustomDatabaseEndpoint",
-                    value=full_db_domain,
-                    description=f"Custom domain name for database connection in {zone_type} zone",
-                    export_name=f"{app_name}-{zone_type.lower()}-custom-db-endpoint"
-                )
-        
-        # Create records in both hosted zones if provided
-        if private_hosted_zone_id:
-            create_dns_record(private_hosted_zone_id, "Private")
-            
-        if public_hosted_zone_id:
-            create_dns_record(public_hosted_zone_id, "Public")
-        
-        # For the custom domain information
-        custom_domain = f"{db_subdomain}.{domain_name}" if domain_name and db_subdomain else None
-        
-        if custom_domain:
+        # Output the custom domain even if we don't create DNS records
+        if db_custom_domain:
             CfnOutput(self, "CustomDomainOutput",
-                value=custom_domain,
+                value=db_custom_domain,
                 description="Custom domain for the database (use this instead of host in the secret)",
                 export_name=f"{app_name}-db-custom-domain"
             )
         
+        # Database outputs
         CfnOutput(self, "DbCredentialsOutput",
             value="Username: admin, Password: Thx11381! (For prototype only, do not use in production)",
             description="Hardcoded database credentials for prototype use"
@@ -500,6 +463,10 @@ class CdkInfraStack(Stack):
             export_name=f"{app_name}-db-cluster-secret-arn"
         )
         
+        # To break the circular dependency, we'll add the DNS records in a separate
+        # code block - AFTER all IAM roles have been created and consumed by other resources
+        
+        # First let's output all the regular resources
         # === END DATABASE RESOURCES ===
 
         # Other Outputs
@@ -574,3 +541,44 @@ class CdkInfraStack(Stack):
             value=shared_task_role.role_arn,
             description="ARN of the Shared Application Task Role"
         )
+        
+        # === DNS RECORDS SECTION ===
+        # Creating DNS records after all other resources to avoid circular dependencies
+        
+        # Function to create DNS record in a hosted zone
+        def create_dns_record(hosted_zone_id, zone_type):
+            if hosted_zone_id and domain_name and db_subdomain:
+                # Look up the hosted zone by ID and zone name
+                hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+                    self, 
+                    f"Imported{zone_type}HostedZone", 
+                    hosted_zone_id=hosted_zone_id,
+                    zone_name=domain_name
+                )
+                
+                # Create the full database domain name
+                full_db_domain = f"{db_subdomain}.{domain_name}"
+                
+                # Create a CNAME record pointing to the database endpoint
+                db_record = route53.CnameRecord(
+                    self,
+                    f"Database{zone_type}CnameRecord",
+                    zone=hosted_zone,
+                    record_name=db_subdomain,
+                    domain_name=self.db_cluster.cluster_endpoint.hostname,
+                    ttl=Duration.minutes(5)  # Short TTL for prototype
+                )
+                
+                # Output the custom domain endpoint for this zone
+                CfnOutput(self, f"{zone_type}CustomDatabaseEndpoint",
+                    value=full_db_domain,
+                    description=f"Custom domain name for database connection in {zone_type} zone",
+                    export_name=f"{app_name}-{zone_type.lower()}-custom-db-endpoint"
+                )
+        
+        # Create DNS records in both hosted zones if provided
+        if private_hosted_zone_id:
+            create_dns_record(private_hosted_zone_id, "Private")
+            
+        if public_hosted_zone_id:
+            create_dns_record(public_hosted_zone_id, "Public")

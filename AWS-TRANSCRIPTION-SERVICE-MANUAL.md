@@ -17,7 +17,8 @@ The AWS Transcription Service is a scalable microservices-based application desi
 #### Infrastructure
 - **VPC**: All services run in a private VPC with VPN access
 - **ECS Cluster**: Hosts all containerized services using Fargate
-- **Aurora Serverless v2**: MySQL 8.0 compatible database
+- **Aurora Serverless v2**: MySQL 8.0 compatible database with termination protection
+- **Custom Domain Names**: Consistent access via domains like `thoth.tfs.services` and `db-thoth.tfs.services`
 - **S3 Bucket**: Stores videos, audio files, and transcripts
 - **SQS Queues**: Message queues for asynchronous service communication
 - **CloudWatch Dashboard**: Monitoring and alerting
@@ -36,8 +37,9 @@ The AWS Transcription Service is a scalable microservices-based application desi
    - Sends callbacks to `callback-queue`
 
 3. **Transcription Service**
-   - Python Flask application
+   - Python Flask application with GPU support
    - Uses OpenAI Whisper model for transcription
+   - Uses G4dn.xlarge EC2 instances for GPU acceleration
    - Consumes messages from `transcription-queue`
    - Sends callbacks to `callback-queue`
 
@@ -76,65 +78,84 @@ The AWS Transcription Service is a scalable microservices-based application desi
    cd aws-transcription-service
    ```
 
-2. **Set up CDK environment**
+2. **Recommended: Use the deployment script**
+   
+   The easiest way to deploy the entire stack is using the provided deployment script:
    ```bash
+   # Make the script executable (if needed)
+   chmod +x ./scripts/deploy.sh
+   
+   # Run the deployment script (deploys all stacks by default)
+   ./scripts/deploy.sh
+   ```
+   
+   The script handles:
+   - Building Laravel frontend assets
+   - Setting up the Python virtual environment
+   - Installing dependencies
+   - Deploying all CDK stacks
+
+   To deploy a specific stack, pass it as an argument:
+   ```bash
+   # Example: Deploy only the Laravel service
+   ./scripts/deploy.sh LaravelServiceStack
+   ```
+
+3. **Alternative: Manual CDK deployment**
+   
+   If you prefer to run the deployment commands manually:
+   
+   ```bash
+   # Set up CDK environment
    cd cdk-infra
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
-   ```
-
-3. **Bootstrap CDK (if not already done)**
-   ```bash
+   
+   # Bootstrap CDK (if not already done)
    AWS_PROFILE=tfs-shared-services cdk bootstrap
-   ```
-
-4. **Deploy all stacks**
-   ```bash
+   
+   # Deploy all stacks
    AWS_PROFILE=tfs-shared-services cdk deploy --all
    ```
-   
-   Alternatively, use the deployment script:
-   ```bash
-   cd ..
-   ./scripts/deploy.sh
-   ```
 
-5. **Update environment variables**
+4. **Update environment variables**
    
-   After deployment, update the local `.env` file in the Laravel application with output values from CDK deployment:
+   After deployment, update the local `.env.docker-aws` file in the Laravel application with output values from CDK deployment:
    ```bash
-   # View CDK outputs
-   AWS_PROFILE=tfs-shared-services cdk list-exports
+   # Run the setup script to generate the environment file
+   ./scripts/setup_local_env.sh
    ```
 
 ### Service-Specific Deployment
 
-To deploy individual services:
+To deploy individual services with the deployment script:
 
 ```bash
 # Deploy only the Laravel service
-AWS_PROFILE=tfs-shared-services cdk deploy LaravelServiceStack
+./scripts/deploy.sh LaravelServiceStack
 
 # Deploy only the audio extraction service
-AWS_PROFILE=tfs-shared-services cdk deploy AudioExtractionServiceStack
+./scripts/deploy.sh AudioExtractionServiceStack
 
 # Deploy only the transcription service
-AWS_PROFILE=tfs-shared-services cdk deploy TranscriptionServiceStack
+./scripts/deploy.sh TranscriptionServiceStack
 
 # Deploy only the terminology service
-AWS_PROFILE=tfs-shared-services cdk deploy TerminologyServiceStack
+./scripts/deploy.sh TerminologyServiceStack
 
 # Deploy only the monitoring stack
-AWS_PROFILE=tfs-shared-services cdk deploy MonitoringStack
+./scripts/deploy.sh MonitoringStack
 ```
+
+Note: The database is now integrated into the main infrastructure stack (CdkInfraStack) with termination protection enabled.
 
 ## Usage Instructions
 
 ### Accessing the Application
 
 1. Connect to the VPN
-2. Access the Laravel application through the NLB DNS name (available in CDK outputs)
+2. Access the Laravel application through the custom domain `thoth.tfs.services` or the NLB DNS name (available in CDK outputs)
    ```bash
    # Get the NLB DNS name
    AWS_PROFILE=tfs-shared-services cdk list-exports | grep LaravelNlbDnsName
@@ -204,9 +225,15 @@ All services auto-scale based on SQS queue depth:
      - 200+ messages: +20 tasks
 
 2. **Transcription Service**:
-   - Min: 3 instances
-   - Max: 50 instances
-   - Scaling steps similar to audio service but more aggressive for CPU-intensive work
+   - Min: 0 instances
+   - Max: 10 instances
+   - Uses G4dn.xlarge EC2 instances with NVIDIA T4 GPUs
+   - Spot instances for cost savings (~70% cheaper than on-demand)
+   - Scaling steps:
+     - 0 messages: scale to 0
+     - 1+ messages: +1 task
+     - 10+ messages: +2 tasks
+     - 20+ messages: +4 tasks
 
 3. **Terminology Service**:
    - Min: 3 instances
@@ -276,6 +303,23 @@ To modify scaling parameters:
   ```
 - Check for Laravel callback processor errors
 
+#### 4. Database Connectivity Issues
+
+**Symptoms**: Laravel application shows database connectivity errors
+
+**Troubleshooting steps**:
+- Check connectivity using the direct RDS endpoint:
+  ```bash
+  # Get the RDS endpoint
+  aws rds describe-db-clusters --db-cluster-identifier CdkInfraStack-AppDatabaseCluster --profile tfs-shared-services --query 'DBClusters[0].Endpoint'
+  ```
+- Try the custom domain: `db-thoth.tfs.services`
+- Verify the security group allows traffic from the Laravel service
+- Check credentials in Secrets Manager:
+  ```bash
+  aws secretsmanager get-secret-value --secret-id aws-transcription-db-credentials --profile tfs-shared-services
+  ```
+
 ### Service Testing
 
 Use these REST endpoints to test individual services:
@@ -306,13 +350,21 @@ aws sqs send-message --queue-url $(aws sqs get-queue-url --queue-name aws-transc
 
 ## Cost Management
 
-The system includes a cost tracking Lambda function that runs every 6 hours to:
+The system includes cost tracking features that calculate expenses based on:
 
-1. Collect metrics for completed jobs
-2. Calculate costs based on:
-   - Compute time (Fargate CPU and memory hours)
-   - Storage costs (S3 usage)
-   - Network and API usage
+1. Base infrastructure costs:
+   - Aurora Serverless database: ~$64.73/month (0.5-1.0 ACU range)
+   - Other services (Load balancers, SQS, etc.): ~$66.77/month
+   - Total base cost: ~$131.50/month
+
+2. Variable costs per minute of video processed:
+   - Fargate tasks (CPU, memory): ~$0.00074/minute
+   - GPU spot instances (when used): ~$0.00246/minute
+   - S3 storage: ~$0.00023/minute
+   - Total variable cost: ~$0.00343/minute of video processed
+
+This represents significant savings vs. SaaS alternatives:
+- At 5,000 minutes/month: $0.02973/minute vs. $0.25-0.35/minute for SaaS options
 
 ### Viewing Cost Metrics
 

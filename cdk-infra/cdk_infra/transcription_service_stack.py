@@ -10,7 +10,8 @@ from aws_cdk import (
     aws_sqs as sqs,
     aws_servicediscovery as servicediscovery,
     aws_applicationautoscaling as appscaling,
-    Duration
+    Duration,
+    Tags
 )
 from constructs import Construct
 
@@ -58,6 +59,7 @@ class TranscriptionServiceStack(Stack):
         # Container Definition with GPU requirements
         transcription_container = transcription_task_definition.add_container("TranscriptionServiceContainer",
             image=ecs.ContainerImage.from_docker_image_asset(transcription_image_asset),
+            memory_limit_mib=8192,  # 8GB memory for Whisper model
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix=f"{app_name_context}-transcription",
                 log_group=transcription_log_group
@@ -88,6 +90,20 @@ class TranscriptionServiceStack(Stack):
         transcription_queue.grant_consume_messages(transcription_task_definition.task_role)
         callback_queue.grant_send_messages(transcription_task_definition.task_role)
 
+        # Ensure the cluster has GPU-capable EC2 instances
+        gpu_asg = cluster.add_capacity("GPUCapacity",
+            instance_type=ec2.InstanceType("g4dn.xlarge"),
+            machine_image=ecs.EcsOptimizedImage.amazon_linux2(hardware_type=ecs.AmiHardwareType.GPU),
+            min_capacity=0,
+            max_capacity=10,
+            desired_capacity=0,  # Start with 0 instances to save cost
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
+            spot_price="0.50"  # Optional: Use Spot instances to save cost (~70% discount)
+        )
+        
+        # Tag the ASG so our placement constraint can find it
+        Tags.of(gpu_asg).add("InstanceType", "g4dn.xlarge")
+        
         # Add capacity provider strategy to prioritize GPU instances
         # This requires adding GPU instances to your ECS cluster
         self.ec2_service = ecs.Ec2Service(self, "TranscriptionGPUService",

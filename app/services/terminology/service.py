@@ -75,8 +75,26 @@ def fetch_defined_terminology():
         logger.info(f"Fetching terminology from Laravel API: {TERMINOLOGY_EXPORT_ENDPOINT}")
         response = requests.get(TERMINOLOGY_EXPORT_ENDPOINT, timeout=15)
         response.raise_for_status()
-        DYNAMIC_TERMINOLOGY = response.json() # Expected format: {"category_slug": [{"term": ..., "patterns": [...]}, ...]}
-        logger.info(f"Successfully fetched {sum(len(terms) for terms in DYNAMIC_TERMINOLOGY.values())} terms across {len(DYNAMIC_TERMINOLOGY)} categories from API.")
+        
+        data = response.json()
+        
+        # Check the structure of the response and handle it appropriately
+        if isinstance(data, list):
+            # Convert list to dictionary structure expected by the rest of the code
+            DYNAMIC_TERMINOLOGY = {}
+            # Group terms by category if they have one
+            for item in data:
+                category = item.get('category_slug', 'uncategorized')
+                if category not in DYNAMIC_TERMINOLOGY:
+                    DYNAMIC_TERMINOLOGY[category] = []
+                DYNAMIC_TERMINOLOGY[category].append(item)
+            
+            logger.info(f"Successfully fetched and converted list data: {len(data)} terms across {len(DYNAMIC_TERMINOLOGY)} categories.")
+        else:
+            # Assume it's already a dictionary as expected
+            DYNAMIC_TERMINOLOGY = data
+            logger.info(f"Successfully fetched {sum(len(terms) for terms in DYNAMIC_TERMINOLOGY.values())} terms across {len(DYNAMIC_TERMINOLOGY)} categories from API.")
+        
         return True
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch terminology from Laravel API: {e}")

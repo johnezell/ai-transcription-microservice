@@ -491,10 +491,5 @@ if TRANSCRIPTION_QUEUE_URL and sqs_client:
     listener_thread.start()
     logger.info("Started SQS listener in background thread")
 
-# Start SQS listener when the app starts
-@app.before_first_request
-def start_listeners():
-    threading.Thread(target=listen_for_sqs_messages, daemon=True).start()
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_ENV') == 'development') 

@@ -96,7 +96,7 @@ class TranscriptionServiceStack(Stack):
             machine_image=ecs.EcsOptimizedImage.amazon_linux2(hardware_type=ecs.AmiHardwareType.GPU),
             min_capacity=0,
             max_capacity=10,
-            desired_capacity=0,  # Start with 0 instances to save cost
+            desired_capacity=1,  # Change from 0 to 1 to ensure one instance is always running
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             spot_price="0.50"  # Optional: Use Spot instances to save cost (~70% discount)
         )

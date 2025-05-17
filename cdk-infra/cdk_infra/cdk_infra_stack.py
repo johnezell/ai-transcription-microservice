@@ -306,6 +306,12 @@ class CdkInfraStack(Stack):
         callback_queue.grant_send_messages(shared_task_role)
         callback_queue.grant_consume_messages(shared_task_role)
         
+        # Add CloudWatch permissions
+        shared_task_role.add_to_policy(iam.PolicyStatement(
+            actions=["cloudwatch:PutMetricData"],
+            resources=["*"]  # CloudWatch metrics don't support resource-level permissions
+        ))
+        
         # Transcribe permissions removed as per user request for self-hosted Whisper AI
         self.shared_task_role = shared_task_role
 

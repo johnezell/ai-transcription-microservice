@@ -43,8 +43,6 @@ else:
 # Initialize CloudWatch client
 cloudwatch_client = boto3.client('cloudwatch', region_name=AWS_DEFAULT_REGION)
 
-# Start SQS listener when the app starts
-@app.before_first_request
 def start_listeners():
     threading.Thread(target=listen_for_sqs_messages, daemon=True).start()
 
@@ -370,8 +368,8 @@ def listen_for_sqs_messages():
 # Start SQS listener in background thread when app starts
 if AUDIO_EXTRACTION_QUEUE_URL and sqs_client:
     import threading
-    listener_thread = threading.Thread(target=listen_for_sqs_messages, daemon=True)
-    listener_thread.start()
+    # Start the listeners immediately instead of waiting for the first request
+    start_listeners()
     logger.info("Started SQS listener in background thread")
 
 if __name__ == '__main__':

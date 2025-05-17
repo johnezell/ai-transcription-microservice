@@ -70,8 +70,9 @@ rm -rf cdk.out
 echo "Deploying stack(s): ${STACKS_TO_DEPLOY}..."
 cdk deploy "${STACKS_TO_DEPLOY}" \
     --require-approval never \
-    --profile "${AWS_PROFILE}" -vvv \
-    # --region "${AWS_REGION}" # CDK typically infers region from profile or environment variables
+    --profile "${AWS_PROFILE}" \
+    --region "${AWS_REGION}" \
+    -vvv
 
 cd "${WORKSPACE_ROOT}"
 echo "--------------------------------------------------"

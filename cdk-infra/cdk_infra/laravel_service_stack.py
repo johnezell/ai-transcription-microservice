@@ -13,6 +13,7 @@ from aws_cdk import (
     aws_applicationautoscaling as appscaling,
     aws_route53 as route53,
     aws_route53_targets as targets,
+    aws_certificatemanager as acm,
     Duration,
     CfnOutput
 )
@@ -65,6 +66,12 @@ class LaravelServiceStack(Stack):
             task_role=shared_task_role
         )
 
+        # Import existing SSL certificate
+        ssl_certificate = acm.Certificate.from_certificate_arn(
+            self, "WildcardCertificate",
+            certificate_arn="arn:aws:acm:us-east-1:542876199144:certificate/4e2a5475-3b1a-4c6a-b4e4-444201f3bfe0"
+        )
+
         # Add container to the task definition
         laravel_container = laravel_task_definition.add_container("LaravelWebAppContainer",
             image=ecs.ContainerImage.from_docker_image_asset(laravel_image_asset),
@@ -78,7 +85,7 @@ class LaravelServiceStack(Stack):
                 "APP_ENV": "production", # Set to "local" or "development" if needed for debugging
                 "APP_KEY": "base64:N2Zq9+SyE/2dYCwtKpuDMgh0rTPoxZFbST7XqF8GRYA=", # IMPORTANT: Replace with your actual Laravel App Key from .env
                 "APP_DEBUG": "false",
-                "APP_URL": f"http://{domain_name}", # Updated to use custom domain
+                "APP_URL": f"https://{domain_name}", # Updated to use HTTPS
                 
                 "LOG_CHANNEL": "stderr",
                 "LOG_LEVEL": "debug",
@@ -123,18 +130,25 @@ class LaravelServiceStack(Stack):
         # Create an internal Network Load Balancer
         self.nlb = elbv2.NetworkLoadBalancer(self, "LaravelNlb",
             vpc=vpc,
-            internet_facing=True, # Changed to internet-facing for public access
+            internet_facing=True, # Internet-facing for public access
             load_balancer_name=f"{app_name}-laravel-{int(datetime.datetime.now().timestamp())%1000}", # Shortened name with unique suffix
             vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PUBLIC, # Changed to public subnets
+                subnet_type=ec2.SubnetType.PUBLIC, # Public subnets for internet access
                 one_per_az=True # Crucial for NLB subnet selection
             )
         )
 
-        # Add a listener on port 80
-        listener = self.nlb.add_listener("LaravelNlbListener",
+        # Add a listener for HTTP on port 80
+        http_listener = self.nlb.add_listener("LaravelNlbHttpListener",
             port=80,
             protocol=elbv2.Protocol.TCP
+        )
+        
+        # Add a listener for HTTPS on port 443 with TLS
+        https_listener = self.nlb.add_listener("LaravelNlbHttpsListener",
+            port=443,
+            protocol=elbv2.Protocol.TLS,
+            certificates=[ssl_certificate]
         )
 
         # ECS Fargate Service for Laravel
@@ -156,15 +170,32 @@ class LaravelServiceStack(Stack):
             enable_execute_command=True # Enable ECS Exec
         )
 
-        # Add the Fargate service as a target to the NLB listener
-        listener.add_targets("LaravelFargateTarget",
+        # Create a target group for the HTTP listener
+        http_target_group = http_listener.add_targets("LaravelHttpFargateTarget",
             port=80,
             targets=[laravel_fargate_service.load_balancer_target(
                 container_name="LaravelWebAppContainer",
                 container_port=80
             )],
-            target_group_name=f"laravel-tg-{int(datetime.datetime.now().timestamp())%1000}", # Add unique name for target group
-            # Optional: configure health checks for the target group
+            target_group_name=f"laravel-http-tg-{int(datetime.datetime.now().timestamp())%1000}", # Unique name
+            health_check=elbv2.HealthCheck(
+                protocol=elbv2.Protocol.TCP,
+                port="80",
+                interval=Duration.seconds(30),
+                timeout=Duration.seconds(10),
+                healthy_threshold_count=3,
+                unhealthy_threshold_count=3
+            )
+        )
+
+        # Create a target group for the HTTPS listener
+        https_target_group = https_listener.add_targets("LaravelHttpsFargateTarget",
+            port=80,
+            targets=[laravel_fargate_service.load_balancer_target(
+                container_name="LaravelWebAppContainer",
+                container_port=80
+            )],
+            target_group_name=f"laravel-https-tg-{int(datetime.datetime.now().timestamp())%1000}", # Unique name
             health_check=elbv2.HealthCheck(
                 protocol=elbv2.Protocol.TCP,
                 port="80",
@@ -223,7 +254,7 @@ class LaravelServiceStack(Stack):
 
         # Add output with the custom URL
         CfnOutput(self, "LaravelCustomDomainUrl",
-            value=f"http://{domain_name}",
+            value=f"https://{domain_name}",
             description="Custom domain URL for the Laravel service"
         )
 

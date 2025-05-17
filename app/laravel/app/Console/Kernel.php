@@ -51,8 +51,13 @@ class Kernel extends ConsoleKernel
             }
         })->everyTenMinutes();
 
-        // Process the SQS callback queue every minute
-        $schedule->job(new ProcessCallbackQueueJob)->everyMinute();
+        // Process the SQS callback queue every minute, but only in production environment
+        if (app()->environment('production')) {
+            $schedule->job(new ProcessCallbackQueueJob)->everyMinute();
+            Log::info('SQS polling has been scheduled (production environment)');
+        } else {
+            Log::info('SQS polling is disabled (non-production environment)');
+        }
     }
 
     /**

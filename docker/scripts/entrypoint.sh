@@ -62,6 +62,28 @@ echo "Running database migrations..."
 timeout 120 php artisan migrate --force || echo "Migrations may not have completed successfully, but continuing startup..."
 echo "Database migrations completed."
 
+# Set PHP opcache configuration based on APP_ENV
+echo "Setting PHP opcache configuration based on APP_ENV: $APP_ENV..."
+PHP_CONF_D_PATH="/usr/local/etc/php/conf.d"
+# Ensure APP_ENV is available, provide a default if not set (though it should be from .env)
+: "${APP_ENV:=development}"
+
+if [ "$APP_ENV" != "production" ] && [ "$APP_ENV" != "prod" ]; then
+  echo "Using development opcache settings."
+  if [ -f /usr/local/etc/php/opcache.dev.ini ]; then
+    cp /usr/local/etc/php/opcache.dev.ini "$PHP_CONF_D_PATH/zz-opcache.ini"
+  else
+    echo "Warning: opcache.dev.ini not found."
+  fi
+else
+  echo "Using production opcache settings."
+  if [ -f /usr/local/etc/php/opcache.prod.ini ]; then
+    cp /usr/local/etc/php/opcache.prod.ini "$PHP_CONF_D_PATH/zz-opcache.ini"
+  else
+    echo "Warning: opcache.prod.ini not found."
+  fi
+fi
+
 echo "Starting supervisor..."
 # Start supervisor (which will start nginx and php-fpm)
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf 

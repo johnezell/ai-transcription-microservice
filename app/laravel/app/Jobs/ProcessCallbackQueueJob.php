@@ -43,6 +43,12 @@ class ProcessCallbackQueueJob implements ShouldQueue
      */
     public function handle()
     {
+        // Only run in production environment
+        if (!app()->environment('production')) {
+            Log::info('[ProcessCallbackQueueJob] SQS polling is disabled in non-production environments. Job will exit without processing.');
+            return;
+        }
+        
         $queueUrl = env('CALLBACK_QUEUE_URL');
         
         if (empty($queueUrl)) {

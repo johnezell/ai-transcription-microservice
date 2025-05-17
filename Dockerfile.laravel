@@ -27,6 +27,8 @@ RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
 # Configure PHP for large uploads
 COPY docker/php/custom.ini /usr/local/etc/php/conf.d/custom.ini
+COPY docker/php/opcache.dev.ini /usr/local/etc/php/opcache.dev.ini
+COPY docker/php/opcache.prod.ini /usr/local/etc/php/opcache.prod.ini
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -59,6 +61,8 @@ RUN echo "Building frontend assets" \
 # Copy entrypoint script
 COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY docker/scripts/run-npm-hot-if-dev.sh /usr/local/bin/run-npm-hot-if-dev.sh
+RUN chmod +x /usr/local/bin/run-npm-hot-if-dev.sh
 
 # Create required Laravel storage directories and set permissions.
 # entrypoint.sh also handles some permissions and cache clearing.

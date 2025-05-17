@@ -39,6 +39,13 @@ class ListenCallbackQueueCommand extends Command
      */
     public function handle()
     {
+        // Only run in production environment
+        if (!app()->environment('production')) {
+            $this->warn('SQS polling is disabled in non-production environments. Command will exit without processing.');
+            Log::info('ListenCallbackQueueCommand exited because environment is not production');
+            return 0;
+        }
+        
         $this->info('Starting to listen for callbacks on the SQS queue...');
         
         $daemon = $this->option('daemon');

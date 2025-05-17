@@ -114,5 +114,9 @@
         ]
       }
     ]
+  },
+  "hosted-zone:account=542876199144:domainName=tfs.services:region=us-east-1": {
+    "Id": "/hostedzone/Z07716653GDXJUDL4P879",
+    "Name": "tfs.services."
   }
 }

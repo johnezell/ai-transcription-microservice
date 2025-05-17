@@ -11,6 +11,8 @@ from aws_cdk import (
     aws_servicediscovery as servicediscovery,
     aws_elasticloadbalancingv2 as elbv2,
     aws_applicationautoscaling as appscaling,
+    aws_route53 as route53,
+    aws_route53_targets as targets,
     Duration,
     CfnOutput
 )
@@ -35,6 +37,8 @@ class LaravelServiceStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         app_name = "aws-transcription" # Consistent with CdkInfraStack
+        # Define the subdomain for Laravel app
+        domain_name = "transcription.tfs.services"
 
         # Docker Image Asset for Laravel
         # Assumes Dockerfile.laravel is at the root of the workspace, 
@@ -74,7 +78,7 @@ class LaravelServiceStack(Stack):
                 "APP_ENV": "production", # Set to "local" or "development" if needed for debugging
                 "APP_KEY": "base64:N2Zq9+SyE/2dYCwtKpuDMgh0rTPoxZFbST7XqF8GRYA=", # IMPORTANT: Replace with your actual Laravel App Key from .env
                 "APP_DEBUG": "false",
-                "APP_URL": "http://localhost", # This will be the service's internal DNS, not actually localhost
+                "APP_URL": f"http://{domain_name}", # Updated to use custom domain
                 
                 "LOG_CHANNEL": "stderr",
                 "LOG_LEVEL": "debug",
@@ -119,10 +123,10 @@ class LaravelServiceStack(Stack):
         # Create an internal Network Load Balancer
         self.nlb = elbv2.NetworkLoadBalancer(self, "LaravelNlb",
             vpc=vpc,
-            internet_facing=False, # Internal NLB
-            load_balancer_name=f"{app_name}-laravel-nlb",
+            internet_facing=True, # Changed to internet-facing for public access
+            load_balancer_name=f"{app_name}-laravel-{int(datetime.datetime.now().timestamp())%1000}", # Shortened name with unique suffix
             vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
+                subnet_type=ec2.SubnetType.PUBLIC, # Changed to public subnets
                 one_per_az=True # Crucial for NLB subnet selection
             )
         )
@@ -159,6 +163,7 @@ class LaravelServiceStack(Stack):
                 container_name="LaravelWebAppContainer",
                 container_port=80
             )],
+            target_group_name=f"laravel-tg-{int(datetime.datetime.now().timestamp())%1000}", # Add unique name for target group
             # Optional: configure health checks for the target group
             health_check=elbv2.HealthCheck(
                 protocol=elbv2.Protocol.TCP,
@@ -200,6 +205,26 @@ class LaravelServiceStack(Stack):
         CfnOutput(self, "LaravelNlbDnsName",
             value=self.nlb.load_balancer_dns_name,
             description="DNS name of the Network Load Balancer for the Laravel service"
+        )
+
+        # Import the existing hosted zone
+        hosted_zone = route53.HostedZone.from_lookup(self, "TfsServicesHostedZone",
+            domain_name="tfs.services"
+        )
+
+        # Create A record pointing to the NLB
+        route53.ARecord(self, "LaravelCustomDomain",
+            zone=hosted_zone,
+            record_name="transcription",  # This creates transcription.tfs.services
+            target=route53.RecordTarget.from_alias(
+                targets.LoadBalancerTarget(self.nlb)
+            )
+        )
+
+        # Add output with the custom URL
+        CfnOutput(self, "LaravelCustomDomainUrl",
+            value=f"http://{domain_name}",
+            description="Custom domain URL for the Laravel service"
         )
 
         # Add any outputs if needed, e.g., service name

@@ -23,6 +23,7 @@ Route::get('/', function () {
     return redirect()->route('dashboard');
 });
 
+// Dashboard route - placed at the top for priority
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
 // Video management routes - no auth required
@@ -267,5 +268,15 @@ Route::get('/courses/segments', [App\Http\Controllers\ChannelController::class, 
 Route::get('/courses/segments/example', [App\Http\Controllers\ChannelController::class, 'runExampleQuery'])->name('channels.example');
 Route::get('/courses/segments/nested', [App\Http\Controllers\ChannelController::class, 'getNestedStructure'])->name('channels.nested');
 Route::post('/segments/import/{segmentId}', [App\Http\Controllers\ChannelController::class, 'importSegment'])->name('channels.import.segment');
+
+// Diagnostic route to check dashboard route
+Route::get('/test-dashboard-route', function () {
+    return [
+        'dashboard_url' => route('dashboard'),
+        'can_access_dashboard' => \Illuminate\Support\Facades\Route::has('dashboard'),
+        'dashboard_controller_exists' => class_exists(\App\Http\Controllers\DashboardController::class),
+        'dashboard_view_exists' => file_exists(resource_path('js/Pages/Dashboard.vue')),
+    ];
+});
 
 require __DIR__.'/auth.php';

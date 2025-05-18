@@ -32,6 +32,21 @@ This document contains key information and decisions to help the AI assistant ma
 *   **Logging:** Explicit CloudWatch Log Groups are defined for each service with a default retention (e.g., ONE_MONTH).
 *   **Prototype Cleanup:** Resources like ECR repositories, Log Groups, S3 Bucket, and the RDS cluster are configured with `RemovalPolicy.DESTROY` for easier cleanup. ECR repositories also use `auto_delete_images=True` (or `empty_on_delete=True`). S3 bucket uses `auto_delete_objects=True`.
 
+## Laravel Cache Management
+
+*   **Route Caching:** Laravel caches routes for performance in production environments.
+*   **Important Note:** After making changes to routes (`web.php`, etc.), the route cache must be cleared for changes to take effect.
+*   **Cache Clearing Commands:**
+    *   Clear route cache only: `php artisan route:clear`
+    *   Clear all caches (config, view, route): `php artisan optimize:clear`
+*   **When to Clear Cache:**
+    *   After modifying any route definition
+    *   After changing controller methods referenced by routes
+    *   When experiencing unexpected routing behavior
+    *   When new routes don't appear to work despite correct code
+*   **Route Cache Status Check:** `php artisan route:list` shows all registered routes
+*   **Working Directory:** Execute these commands from within the Laravel project directory (`app/laravel`)
+
 ## Tooling Notes for AI Assistant
 
 *   **AWS CLI Commands:** When running AWS CLI commands where output needs to be parsed (especially `describe-*` commands), use the `--no-cli-pager` option and request `--output json`. For example:

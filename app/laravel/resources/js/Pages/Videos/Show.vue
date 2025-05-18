@@ -472,6 +472,16 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
                                 
+                                <!-- AdvancedSubtitles Component -->
+                                <div v-if="videoData.transcript_json_url && videoElement" class="mt-6">
+                                    <AdvancedSubtitles
+                                        :video-ref="videoElement"
+                                        :transcript-json-url="videoData.transcript_json_url" 
+                                        :srt-url="videoData.subtitles_url" 
+                                        :transcript-text="effectiveTranscriptText"  
+                                    />
+                                </div>
+                                
                                 <!-- Synchronized Transcript (for segment-by-segment clicking) -->
                                 <div v-if="videoData.transcript_json_url && videoElement" class="mt-6">
                                     <SynchronizedTranscript

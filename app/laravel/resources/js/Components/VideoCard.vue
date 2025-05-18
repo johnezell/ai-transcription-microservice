@@ -49,13 +49,6 @@
                 View
             </button>
             <button 
-                class="action-btn transcribe-btn"
-                @click="$emit('transcribe', video)"
-                :disabled="video.status === 'processing' || video.status === 'is_processing'"
-            >
-                Transcribe
-            </button>
-            <button 
                 class="action-btn delete-btn"
                 @click="confirmDelete"
             >
@@ -64,16 +57,18 @@
         </div>
 
         <!-- Delete confirmation dialog -->
-        <div v-if="showDeleteConfirm" class="delete-confirm-overlay" @click.self="showDeleteConfirm = false">
-            <div class="delete-confirm-dialog">
-                <h4>Delete Video?</h4>
-                <p>Are you sure you want to delete "{{ video.original_filename }}"? This action cannot be undone.</p>
-                <div class="confirm-actions">
-                    <button class="cancel-btn" @click="showDeleteConfirm = false">Cancel</button>
-                    <button class="confirm-delete-btn" @click="handleDelete">Delete</button>
+        <Teleport to="body">
+            <div v-if="showDeleteConfirm" class="delete-confirm-overlay" @click.self="showDeleteConfirm = false">
+                <div class="delete-confirm-dialog">
+                    <h4 class="delete-title">Delete Video?</h4>
+                    <p class="delete-message">Are you sure you want to delete "{{ video.original_filename }}"? This action cannot be undone.</p>
+                    <div class="confirm-actions">
+                        <button class="cancel-btn" @click="showDeleteConfirm = false">Cancel</button>
+                        <button class="confirm-delete-btn" @click="handleDelete">Delete</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Teleport>
     </div>
 </template>
 
@@ -103,7 +98,7 @@ export default defineComponent({
             default: true
         }
     },
-    emits: ['view', 'transcribe', 'delete'],
+    emits: ['view', 'delete'],
     setup(props, { emit }) {
         const showDeleteConfirm = ref(false);
         const thumbnailError = ref(false);
@@ -219,6 +214,19 @@ export default defineComponent({
     background-color: rgba(0, 0, 0, 0.025);
 }
 
+.placeholder-text {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 0.5rem;
+    padding: 0 1rem;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
 .status-badge {
     position: absolute;
     top: 0.5rem;
@@ -280,10 +288,8 @@ export default defineComponent({
     color: white;
 }
 
-.transcribe-btn {
-    background-color: white;
-    color: #1f2937;
-    border-color: #e5e7eb;
+.view-btn:hover {
+    background-color: #2563eb;
 }
 
 .delete-btn {
@@ -291,6 +297,10 @@ export default defineComponent({
     color: #ef4444;
     border-color: #fecaca;
     margin-left: auto;
+}
+
+.delete-btn:hover {
+    background-color: #fee2e2;
 }
 
 .delete-confirm-overlay {
@@ -313,5 +323,52 @@ export default defineComponent({
     max-width: 24rem;
     width: 90%;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.delete-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.75rem;
+}
+
+.delete-message {
+    font-size: 0.875rem;
+    color: #4b5563;
+    margin-bottom: 1.5rem;
+}
+
+.confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.cancel-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 0.375rem;
+    background-color: #f3f4f6;
+    color: #1f2937;
+    transition: all 0.15s ease;
+}
+
+.cancel-btn:hover {
+    background-color: #e5e7eb;
+}
+
+.confirm-delete-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 0.375rem;
+    background-color: #ef4444;
+    color: white;
+    transition: all 0.15s ease;
+}
+
+.confirm-delete-btn:hover {
+    background-color: #dc2626;
 }
 </style> 

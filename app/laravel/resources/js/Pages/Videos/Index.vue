@@ -24,11 +24,6 @@ function handleView(video) {
     router.visit(route('videos.show', video.id));
 }
 
-// Handle transcribe video
-function handleTranscribe(video) {
-    router.post(route('videos.transcription.request', video.id));
-}
-
 // Handle delete video
 function handleDelete(video) {
     router.delete(route('videos.destroy', video.id));
@@ -70,7 +65,6 @@ function handleDelete(video) {
                                 :key="video.id" 
                                 :video="video"
                                 @view="handleView"
-                                @transcribe="handleTranscribe"
                                 @delete="handleDelete"
                             />
                         </div>

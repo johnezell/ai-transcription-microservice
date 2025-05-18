@@ -237,4 +237,29 @@ This document contains key information and decisions to help the AI assistant ma
     *   Explore GPU-based transcription for further performance improvements.
 *   **Commit all recent changes**.
 
+## UX Improvements
+
+The project is undergoing UX improvements as documented in `uxplan.md`. Key aspects include:
+
+### UX Improvement Areas
+
+* **Navigation Redesign**: Moving from a cluttered top bar to a hierarchical sidebar navigation
+* **Video Card Components**: Enhanced visual presentation with thumbnails and better status indication
+* **Job Presets**: Adding support for customizable transcription job configurations
+* **Upload Workflow**: Creating a multi-step, guided process with real-time feedback
+* **Dashboard View**: Providing a central overview of system status and recent activity
+
+### UX-Infrastructure Integration Points
+
+* **Thumbnail Generation**: Using ffmpeg in the audio extraction service to generate thumbnails stored in S3
+* **Job Preset Configuration**: Adding database tables and updating transcription service to use preset settings
+* **Real-time Updates**: Leveraging existing SQS communication for better progress visualization
+* **Enhanced Metrics**: Adding UX-specific metrics to the existing CloudWatch dashboard
+
+### Implementation Status
+
+Implementation is following the priority order in `uxplan.md`. The project team should refer to this document for the current state of UX improvements and how they integrate with the AWS infrastructure.
+
+*(This section will be updated as UX improvements are implemented)*
+
 *(This file should be updated as the project progresses)* 

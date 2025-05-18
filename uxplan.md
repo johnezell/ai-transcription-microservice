@@ -213,15 +213,27 @@ This plan outlines the features we'll implement in order of priority. Rather tha
   - ✅ Created CRUD operations with validation
   - ✅ Added preset details display in upload form
   - ✅ Standardized terminology to "Transcription Presets" throughout the UI and URLs
+  - ✅ Made the preset management interface mobile-responsive
+- Enhanced Transcript Viewing:
+  - ✅ Created new EnhancedTranscriptViewer component that combines and improves functionality from existing components
+  - ✅ Implemented synchronized highlighting of text with video playback
+  - ✅ Added confidence visualization for transcribed words
+  - ✅ Added two view modes: segments view and continuous text view
+  - ✅ Implemented search functionality within transcript content
+  - ✅ Added interactive word-level navigation (click to seek to specific words)
+  - ✅ Improved mobile-responsiveness of transcript display
+  - ✅ Added better visual hierarchy with clearer segment boundaries and timestamps
+  - ✅ Created better error states and loading indicators
   
 ### In Progress:
 - Consistent button styles and patterns
 - Course visualization components
+- Terminology visualization integration with transcript content
 
 ### Next Focus Areas:
-1. Enhance transcript viewing functionality
-2. Implement interactive transcript viewing functionality
-3. Enhance course visualization
+1. Integrate terminology recognition results with transcript display for highlighting specialized terms
+2. Enhance course visualization
+3. Implement loading states and visual polish
 
 ## Development Process
 

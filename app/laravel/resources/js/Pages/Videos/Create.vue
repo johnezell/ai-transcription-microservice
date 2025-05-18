@@ -251,7 +251,7 @@ const formatFileSize = (bytes) => {
                             <div class="flex items-center justify-between">
                                 <div v-for="step in totalSteps" :key="step" class="flex-1 relative">
                                     <!-- Step connector line -->
-                                    <div v-if="step < totalSteps" class="absolute top-1/2 w-full h-0.5" :class="step < currentStep ? 'bg-indigo-600' : 'bg-gray-300'"></div>
+                                    <div v-if="step !== totalSteps" class="absolute top-1/2 w-full h-0.5" :class="step < currentStep ? 'bg-indigo-600' : 'bg-gray-300'"></div>
                                     
                                     <!-- Step circle -->
                                     <div class="relative flex items-center justify-center">

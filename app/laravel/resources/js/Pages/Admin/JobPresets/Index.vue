@@ -74,7 +74,65 @@ const setAsDefault = (preset) => {
                     
                     <!-- Presets table -->
                     <div v-else class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
+                        <!-- Mobile view (card-based) -->
+                        <div class="md:hidden space-y-4">
+                            <div v-for="preset in presets" :key="preset.id" class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                                <div class="flex justify-between items-start mb-2">
+                                    <h3 class="font-medium text-gray-900">{{ preset.name }}</h3>
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                          :class="{
+                                            'bg-green-100 text-green-800': preset.model === 'base',
+                                            'bg-blue-100 text-blue-800': preset.model === 'small',
+                                            'bg-purple-100 text-purple-800': preset.model === 'medium',
+                                            'bg-indigo-100 text-indigo-800': preset.model === 'large' || preset.model === 'large-v2',
+                                            'bg-pink-100 text-pink-800': preset.model === 'large-v3',
+                                          }">
+                                        {{ preset.model }}
+                                    </span>
+                                </div>
+                                <div v-if="preset.description" class="text-sm text-gray-500 mb-2">
+                                    {{ preset.description }}
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 mb-3 text-sm">
+                                    <div>
+                                        <span class="text-gray-500">Language:</span>
+                                        <span class="ml-1">{{ preset.language ? preset.language : 'Auto-detect' }}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-500">Status:</span>
+                                        <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
+                                              :class="preset.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'">
+                                            {{ preset.is_active ? 'Active' : 'Inactive' }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <button @click="setAsDefault(preset)" class="text-sm" :disabled="preset.is_default">
+                                        <div v-if="preset.is_default" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                            Default
+                                        </div>
+                                        <div v-else class="text-indigo-600 hover:text-indigo-900">
+                                            Set as Default
+                                        </div>
+                                    </button>
+                                    <div class="flex space-x-2">
+                                        <Link :href="route('admin.job-presets.edit', preset.id)" class="px-3 py-1 bg-indigo-100 text-indigo-800 rounded hover:bg-indigo-200 text-sm font-medium">
+                                            Edit
+                                        </Link>
+                                        <button 
+                                            @click="confirmPresetDeletion(preset)" 
+                                            class="px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-sm font-medium" 
+                                            :disabled="preset.is_default"
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Desktop table view -->
+                        <table class="min-w-full divide-y divide-gray-200 hidden md:table">
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
@@ -125,10 +183,14 @@ const setAsDefault = (preset) => {
                                         </button>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <Link :href="route('admin.job-presets.edit', preset.id)" class="text-indigo-600 hover:text-indigo-900 mr-3">
+                                        <Link :href="route('admin.job-presets.edit', preset.id)" class="text-indigo-600 hover:text-indigo-900 mr-2">
                                             Edit
                                         </Link>
-                                        <button @click="confirmPresetDeletion(preset)" class="text-red-600 hover:text-red-900" :disabled="preset.is_default">
+                                        <button 
+                                            @click="confirmPresetDeletion(preset)" 
+                                            class="text-red-600 hover:text-red-900" 
+                                            :disabled="preset.is_default"
+                                        >
                                             Delete
                                         </button>
                                     </td>

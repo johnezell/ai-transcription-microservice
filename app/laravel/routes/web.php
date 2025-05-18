@@ -47,7 +47,7 @@ Route::delete('/courses/{course}/destroy-with-videos', [\App\Http\Controllers\Co
     ->name('courses.destroy-with-videos');
 
 // Terminology Management (admin routes)
-Route::prefix('admin')->name('admin.')->group(function () {
+Route::prefix('admin')->name('admin.')->middleware('auth')->group(function () {
     // Main terminology management page
     Route::get('/terminology', [App\Http\Controllers\Admin\TerminologyController::class, 'index'])
         ->name('terminology.index');

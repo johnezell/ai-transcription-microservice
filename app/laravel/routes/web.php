@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\EnhancementIdeaController;
+use App\Http\Controllers\DashboardController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -19,12 +20,10 @@ use Inertia\Inertia;
 */
 
 Route::get('/', function () {
-    return redirect()->route('videos.index');
+    return redirect()->route('dashboard');
 });
 
-Route::get('/dashboard', function () {
-    return redirect()->route('videos.index');
-})->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
 // Video management routes - no auth required
 Route::resource('videos', VideoController::class);

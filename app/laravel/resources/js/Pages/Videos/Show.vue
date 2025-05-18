@@ -32,6 +32,19 @@ const overallConfidence = ref(null);
 const processingMusicTerms = ref(false);
 const processingTerminology = ref(false);
 
+function getStatusMessage() {
+    if (videoData.value.status === 'processing') {
+        return 'Processing your video and extracting audio';
+    } else if (videoData.value.status === 'transcribing') {
+        return 'Generating transcript from audio';
+    } else if (videoData.value.status === 'processing_music_terms') {
+        return 'Identifying terminology in transcript';
+    } else if (videoData.value.is_processing) {
+        return 'Processing your video';
+    }
+    return 'Processing';
+}
+
 const effectiveTranscriptText = computed(() => {
     if (transcriptData.value && typeof transcriptData.value.text === 'string') {
         console.log('[Show.vue DEBUG] Using text from fetched transcriptData.value.text');
@@ -743,18 +756,6 @@ export default {
             if (confidence >= 0.8) return '#10b981';
             if (confidence >= 0.5) return '#f59e0b';
             return '#ef4444';
-        },
-        getStatusMessage() {
-            if (videoData.value.status === 'processing') {
-                return 'Processing your video and extracting audio';
-            } else if (videoData.value.status === 'transcribing') {
-                return 'Generating transcript from audio';
-            } else if (videoData.value.status === 'processing_music_terms') {
-                return 'Identifying terminology in transcript';
-            } else if (videoData.value.is_processing) {
-                return 'Processing your video';
-            }
-            return 'Processing';
         }
     }
 }

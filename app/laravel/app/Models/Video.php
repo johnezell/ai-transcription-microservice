@@ -19,26 +19,21 @@ class Video extends Model
      */
     protected $fillable = [
         'original_filename',
-        'storage_path',
-        's3_key',
-        'mime_type',
+        'user_id',
         'size_bytes',
-        'status',
-        'metadata',
+        'mime_type',
+        's3_key',
         'audio_path',
-        'audio_duration',
-        'audio_size',
         'transcript_path',
-        'transcript_text',
-        'transcript_json',
-        'transcript_srt',
         'terminology_path',
-        'terminology_json',
-        'has_terminology',
-        'terminology_count',
-        'terminology_metadata',
+        'music_terms_path',
+        'thumbnail_path',
+        'status',
         'course_id',
         'lesson_number',
+        'has_terminology',
+        'has_music_terms',
+        'terminology_count',
     ];
     
     /**
@@ -101,44 +96,27 @@ class Video extends Model
     }
     
     /**
-     * Get the URL for the audio file if it exists.
-     * For S3 stored files, this will be a temporary pre-signed URL.
-     * 
-     * @return string|null
+     * Get the URL for the video's audio file.
      */
-    public function getAudioUrlAttribute(): ?string
+    public function getAudioUrlAttribute()
     {
-        if (empty($this->audio_path)) {
-            Log::debug('[Video Model] getAudioUrlAttribute: audio_path is empty.', ['video_id' => $this->id]);
+        if (!$this->audio_path) {
             return null;
         }
 
-        if (Storage::disk('s3')->exists($this->audio_path)) {
-            try {
-                $s3Url = Storage::disk('s3')->temporaryUrl($this->audio_path, now()->addMinutes(15));
-                Log::info('[Video Model] getAudioUrlAttribute: Generated S3 temporary URL for audio.', [
-                    'video_id' => $this->id,
-                    's3_key_audio' => $this->audio_path,
-                    's3_exists' => true,
-                    // 'generated_url' => $s3Url
-                ]);
-                return $s3Url;
-            } catch (\Exception $e) {
-                Log::error('[Video Model] getAudioUrlAttribute: Error generating S3 temporary URL for audio.', [
-                    'video_id' => $this->id,
-                    's3_key_audio' => $this->audio_path,
-                    'error' => $e->getMessage(),
-                ]);
-                return null;
-            }
-        } else {
-            Log::warning('[Video Model] getAudioUrlAttribute: S3 key for audio does not exist on s3 disk.', [
-                'video_id' => $this->id,
-                's3_key_audio' => $this->audio_path,
-                's3_exists' => false
-            ]);
+        return $this->getS3Url($this->audio_path);
+    }
+    
+    /**
+     * Get the URL for the video's thumbnail image.
+     */
+    public function getThumbnailUrlAttribute()
+    {
+        if (!$this->thumbnail_path) {
             return null;
         }
+
+        return $this->getS3Url($this->thumbnail_path);
     }
     
     /**
@@ -518,5 +496,28 @@ class Video extends Model
             ->where('lesson_number', '<', $this->lesson_number)
             ->orderBy('lesson_number', 'desc')
             ->first();
+    }
+
+    /**
+     * Get a temporary S3 URL for a given S3 key
+     *
+     * @param string $s3Key
+     * @return string|null
+     */
+    protected function getS3Url(string $s3Key): ?string
+    {
+        try {
+            if (Storage::disk('s3')->exists($s3Key)) {
+                return Storage::disk('s3')->temporaryUrl($s3Key, now()->addMinutes(15));
+            }
+        } catch (\Exception $e) {
+            Log::error('Error generating S3 URL', [
+                'video_id' => $this->id,
+                's3_key' => $s3Key,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        return null;
     }
 }

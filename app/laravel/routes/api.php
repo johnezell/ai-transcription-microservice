@@ -482,3 +482,14 @@ Route::put('/videos/{id}/status', function($id) {
         ], 500);
     }
 });
+
+// Terminology routes
+Route::prefix('terminology')->group(function () {
+    Route::post('/{video}', [TerminologyController::class, 'process']);
+});
+
+// Thumbnail routes
+Route::prefix('videos')->group(function () {
+    Route::post('/{id}/thumbnail/callback', [App\Http\Controllers\VideoController::class, 'thumbnailCallback'])
+        ->name('api.videos.thumbnail.callback');
+});

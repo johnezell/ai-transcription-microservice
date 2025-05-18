@@ -30,6 +30,8 @@ Route::get('/dashboard', function () {
 Route::resource('videos', VideoController::class);
 Route::post('/videos/{video}/transcription', [VideoController::class, 'requestTranscription'])
     ->name('videos.transcription.request');
+Route::post('/videos/{video}/thumbnail', [VideoController::class, 'requestThumbnail'])
+    ->name('videos.thumbnail.request');
 
 // Course management routes
 Route::resource('courses', \App\Http\Controllers\CourseController::class);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\AudioExtractionJob;
+use App\Jobs\ThumbnailExtractionJob;
 use App\Models\Video;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -301,5 +302,55 @@ class VideoController extends Controller
             return redirect()->route('videos.show', $video)
                 ->with('error', 'An error occurred: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Update video
+     */
+    public function update(Request $request, Video $video)
+    {
+        // ... existing code ...
+    }
+
+    /**
+     * Generate a thumbnail for a video
+     */
+    public function requestThumbnail($id)
+    {
+        $video = Video::findOrFail($id);
+        
+        // If we already have a thumbnail, don't regenerate
+        if ($video->thumbnail_path) {
+            return response()->json(['message' => 'Thumbnail already exists', 'success' => true]);
+        }
+        
+        // Queue the job to generate the thumbnail
+        $videoKey = $video->s3_key;
+        $outputKey = "jobs/{$video->id}/thumbnail.jpg";
+        
+        // Add a job to extract an image frame from the video
+        ThumbnailExtractionJob::dispatch($video, $videoKey, $outputKey);
+        
+        return response()->json(['message' => 'Thumbnail generation requested', 'success' => true]);
+    }
+
+    /**
+     * Callback endpoint for thumbnail generation
+     */
+    public function thumbnailCallback(Request $request, $id)
+    {
+        $video = Video::findOrFail($id);
+        
+        $status = $request->input('status');
+        $thumbnailPath = $request->input('thumbnail_path');
+        
+        if ($status === 'completed' && $thumbnailPath) {
+            $video->thumbnail_path = $thumbnailPath;
+            $video->save();
+            
+            return response()->json(['message' => 'Thumbnail updated successfully', 'success' => true]);
+        }
+        
+        return response()->json(['message' => 'Failed to generate thumbnail', 'success' => false], 500);
     }
 }

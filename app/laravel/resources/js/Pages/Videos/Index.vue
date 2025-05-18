@@ -1,6 +1,8 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import VideoCard from '@/Components/VideoCard.vue';
+import { router } from '@inertiajs/vue3';
 
 defineProps({
     videos: Array,
@@ -15,6 +17,21 @@ function formatFileSize(bytes) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Handle view video
+function handleView(video) {
+    router.visit(route('videos.show', video.id));
+}
+
+// Handle transcribe video
+function handleTranscribe(video) {
+    router.post(route('videos.transcription.request', video.id));
+}
+
+// Handle delete video
+function handleDelete(video) {
+    router.delete(route('videos.destroy', video.id));
 }
 </script>
 
@@ -48,71 +65,14 @@ function formatFileSize(bytes) {
                         </div>
                         
                         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <div v-for="video in videos" :key="video.id" class="border rounded-lg overflow-hidden bg-gray-50">
-                                <div class="p-4">
-                                    <div class="flex items-center justify-between">
-                                        <h3 class="text-lg font-medium truncate" :title="video.original_filename">
-                                            {{ video.original_filename }}
-                                        </h3>
-                                        <span class="px-2 py-1 text-xs rounded-full" 
-                                            :class="{
-                                                'bg-green-100 text-green-800': video.status === 'completed',
-                                                'bg-yellow-100 text-yellow-800': video.is_processing,
-                                                'bg-blue-100 text-blue-800': video.status === 'uploaded',
-                                                'bg-red-100 text-red-800': video.status === 'failed',
-                                            }">
-                                            {{ video.status }}
-                                        </span>
-                                    </div>
-                                    
-                                    <div class="text-sm text-gray-500 mt-2">
-                                        <p>{{ formatFileSize(video.size_bytes) }}</p>
-                                        <p>{{ new Date(video.created_at).toLocaleString() }}</p>
-                                        
-                                        <!-- Course information if available -->
-                                        <div v-if="video.course" class="mt-2 bg-indigo-50 p-2 rounded">
-                                            <p class="text-xs text-indigo-800 font-medium">
-                                                <span>Course: </span>
-                                                <Link :href="route('courses.show', video.course.id)" class="underline hover:text-indigo-600">
-                                                    {{ video.course.name }}
-                                                </Link>
-                                            </p>
-                                            <p class="text-xs text-indigo-700">
-                                                Lesson {{ video.lesson_number }}
-                                            </p>
-                                        </div>
-                                        
-                                        <!-- Features badges -->
-                                        <div class="flex flex-wrap gap-2 mt-2">
-                                            <span v-if="video.transcript_path" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-50 text-blue-700">
-                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
-                                                </svg>
-                                                Transcript
-                                            </span>
-                                            <span v-if="video.has_terminology" class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
-                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                                                </svg>
-                                                Terminology ({{ video.terminology_count || 0 }})
-                                            </span>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="flex mt-4 space-x-2">
-                                        <Link :href="route('videos.show', video.id)" class="px-3 py-1 bg-blue-600 text-white rounded-md text-sm">
-                                            View
-                                        </Link>
-                                        <Link :href="route('videos.transcription.request', video.id)" method="post" as="button" class="px-3 py-1 bg-green-600 text-white rounded-md text-sm">
-                                            Transcribe
-                                        </Link>
-                                        <Link :href="route('videos.destroy', video.id)" method="delete" as="button" class="px-3 py-1 bg-red-600 text-white rounded-md text-sm" 
-                                            onclick="return confirm('Are you sure you want to delete this video?')">
-                                            Delete
-                                        </Link>
-                                    </div>
-                                </div>
-                            </div>
+                            <VideoCard 
+                                v-for="video in videos" 
+                                :key="video.id" 
+                                :video="video"
+                                @view="handleView"
+                                @transcribe="handleTranscribe"
+                                @delete="handleDelete"
+                            />
                         </div>
                     </div>
                 </div>

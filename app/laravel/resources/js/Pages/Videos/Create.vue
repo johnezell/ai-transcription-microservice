@@ -1,6 +1,6 @@
 <script setup>
 import { Head, useForm, Link } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -16,11 +16,32 @@ const form = useForm({
     lesson_number_start: 1
 });
 
+// Wizard state
+const currentStep = ref(1);
+const totalSteps = 3;
+const stepTitles = [
+    'Select Videos',
+    'Configure Options',
+    'Upload & Process'
+];
+
+// UI state
 const fileInput = ref(null);
 const previews = ref([]);
 const isDragging = ref(false);
 const uploadProgress = ref(0);
 const isUploading = ref(false);
+const uploadCompletedCount = ref(0);
+
+// Determine if we can move to the next step
+const canProceedToStep2 = computed(() => form.videos.length > 0);
+const canProceedToStep3 = computed(() => {
+    // If a course is selected, validate the lesson number
+    if (form.course_id) {
+        return form.lesson_number_start > 0;
+    }
+    return true;
+});
 
 // Compute total file size
 const totalSize = ref(0);
@@ -28,8 +49,52 @@ const updateTotalSize = () => {
     totalSize.value = form.videos.reduce((sum, file) => sum + file.size, 0);
 };
 
+// Navigation functions
+const nextStep = () => {
+    if (currentStep.value < totalSteps) {
+        currentStep.value++;
+    }
+};
+
+const prevStep = () => {
+    if (currentStep.value > 1) {
+        currentStep.value--;
+    }
+};
+
+// Format upload time remaining
+const timeRemaining = ref(null);
+const updateTimeRemaining = (progress) => {
+    if (progress <= 0 || progress >= 100) {
+        timeRemaining.value = null;
+        return;
+    }
+    
+    const elapsedTime = Date.now() - uploadStartTime;
+    const estimatedTotalTime = (elapsedTime / progress) * 100;
+    const remainingTime = estimatedTotalTime - elapsedTime;
+    
+    if (remainingTime <= 0) {
+        timeRemaining.value = 'Almost done...';
+        return;
+    }
+    
+    // Format the remaining time
+    const minutes = Math.floor(remainingTime / 60000);
+    const seconds = Math.floor((remainingTime % 60000) / 1000);
+    
+    if (minutes > 0) {
+        timeRemaining.value = `${minutes}m ${seconds}s remaining`;
+    } else {
+        timeRemaining.value = `${seconds}s remaining`;
+    }
+};
+
+let uploadStartTime = 0;
+
 const submit = () => {
     isUploading.value = true;
+    uploadStartTime = Date.now();
     
     // Create form data to append multiple files
     const formData = new FormData();
@@ -52,16 +117,19 @@ const submit = () => {
         data: formData,
         onProgress: (progress) => {
             uploadProgress.value = progress.percentage;
+            updateTimeRemaining(progress.percentage);
         },
         onSuccess: () => {
             form.reset();
             previews.value = [];
             isUploading.value = false;
-            uploadProgress.value = 0;
+            uploadProgress.value = 100;
+            uploadCompletedCount.value = previews.value.length;
             totalSize.value = 0;
         },
         onError: () => {
             isUploading.value = false;
+            timeRemaining.value = null;
         }
     });
 };
@@ -139,6 +207,16 @@ const resetAll = () => {
     }
 };
 
+// Restart the upload process
+const resetUpload = () => {
+    resetAll();
+    currentStep.value = 1;
+    isUploading.value = false;
+    uploadProgress.value = 0;
+    uploadCompletedCount.value = 0;
+    timeRemaining.value = null;
+};
+
 // Format file sizes
 const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
@@ -165,10 +243,47 @@ const formatFileSize = (bytes) => {
         </template>
 
         <div class="py-12">
-            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <!-- Stepper component -->
+                    <div class="px-6 pt-6">
+                        <div class="mb-8">
+                            <div class="flex items-center justify-between">
+                                <div v-for="step in totalSteps" :key="step" class="flex-1 relative">
+                                    <!-- Step connector line -->
+                                    <div v-if="step < totalSteps" class="absolute top-1/2 w-full h-0.5" :class="step < currentStep ? 'bg-indigo-600' : 'bg-gray-300'"></div>
+                                    
+                                    <!-- Step circle -->
+                                    <div class="relative flex items-center justify-center">
+                                        <div 
+                                            class="w-10 h-10 rounded-full flex items-center justify-center z-10"
+                                            :class="[
+                                                step < currentStep ? 'bg-indigo-600 text-white' : 
+                                                step === currentStep ? 'bg-indigo-100 text-indigo-600 border-2 border-indigo-600' : 
+                                                'bg-white text-gray-400 border-2 border-gray-300'
+                                            ]"
+                                        >
+                                            <span v-if="step < currentStep" class="text-lg">✓</span>
+                                            <span v-else>{{ step }}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Step title -->
+                                    <div class="mt-2 text-center">
+                                        <p class="text-xs font-medium" :class="step <= currentStep ? 'text-indigo-600' : 'text-gray-500'">
+                                            {{ stepTitles[step-1] }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="p-6 text-gray-900">
-                        <form @submit.prevent="submit" class="max-w-2xl mx-auto">
+                        <!-- Step 1: Select Videos -->
+                        <div v-if="currentStep === 1">
+                            <h3 class="text-lg font-medium mb-4">Step 1: Select Videos</h3>
+                            
                             <div>
                                 <InputLabel for="videos" value="Video Files" />
                                 
@@ -197,7 +312,7 @@ const formatFileSize = (bytes) => {
                                                     stroke-linejoin="round"
                                                 />
                                             </svg>
-                                            <div class="flex text-sm text-gray-600">
+                                            <div class="flex text-sm text-gray-600 justify-center">
                                                 <label
                                                     for="videos"
                                                     class="relative cursor-pointer rounded-md font-medium text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:text-indigo-500"
@@ -287,8 +402,37 @@ const formatFileSize = (bytes) => {
                                 <InputError :message="form.errors.videos" class="mt-2" />
                             </div>
                             
+                            <div class="flex items-center justify-end mt-6">
+                                <PrimaryButton
+                                    :disabled="!canProceedToStep2"
+                                    @click="nextStep"
+                                >
+                                    Continue
+                                </PrimaryButton>
+                            </div>
+                        </div>
+                        
+                        <!-- Step 2: Configure Options -->
+                        <div v-if="currentStep === 2">
+                            <h3 class="text-lg font-medium mb-4">Step 2: Configure Options</h3>
+                            
                             <!-- Course selection -->
-                            <div class="mt-6" v-if="courses && courses.length > 0">
+                            <div class="mb-6">
+                                <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
+                                    <div class="flex">
+                                        <div class="flex-shrink-0">
+                                            <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="text-sm text-blue-700">
+                                                Selected: <strong>{{ form.videos.length }} videos</strong> ({{ formatFileSize(totalSize) }} total)
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <InputLabel for="course_id" value="Assign to Course (Optional)" />
                                 
                                 <div class="mt-2">
@@ -321,22 +465,150 @@ const formatFileSize = (bytes) => {
                                 <InputError :message="form.errors.course_id" class="mt-2" />
                             </div>
                             
-                            <div v-if="isUploading" class="mt-6">
-                                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                    <div class="bg-blue-600 h-2.5 rounded-full" :style="{ width: uploadProgress + '%' }"></div>
+                            <div class="flex items-center justify-between mt-6">
+                                <button
+                                    type="button"
+                                    class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                                    @click="prevStep"
+                                >
+                                    Back
+                                </button>
+                                
+                                <PrimaryButton
+                                    :disabled="!canProceedToStep3"
+                                    @click="nextStep"
+                                >
+                                    Continue to Upload
+                                </PrimaryButton>
+                            </div>
+                        </div>
+                        
+                        <!-- Step 3: Upload & Process -->
+                        <div v-if="currentStep === 3">
+                            <h3 class="text-lg font-medium mb-4">Step 3: Upload & Process</h3>
+                            
+                            <div v-if="!isUploading && uploadProgress === 0" class="mb-8">
+                                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                                    <div class="flex">
+                                        <div class="flex-shrink-0">
+                                            <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="text-sm text-yellow-700">
+                                                You're about to upload {{ form.videos.length }} videos ({{ formatFileSize(totalSize) }}).
+                                                {{ form.course_id ? 'They will be assigned to the selected course.' : 'They will not be assigned to any course.' }}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <p class="text-sm text-gray-500 text-center mt-2">Uploading: {{ Math.round(uploadProgress) }}%</p>
+                                
+                                <div class="bg-gray-50 p-6 rounded-lg">
+                                    <h4 class="text-base font-medium text-gray-900 mb-4">Upload Summary</h4>
+                                    
+                                    <ul class="space-y-3">
+                                        <li class="flex justify-between">
+                                            <span class="text-gray-600">Number of Videos:</span>
+                                            <span class="font-medium">{{ form.videos.length }}</span>
+                                        </li>
+                                        <li class="flex justify-between">
+                                            <span class="text-gray-600">Total Size:</span>
+                                            <span class="font-medium">{{ formatFileSize(totalSize) }}</span>
+                                        </li>
+                                        <li class="flex justify-between">
+                                            <span class="text-gray-600">Course Assignment:</span>
+                                            <span class="font-medium">{{ form.course_id ? courses.find(c => c.id == form.course_id)?.name : 'None' }}</span>
+                                        </li>
+                                        <li v-if="form.course_id" class="flex justify-between">
+                                            <span class="text-gray-600">Starting Lesson #:</span>
+                                            <span class="font-medium">{{ form.lesson_number_start }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
                             
-                            <div class="flex items-center justify-end mt-6">
+                            <div v-if="isUploading || uploadProgress > 0" class="mb-8">
+                                <div class="mb-6">
+                                    <div class="flex justify-between mb-2">
+                                        <span class="text-sm font-medium text-gray-700">Upload Progress</span>
+                                        <span class="text-sm font-medium text-gray-700">{{ Math.round(uploadProgress) }}%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                        <div 
+                                            class="h-full rounded-full transition-all duration-300 ease-in-out"
+                                            :class="uploadProgress === 100 ? 'bg-green-600' : 'bg-blue-600'"
+                                            :style="{ width: uploadProgress + '%' }"
+                                        ></div>
+                                    </div>
+                                    <p v-if="timeRemaining" class="text-xs text-gray-500 mt-1">{{ timeRemaining }}</p>
+                                </div>
+                                
+                                <div class="bg-gray-50 p-6 rounded-lg" v-if="uploadProgress === 100">
+                                    <div class="flex items-center mb-4">
+                                        <div class="flex-shrink-0">
+                                            <svg class="h-8 w-8 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </div>
+                                        <div class="ml-3">
+                                            <h4 class="text-lg font-medium text-gray-900">Upload Complete!</h4>
+                                            <p class="text-sm text-gray-600 mt-1">
+                                                Your videos have been uploaded and are now being processed. This may take a few minutes depending on video size.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex space-x-4 mt-6">
+                                        <Link 
+                                            :href="route('videos.index')" 
+                                            class="flex-1 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                        >
+                                            View All Videos
+                                        </Link>
+                                        <button
+                                            type="button"
+                                            class="flex-1 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                            @click="resetUpload"
+                                        >
+                                            Upload More Videos
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mt-6" v-if="isUploading && uploadProgress < 100">
+                                    <div class="flex">
+                                        <div class="flex-shrink-0">
+                                            <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="text-sm text-blue-700">
+                                                Please keep this window open until the upload completes. Closing the window may interrupt the upload process.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center justify-between mt-6" v-if="!isUploading && uploadProgress === 0">
+                                <button
+                                    type="button"
+                                    class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                                    @click="prevStep"
+                                >
+                                    Back
+                                </button>
+                                
                                 <PrimaryButton
-                                    class="ml-4"
                                     :disabled="form.videos.length === 0 || isUploading || form.processing"
+                                    @click="submit"
                                 >
                                     {{ form.videos.length > 1 ? 'Upload Videos' : 'Upload Video' }}
                                 </PrimaryButton>
                             </div>
-                        </form>
+                        </div>
                     </div>
                 </div>
             </div>

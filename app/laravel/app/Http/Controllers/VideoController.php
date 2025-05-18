@@ -17,12 +17,30 @@ class VideoController extends Controller
     /**
      * Display a listing of the videos.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $videos = Video::with('course')->latest()->get();
+        $query = Video::with('course');
+        
+        // Handle search
+        if ($request->has('search') && !empty($request->input('search'))) {
+            $searchTerm = $request->input('search');
+            $query->where('original_filename', 'like', "%{$searchTerm}%")
+                  ->orWhereHas('course', function($q) use ($searchTerm) {
+                      $q->where('name', 'like', "%{$searchTerm}%");
+                  });
+        }
+        
+        // Sort the results
+        $query->latest();
+        
+        // Get the videos
+        $videos = $query->get();
         
         return Inertia::render('Videos/Index', [
             'videos' => $videos,
+            'filters' => [
+                'search' => $request->input('search', '')
+            ]
         ]);
     }
     

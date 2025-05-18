@@ -24,10 +24,24 @@ class VideoController extends Controller
         // Handle search
         if ($request->has('search') && !empty($request->input('search'))) {
             $searchTerm = $request->input('search');
-            $query->where('original_filename', 'like', "%{$searchTerm}%")
-                  ->orWhereHas('course', function($q) use ($searchTerm) {
-                      $q->where('name', 'like', "%{$searchTerm}%");
+            $query->where(function($q) use ($searchTerm) {
+                $q->where('original_filename', 'like', "%{$searchTerm}%")
+                  ->orWhereHas('course', function($subQ) use ($searchTerm) {
+                      $subQ->where('name', 'like', "%{$searchTerm}%");
                   });
+            });
+        }
+        
+        // Filter by status
+        if ($request->has('status') && !empty($request->input('status'))) {
+            $status = $request->input('status');
+            $query->where('status', $status);
+        }
+        
+        // Filter by course
+        if ($request->has('course_id') && !empty($request->input('course_id'))) {
+            $courseId = $request->input('course_id');
+            $query->where('course_id', $courseId);
         }
         
         // Sort the results
@@ -36,10 +50,25 @@ class VideoController extends Controller
         // Get the videos
         $videos = $query->get();
         
+        // Get all courses for the dropdown
+        $courses = \App\Models\Course::orderBy('name')->get();
+        
         return Inertia::render('Videos/Index', [
             'videos' => $videos,
+            'courses' => $courses,
             'filters' => [
-                'search' => $request->input('search', '')
+                'search' => $request->input('search', ''),
+                'status' => $request->input('status', ''),
+                'course_id' => $request->input('course_id', '')
+            ],
+            'statusOptions' => [
+                ['value' => '', 'label' => 'All Statuses'],
+                ['value' => 'completed', 'label' => 'Completed'],
+                ['value' => 'processing', 'label' => 'Processing'],
+                ['value' => 'is_processing', 'label' => 'Processing'],
+                ['value' => 'uploaded', 'label' => 'Uploaded'],
+                ['value' => 'transcribed', 'label' => 'Transcribed'],
+                ['value' => 'failed', 'label' => 'Failed']
             ]
         ]);
     }

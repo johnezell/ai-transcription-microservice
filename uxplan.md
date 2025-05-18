@@ -189,6 +189,10 @@ This plan outlines the features we'll implement in order of priority. Rather tha
   - ✅ Added search UI to Videos/Index view
   - ✅ Added search results count and empty state
   - ✅ Implemented debounced search with instant results
+  - ✅ Added status filtering to filter videos by processing state
+  - ✅ Added course filtering to filter videos by associated course
+  - ✅ Created filter summary with active filter badges
+  - ✅ Added clear filters functionality
 - Dashboard Implementation:
   - ✅ Created dashboard page with statistics cards
   - ✅ Added quick actions section
@@ -198,12 +202,11 @@ This plan outlines the features we'll implement in order of priority. Rather tha
 ### In Progress:
 - Consistent button styles and patterns
 - Course visualization components
-- Filter options for video lists
 
 ### Next Focus Areas:
-1. Implement status and course filtering for video lists
-2. Improve upload workflow with better status indicators
-3. Add job preset configurations for transcription
+1. Improve upload workflow with better status indicators
+2. Add job preset configurations for transcription
+3. Implement interactive transcript viewing functionality
 
 ## Development Process
 

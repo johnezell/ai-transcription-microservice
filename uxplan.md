@@ -205,13 +205,14 @@ This plan outlines the features we'll implement in order of priority. Rather tha
   - ✅ Added summary screen with upload details
   - ✅ Improved upload completion screen with next steps
   - ✅ Added responsive design for mobile devices
-- Job Preset Management:
+- Transcription Preset Management:
   - ✅ Created database models and migrations for TranscriptionPreset
   - ✅ Implemented admin interface for creating and managing presets
   - ✅ Added preset selection to the upload workflow
   - ✅ Implemented default preset functionality
   - ✅ Created CRUD operations with validation
   - ✅ Added preset details display in upload form
+  - ✅ Standardized terminology to "Transcription Presets" throughout the UI and URLs
   
 ### In Progress:
 - Consistent button styles and patterns

@@ -82,6 +82,11 @@ else
   else
     echo "Warning: opcache.prod.ini not found."
   fi
+  # Ensure Vite's hot reload trigger file is removed in production
+  if [ -f /var/www/public/hot ]; then
+    echo "Removing Vite hot file in production."
+    rm /var/www/public/hot
+  fi
 fi
 
 echo "Starting supervisor..."

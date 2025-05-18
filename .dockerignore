@@ -53,4 +53,7 @@ temp/
 # Specific files from root if not needed
 # Dockerfile.audio # etc.
 # plan.md
-# AI_INSTRUCTIONS.md 
+# AI_INSTRUCTIONS.md
+
+# Laravel specific development files not needed in production images
+app/laravel/public/hot 

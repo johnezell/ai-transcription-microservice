@@ -14,4 +14,16 @@ Route::get('/courses/segments', [App\Http\Controllers\ChannelController::class, 
 Route::get('/courses/segments/example', [App\Http\Controllers\ChannelController::class, 'runExampleQuery'])->name('channels.example');
 Route::get('/courses/segments/nested', [App\Http\Controllers\ChannelController::class, 'getNestedStructure'])->name('channels.nested');
 Route::post('/segments/import/{segmentId}', [App\Http\Controllers\ChannelController::class, 'importSegment'])->name('channels.import.segment');
-Route::post('/segments/import-bulk', [App\Http\Controllers\ChannelController::class, 'importSegmentsBulk'])->name('channels.import.segments.bulk'); 
+Route::post('/segments/import-bulk', [App\Http\Controllers\ChannelController::class, 'importSegmentsBulk'])->name('channels.import.segments.bulk');
+
+// Admin Routes
+Route::prefix('admin')->name('admin.')->group(function () {
+    // Job Presets Routes
+    Route::get('/job-presets', [App\Http\Controllers\Admin\JobPresetController::class, 'index'])->name('job-presets.index');
+    Route::get('/job-presets/create', [App\Http\Controllers\Admin\JobPresetController::class, 'create'])->name('job-presets.create');
+    Route::post('/job-presets', [App\Http\Controllers\Admin\JobPresetController::class, 'store'])->name('job-presets.store');
+    Route::get('/job-presets/{preset}/edit', [App\Http\Controllers\Admin\JobPresetController::class, 'edit'])->name('job-presets.edit');
+    Route::put('/job-presets/{preset}', [App\Http\Controllers\Admin\JobPresetController::class, 'update'])->name('job-presets.update');
+    Route::delete('/job-presets/{preset}', [App\Http\Controllers\Admin\JobPresetController::class, 'destroy'])->name('job-presets.destroy');
+    Route::put('/job-presets/{preset}/set-default', [App\Http\Controllers\Admin\JobPresetController::class, 'setDefault'])->name('job-presets.set-default');
+}); 

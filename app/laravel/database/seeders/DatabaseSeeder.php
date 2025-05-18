@@ -18,5 +18,8 @@ class DatabaseSeeder extends Seeder
         
         // Seed terminology (renamed from MusicTermSeeder)
         $this->call(TerminologySeeder::class);
+        
+        // Seed transcription presets
+        $this->call(TranscriptionPresetSeeder::class);
     }
 }

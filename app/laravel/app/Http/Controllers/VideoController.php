@@ -79,9 +79,13 @@ class VideoController extends Controller
     public function create()
     {
         $courses = \App\Models\Course::all();
+        $presets = \App\Models\TranscriptionPreset::active()->get();
+        $defaultPreset = \App\Models\TranscriptionPreset::default()->first();
         
         return Inertia::render('Videos/Create', [
             'courses' => $courses,
+            'presets' => $presets,
+            'defaultPresetId' => $defaultPreset ? $defaultPreset->id : null,
         ]);
     }
     
@@ -96,11 +100,19 @@ class VideoController extends Controller
             'videos.*' => 'required|file|mimetypes:video/mp4,video/mpeg,video/quicktime',
             'course_id' => 'nullable|exists:courses,id',
             'lesson_number_start' => 'required_with:course_id|numeric|min:1',
+            'preset_id' => 'nullable|exists:transcription_presets,id',
         ]);
         
         $videos = $request->file('videos');
         $courseId = $request->input('course_id');
         $lessonStart = $request->input('lesson_number_start', 1);
+        $presetId = $request->input('preset_id');
+        
+        // If no preset was specified, use the default
+        if (empty($presetId)) {
+            $defaultPreset = \App\Models\TranscriptionPreset::default()->first();
+            $presetId = $defaultPreset ? $defaultPreset->id : null;
+        }
         
         $createdVideos = [];
         
@@ -130,6 +142,7 @@ class VideoController extends Controller
                 'status' => 'uploading',
                 'course_id' => $courseId,
                 'lesson_number' => $courseId ? $currentLessonNumber + $index : null,
+                'preset_id' => $presetId,
                 'metadata' => [
                     'uploaded_at' => now()->toIso8601String(),
                     'ip_address' => $request->ip(),

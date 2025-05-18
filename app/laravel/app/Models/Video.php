@@ -34,6 +34,8 @@ class Video extends Model
         'has_terminology',
         'has_music_terms',
         'terminology_count',
+        'preset_id',
+        'storage_path',
     ];
     
     /**
@@ -519,5 +521,13 @@ class Video extends Model
         }
         
         return null;
+    }
+
+    /**
+     * Get the transcription preset associated with this video.
+     */
+    public function preset()
+    {
+        return $this->belongsTo(TranscriptionPreset::class, 'preset_id');
     }
 }

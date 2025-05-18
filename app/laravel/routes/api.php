@@ -493,3 +493,16 @@ Route::prefix('videos')->group(function () {
     Route::post('/{id}/thumbnail/callback', [App\Http\Controllers\VideoController::class, 'thumbnailCallback'])
         ->name('api.videos.thumbnail.callback');
 });
+
+Route::get('/presets', function() {
+    $presets = \App\Models\TranscriptionPreset::all();
+    $defaultPreset = \App\Models\TranscriptionPreset::default()->first();
+    
+    return response()->json([
+        'success' => true,
+        'count' => $presets->count(),
+        'presets' => $presets,
+        'default' => $defaultPreset,
+        'time' => now()->toDateTimeString()
+    ]);
+});

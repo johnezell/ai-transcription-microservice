@@ -86,6 +86,15 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/music-terms', function() {
         return redirect()->route('admin.terminology.index');
     })->name('music-terms.index');
+    
+    // Transcription Presets Routes
+    Route::get('/transcription-presets', [App\Http\Controllers\Admin\JobPresetController::class, 'index'])->name('job-presets.index');
+    Route::get('/transcription-presets/create', [App\Http\Controllers\Admin\JobPresetController::class, 'create'])->name('job-presets.create');
+    Route::post('/transcription-presets', [App\Http\Controllers\Admin\JobPresetController::class, 'store'])->name('job-presets.store');
+    Route::get('/transcription-presets/{preset}/edit', [App\Http\Controllers\Admin\JobPresetController::class, 'edit'])->name('job-presets.edit');
+    Route::put('/transcription-presets/{preset}', [App\Http\Controllers\Admin\JobPresetController::class, 'update'])->name('job-presets.update');
+    Route::delete('/transcription-presets/{preset}', [App\Http\Controllers\Admin\JobPresetController::class, 'destroy'])->name('job-presets.destroy');
+    Route::put('/transcription-presets/{preset}/set-default', [App\Http\Controllers\Admin\JobPresetController::class, 'setDefault'])->name('job-presets.set-default');
 });
 
 Route::get('/fix-statuses', function () {
@@ -256,9 +265,19 @@ Route::get('/fix-status-immediate/{id}', function ($id) {
 
 // TrueFire Course Routes
 Route::get('/truefire', [App\Http\Controllers\TrueFireController::class, 'index'])->name('truefire.index');
+Route::get('/truefire/selection', [App\Http\Controllers\TrueFireController::class, 'selection'])->name('truefire.selection');
 Route::get('/truefire/{id}', [App\Http\Controllers\TrueFireController::class, 'show'])->name('truefire.show');
 Route::post('/truefire/import/{lessonId}', [App\Http\Controllers\TrueFireController::class, 'importLesson'])->name('truefire.import.lesson');
 Route::post('/truefire/import-bulk', [App\Http\Controllers\TrueFireController::class, 'importLessonsBulk'])->name('truefire.import.lessons.bulk');
+
+// Diagnostic Route
+Route::get('/diag', function() {
+    return response()->json([
+        'status' => 'ok',
+        'message' => 'Route system is working',
+        'time' => now()->toDateTimeString()
+    ]);
+});
 
 // Channel Routes
 Route::get('/channels', [App\Http\Controllers\ChannelController::class, 'index'])->name('channels.index');

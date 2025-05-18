@@ -7,13 +7,16 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 
 const props = defineProps({
-    courses: Array
+    courses: Array,
+    presets: Array,
+    defaultPresetId: Number
 });
 
 const form = useForm({
     videos: [],
     course_id: '',
-    lesson_number_start: 1
+    lesson_number_start: 1,
+    preset_id: props.defaultPresetId || ''
 });
 
 // Wizard state
@@ -463,6 +466,47 @@ const formatFileSize = (bytes) => {
                                 </div>
                                 
                                 <InputError :message="form.errors.course_id" class="mt-2" />
+                            </div>
+                            
+                            <!-- Preset selection -->
+                            <div class="mb-6">
+                                <InputLabel for="preset_id" value="Transcription Preset" />
+                                
+                                <div class="mt-2">
+                                    <select
+                                        id="preset_id"
+                                        v-model="form.preset_id"
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    >
+                                        <option value="">Use default preset</option>
+                                        <option v-for="preset in presets" :key="preset.id" :value="preset.id">
+                                            {{ preset.name }} ({{ preset.model }})
+                                        </option>
+                                    </select>
+                                </div>
+                                
+                                <div v-if="form.preset_id" class="mt-2">
+                                    <div class="bg-gray-50 p-3 rounded-md">
+                                        <div class="text-sm text-gray-700">
+                                            <span class="font-medium">Selected preset:</span>
+                                            {{ presets.find(p => p.id == form.preset_id)?.name }}
+                                        </div>
+                                        <div class="text-xs text-gray-500 mt-1">
+                                            <span class="font-medium">Model:</span>
+                                            {{ presets.find(p => p.id == form.preset_id)?.model }}
+                                        </div>
+                                        <div v-if="presets.find(p => p.id == form.preset_id)?.description" class="text-xs text-gray-500 mt-1">
+                                            <span class="font-medium">Description:</span>
+                                            {{ presets.find(p => p.id == form.preset_id)?.description }}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Select a transcription preset to control how your video is transcribed.
+                                </p>
+                                
+                                <InputError :message="form.errors.preset_id" class="mt-2" />
                             </div>
                             
                             <div class="flex items-center justify-between mt-6">

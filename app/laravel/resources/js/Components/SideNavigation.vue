@@ -71,6 +71,12 @@
           :href="route('enhancement-ideas.index')"
           :active="currentRoute.startsWith('enhancement-ideas')"
         />
+        <NavItem 
+          icon="settings"
+          label="Transcription Presets"
+          :href="route('admin.job-presets.index')"
+          :active="currentRoute.startsWith('admin.job-presets')"
+        />
       </NavSection>
     </nav>
   </aside>

@@ -1,0 +1,99 @@
+/* Button Styles 
+   This file defines consistent button styles for the application.
+   These classes can be used in combination with Tailwind's utility classes.
+*/
+
+@layer components {
+  /* Primary Button - For primary actions like "Save", "Submit", "Create", etc. */
+  .btn-primary {
+    @apply px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors shadow-sm;
+    @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-blue-400;
+  }
+  
+  /* Secondary Button - For secondary actions like "Cancel", "Back", etc. */
+  .btn-secondary {
+    @apply px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors shadow-sm;
+    @apply focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100;
+  }
+  
+  /* Danger Button - For destructive actions like "Delete", "Remove", etc. */
+  .btn-danger {
+    @apply px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors shadow-sm;
+    @apply focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-red-400;
+  }
+  
+  /* Success Button - For completion actions like "Approve", "Confirm", etc. */
+  .btn-success {
+    @apply px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors shadow-sm;
+    @apply focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-green-400;
+  }
+  
+  /* Text Button - For subtle actions, often used inline or in tight spaces */
+  .btn-text {
+    @apply px-2 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors;
+    @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-30;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent;
+  }
+  
+  /* Icon Button - For actions represented by an icon */
+  .btn-icon {
+    @apply p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors;
+    @apply focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  /* Link Button - For navigation actions that look like links */
+  .btn-link {
+    @apply text-blue-600 hover:text-blue-800 hover:underline transition-colors;
+    @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-30 focus:rounded;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:no-underline;
+  }
+  
+  /* Small Button - For compact UIs */
+  .btn-sm {
+    @apply px-2 py-1 text-sm;
+  }
+  
+  /* Large Button - For prominent actions */
+  .btn-lg {
+    @apply px-6 py-3 text-lg;
+  }
+  
+  /* Button with Icon - Consistent spacing for buttons with icons */
+  .btn-with-icon {
+    @apply inline-flex items-center justify-center;
+  }
+  
+  .btn-with-icon svg,
+  .btn-with-icon img {
+    @apply mr-2 h-5 w-5;
+  }
+  
+  /* Loading State - For buttons in loading state */
+  .btn-loading {
+    @apply relative text-opacity-0 !important;
+  }
+  
+  .btn-loading::after {
+    @apply absolute inset-0 flex items-center justify-center text-opacity-100;
+    content: '';
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'%3E%3C/path%3E%3C/svg%3E");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 1.5rem;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+} 

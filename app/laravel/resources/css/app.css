@@ -1,3 +1,6 @@
+/* Import component styles */
+@import 'components/buttons.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

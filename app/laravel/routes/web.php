@@ -26,6 +26,11 @@ Route::get('/', function () {
 // Dashboard route - placed at the top for priority
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+// UI Design System
+Route::get('/design/buttons', function() {
+    return Inertia::render('ButtonStylesDemo');
+})->name('design.buttons');
+
 // Video management routes - no auth required
 Route::resource('videos', VideoController::class);
 Route::post('/videos/{video}/transcription', [VideoController::class, 'requestTranscription'])

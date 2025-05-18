@@ -224,16 +224,26 @@ This plan outlines the features we'll implement in order of priority. Rather tha
   - ✅ Improved mobile-responsiveness of transcript display
   - ✅ Added better visual hierarchy with clearer segment boundaries and timestamps
   - ✅ Created better error states and loading indicators
+- Video Details Page Redesign:
+  - ✅ Redesigned the video details page with a tab-based interface for better organization
+  - ✅ Created separate tabs for transcript, audio, video info, and terminology
+  - ✅ Improved page layout and visual hierarchy for better focus on transcription
+  - ✅ Enhanced status messaging with clear visual indicators
+  - ✅ Added clearer processing status indicators
+  - ✅ Improved error state handling with contextual error messages
+  - ✅ Added video subtitles display directly under the video for better context
+  - ✅ Implemented responsive design for all screen sizes
   
 ### In Progress:
 - Consistent button styles and patterns
 - Course visualization components
-- Terminology visualization integration with transcript content
+- Integration of terminology recognition with transcript display
 
 ### Next Focus Areas:
-1. Integrate terminology recognition results with transcript display for highlighting specialized terms
-2. Enhance course visualization
-3. Implement loading states and visual polish
+1. Complete visual polish with consistent styles
+2. Optimize mobile layouts
+3. Add loading states and transitions
+4. Enhance course visualization
 
 ## Development Process
 

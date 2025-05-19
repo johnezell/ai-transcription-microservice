@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Video;
 use App\Models\TranscriptionLog;
+use App\Models\TranscriptionPreset;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -100,6 +101,27 @@ class TranscriptionJob implements ShouldQueue
             'progress_percentage' => 60 // Example progress: Transcription process initiated
         ]);
 
+        // Get the preset configuration
+        $preset = null;
+        $configuration = null;
+        
+        // If video has a preset_id, use that preset's configuration
+        if (!empty($this->video->preset_id)) {
+            $preset = TranscriptionPreset::find($this->video->preset_id);
+        }
+        
+        // If no preset found, use the default preset
+        if (!$preset) {
+            $preset = TranscriptionPreset::where('is_default', true)->first();
+        }
+        
+        // Get the configuration from the preset, or use default configuration
+        if ($preset && !empty($preset->configuration)) {
+            $configuration = $preset->configuration;
+        } else {
+            $configuration = TranscriptionPreset::getDefaultConfiguration();
+        }
+
         $queueUrl = env('TRANSCRIPTION_QUEUE_URL');
         
         if (empty($queueUrl)) {
@@ -108,10 +130,29 @@ class TranscriptionJob implements ShouldQueue
             return;
         }
 
+        // Get the audio duration if available
+        $audioDuration = $this->video->audio_duration ?? 0;
+        
+        // First, send message to the audio extraction service if configuration is available
+        if (!empty($configuration['audio']) && !empty($this->video->video_path) && empty($this->video->audio_path)) {
+            // This will be implemented for new uploads that need audio extraction
+            // For now we're assuming audio is already extracted
+            Log::info('[TranscriptionJob] Audio already extracted, skipping audio extraction step.', [
+                'video_id' => $this->video->id,
+                'audio_path' => $this->video->audio_path
+            ]);
+        }
+
+        // Then, send message to the transcription service
         $messageBody = json_encode([
             'job_id' => (string) $this->video->id,
             'audio_s3_key' => $this->video->audio_path, // Pass the S3 key of the audio file
-            'model_name' => 'base', // Or make this configurable, e.g., via $this->video->model_preference
+            'model_name' => $preset ? $preset->model : 'base',
+            'language' => $preset ? $preset->language : 'en',
+            'initial_prompt' => $configuration['transcription']['initial_prompt'] ?? null,
+            'options' => $configuration['transcription'] ?? [], // Pass all transcription options
+            'audio_duration' => $audioDuration,
+            'preset_id' => $preset ? $preset->id : null,
             'timestamp' => now()->toIso8601String()
         ]);
 

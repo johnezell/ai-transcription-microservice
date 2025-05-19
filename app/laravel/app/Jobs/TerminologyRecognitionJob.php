@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Video;
 use App\Models\TranscriptionLog;
+use App\Models\TranscriptionPreset;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -100,6 +101,27 @@ class TerminologyRecognitionJob implements ShouldQueue
             'progress_percentage' => 85 
         ]);
 
+        // Get the preset configuration
+        $preset = null;
+        $configuration = null;
+        
+        // If video has a preset_id, use that preset's configuration
+        if (!empty($this->video->preset_id)) {
+            $preset = TranscriptionPreset::find($this->video->preset_id);
+        }
+        
+        // If no preset found, use the default preset
+        if (!$preset) {
+            $preset = TranscriptionPreset::where('is_default', true)->first();
+        }
+        
+        // Get the configuration from the preset, or use default configuration
+        if ($preset && !empty($preset->configuration)) {
+            $configuration = $preset->configuration;
+        } else {
+            $configuration = TranscriptionPreset::getDefaultConfiguration();
+        }
+
         $queueUrl = env('TERMINOLOGY_QUEUE_URL');
         
         if (empty($queueUrl)) {
@@ -111,6 +133,8 @@ class TerminologyRecognitionJob implements ShouldQueue
         $messageBody = json_encode([
             'job_id' => (string) $this->video->id,
             'transcript_s3_key' => $this->video->transcript_path,
+            'options' => $configuration['terminology'] ?? [], // Pass all terminology options
+            'preset_id' => $preset ? $preset->id : null,
             'timestamp' => now()->toIso8601String()
         ]);
 

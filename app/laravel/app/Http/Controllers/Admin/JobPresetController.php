@@ -4,12 +4,23 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\TranscriptionPreset;
+use App\Services\TranscriptionConfigService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class JobPresetController extends Controller
 {
+    protected $configService;
+    
+    /**
+     * Create a new controller instance.
+     */
+    public function __construct(TranscriptionConfigService $configService)
+    {
+        $this->configService = $configService;
+    }
+    
     /**
      * Display a listing of the transcription presets.
      */
@@ -28,8 +39,10 @@ class JobPresetController extends Controller
     public function create()
     {
         return Inertia::render('Admin/JobPresets/Create', [
-            'modelOptions' => $this->getModelOptions(),
-            'languageOptions' => $this->getLanguageOptions(),
+            'modelOptions' => $this->configService->getModelOptions(),
+            'languageOptions' => $this->configService->getLanguageOptions(),
+            'transcriptionOptions' => $this->configService->getTranscriptionOptions(),
+            'audioExtractionOptions' => $this->configService->getAudioExtractionOptions(),
         ]);
     }
 
@@ -43,10 +56,15 @@ class JobPresetController extends Controller
             'description' => 'nullable|string',
             'model' => 'required|string|in:base,small,medium,large,large-v2,large-v3',
             'language' => 'nullable|string|max:10',
-            'options' => 'nullable|array',
+            'configuration' => 'nullable|array',
             'is_default' => 'boolean',
             'is_active' => 'boolean',
         ]);
+
+        // Ensure configuration exists
+        if (!isset($validated['configuration'])) {
+            $validated['configuration'] = TranscriptionPreset::getDefaultConfiguration();
+        }
 
         // If this is the first preset or marked as default, 
         // make sure all other presets are not default
@@ -74,8 +92,10 @@ class JobPresetController extends Controller
     {
         return Inertia::render('Admin/JobPresets/Edit', [
             'preset' => $preset,
-            'modelOptions' => $this->getModelOptions(),
-            'languageOptions' => $this->getLanguageOptions(),
+            'modelOptions' => $this->configService->getModelOptions(),
+            'languageOptions' => $this->configService->getLanguageOptions(),
+            'transcriptionOptions' => $this->configService->getTranscriptionOptions(),
+            'audioExtractionOptions' => $this->configService->getAudioExtractionOptions(),
         ]);
     }
 
@@ -89,7 +109,7 @@ class JobPresetController extends Controller
             'description' => 'nullable|string',
             'model' => 'required|string|in:base,small,medium,large,large-v2,large-v3',
             'language' => 'nullable|string|max:10',
-            'options' => 'nullable|array',
+            'configuration' => 'nullable|array',
             'is_default' => 'boolean',
             'is_active' => 'boolean',
         ]);
@@ -170,40 +190,5 @@ class JobPresetController extends Controller
             return redirect()->route('admin.job-presets.index')
                 ->with('error', 'Error setting default preset: ' . $e->getMessage());
         }
-    }
-    
-    /**
-     * Get available model options for Whisper transcription.
-     */
-    private function getModelOptions()
-    {
-        return [
-            ['value' => 'base', 'label' => 'Base - Fastest, least accurate'],
-            ['value' => 'small', 'label' => 'Small - Fast, good accuracy'],
-            ['value' => 'medium', 'label' => 'Medium - Balanced speed and accuracy'],
-            ['value' => 'large', 'label' => 'Large - Slow, most accurate'],
-            ['value' => 'large-v2', 'label' => 'Large v2 - Improved large model'],
-            ['value' => 'large-v3', 'label' => 'Large v3 - Latest, most accurate model'],
-        ];
-    }
-    
-    /**
-     * Get available language options for Whisper transcription.
-     */
-    private function getLanguageOptions()
-    {
-        return [
-            ['value' => '', 'label' => 'Auto-detect language'],
-            ['value' => 'en', 'label' => 'English'],
-            ['value' => 'es', 'label' => 'Spanish'],
-            ['value' => 'fr', 'label' => 'French'],
-            ['value' => 'de', 'label' => 'German'],
-            ['value' => 'it', 'label' => 'Italian'],
-            ['value' => 'pt', 'label' => 'Portuguese'],
-            ['value' => 'nl', 'label' => 'Dutch'],
-            ['value' => 'ja', 'label' => 'Japanese'],
-            ['value' => 'zh', 'label' => 'Chinese'],
-            ['value' => 'ru', 'label' => 'Russian'],
-        ];
     }
 } 

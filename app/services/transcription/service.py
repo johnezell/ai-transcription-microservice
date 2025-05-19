@@ -39,6 +39,71 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 
+# Define transcription options with descriptions
+TRANSCRIPTION_OPTIONS = {
+    "common": {
+        "model_name": {
+            "description": "Size/complexity of Whisper model to use",
+            "options": ["tiny", "base", "small", "medium", "large"],
+            "default": "base",
+            "impact": "Larger models provide higher accuracy but require more processing time and resources. 'tiny' is fastest but least accurate, 'large' is most accurate but slowest."
+        },
+        "language": {
+            "description": "Language code for transcription",
+            "default": "en",
+            "impact": "Setting the correct language improves accuracy. Using 'null' enables auto-detection."
+        },
+        "initial_prompt": {
+            "description": "Text to guide the model at the beginning of transcription",
+            "default": None,
+            "impact": "Useful for domain-specific terms or context. Helps model understand specialized vocabulary or expected content."
+        }
+    },
+    "advanced": {
+        "temperature": {
+            "description": "Controls randomness in model predictions",
+            "default": 0,
+            "range": [0, 1],
+            "impact": "0 gives deterministic, consistent output. Higher values introduce variability, may help with difficult audio but reduce consistency."
+        },
+        "word_timestamps": {
+            "description": "Generate timestamps for each word",
+            "default": True,
+            "impact": "When enabled, provides precise timing for each word. Useful for subtitle generation and audio-text alignment."
+        },
+        "condition_on_previous_text": {
+            "description": "Use previous segments to improve current segment",
+            "default": False,
+            "impact": "When enabled, maintains context between segments for potentially more coherent transcription, but may propagate errors."
+        },
+        "compression_ratio_threshold": {
+            "description": "Filter for repeated content",
+            "default": 2.4,
+            "impact": "Helps detect and filter hallucinations where the model generates repetitive text."
+        },
+        "logprob_threshold": {
+            "description": "Confidence threshold for transcription",
+            "default": -1.0,
+            "impact": "Filters out words/segments with confidence below this threshold. Lower values keep more content."
+        },
+        "no_speech_threshold": {
+            "description": "Threshold for detecting silence/no speech",
+            "default": 0.6,
+            "impact": "Higher values more aggressively filter out audio portions detected as non-speech."
+        },
+        "beam_size": {
+            "description": "Number of parallel decoding paths",
+            "default": 5,
+            "impact": "Larger values may improve accuracy but increase processing time."
+        },
+        "patience": {
+            "description": "Beam search patience factor",
+            "default": None,
+            "impact": "Controls early stopping in beam search. Higher values improve quality but increase processing time."
+        }
+    }
+}
+
 # Set environment constants for cleaner path handling
 S3_BASE_DIR = '/var/www/storage/app/public/s3'
 S3_JOBS_DIR = os.path.join(S3_BASE_DIR, 'jobs')
@@ -82,30 +147,44 @@ def calculate_confidence(segments):
     # Calculate mean probability
     return sum(probabilities) / len(probabilities)
 
-def process_audio(audio_path, model_name="base", initial_prompt=None):
+def process_audio(audio_path, model_name="base", initial_prompt=None, options=None):
     """Process audio with Whisper and extract detailed information."""
     logger.info(f"Processing audio: {audio_path} with model: {model_name}")
     
+    if options is None:
+        options = {}
+    
     model = load_whisper_model(model_name)
     
-    # Configure transcription settings
+    # Configure transcription settings with defaults from TRANSCRIPTION_OPTIONS
     settings = {
         "model_name": model_name,
         "initial_prompt": initial_prompt,
-        "temperature": 0,
-        "word_timestamps": True,
-        "condition_on_previous_text": False,
-        "language": "en",
+        "temperature": options.get("temperature", TRANSCRIPTION_OPTIONS["advanced"]["temperature"]["default"]),
+        "word_timestamps": options.get("word_timestamps", TRANSCRIPTION_OPTIONS["advanced"]["word_timestamps"]["default"]),
+        "condition_on_previous_text": options.get("condition_on_previous_text", TRANSCRIPTION_OPTIONS["advanced"]["condition_on_previous_text"]["default"]),
+        "language": options.get("language", TRANSCRIPTION_OPTIONS["common"]["language"]["default"]),
     }
+    
+    # Add additional parameters if provided
+    transcribe_kwargs = {
+        "initial_prompt": initial_prompt,
+        "language": settings["language"],
+        "temperature": settings["temperature"],
+        "word_timestamps": settings["word_timestamps"],
+        "condition_on_previous_text": settings["condition_on_previous_text"]
+    }
+    
+    # Add optional advanced parameters if they exist in options
+    for param in ["beam_size", "patience", "compression_ratio_threshold", "logprob_threshold", "no_speech_threshold"]:
+        if param in options:
+            transcribe_kwargs[param] = options[param]
+            settings[param] = options[param]
     
     # Perform transcription
     result = model.transcribe(
         str(audio_path),
-        initial_prompt=initial_prompt,
-        language=settings["language"],
-        temperature=settings["temperature"],
-        word_timestamps=settings["word_timestamps"],
-        condition_on_previous_text=settings["condition_on_previous_text"]
+        **transcribe_kwargs
     )
     
     # Include settings in result
@@ -216,6 +295,14 @@ def health_check():
         'callback_queue_url_set': bool(CALLBACK_QUEUE_URL)
     })
 
+@app.route('/transcription-options', methods=['GET'])
+def get_transcription_options():
+    """Return available transcription options for Laravel frontend."""
+    return jsonify({
+        'options': TRANSCRIPTION_OPTIONS,
+        'timestamp': datetime.now().isoformat()
+    })
+
 @app.route('/connectivity-test', methods=['GET'])
 def connectivity_test():
     """Test connectivity to other services."""
@@ -304,6 +391,7 @@ def process_transcription_job(job_data):
     audio_s3_key = job_data['audio_s3_key']
     model_name = job_data.get('model_name', 'base')
     initial_prompt = job_data.get('initial_prompt', None)
+    options = job_data.get('options', {})
     
     logger.info(f"Processing transcription job: {job_id} for S3 audio key: {audio_s3_key} with model: {model_name}")
     
@@ -334,7 +422,7 @@ def process_transcription_job(job_data):
             # Record start time for metrics
             start_time = time.time()
             
-            transcription_result = process_audio(local_audio_path, model_name, initial_prompt)
+            transcription_result = process_audio(local_audio_path, model_name, initial_prompt, options)
             
             # After transcription is complete, calculate processing time and publish metrics
             processing_time = time.time() - start_time
@@ -381,7 +469,8 @@ def process_transcription_job(job_data):
                 'metadata': {
                     'service': 'transcription-service',
                     'processed_by': 'Whisper-based transcription',
-                    'model': model_name
+                    'model': model_name,
+                    'options_used': transcription_result.get('settings', {})
                 },
                 'processing_time': processing_time,
                 'real_time_ratio': processing_time / audio_duration if audio_duration > 0 else None

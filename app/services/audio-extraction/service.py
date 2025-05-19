@@ -18,6 +18,60 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 
+# Define audio extraction options with descriptions
+AUDIO_EXTRACTION_OPTIONS = {
+    "common": {
+        "sample_rate": {
+            "description": "Audio sampling rate in Hz",
+            "options": ["8000", "16000", "22050", "44100", "48000"],
+            "default": "16000",
+            "impact": "Higher values capture more audio detail but increase file size. 16kHz is optimal for speech recognition, 44.1/48kHz for music."
+        },
+        "channels": {
+            "description": "Number of audio channels",
+            "options": ["1", "2"],
+            "default": "1",
+            "impact": "Mono (1) is recommended for speech recognition. Stereo (2) preserves left/right separation but doubles file size."
+        }
+    },
+    "advanced": {
+        "audio_codec": {
+            "description": "Audio encoding format",
+            "options": ["pcm_s16le", "pcm_s24le", "pcm_f32le", "flac"],
+            "default": "pcm_s16le",
+            "impact": "PCM 16-bit provides good quality for speech. Higher bit depths (24/32-bit) or lossless compression (FLAC) may improve quality but increase processing time."
+        },
+        "noise_reduction": {
+            "description": "Apply noise reduction filter",
+            "default": False,
+            "impact": "Can improve transcription accuracy for noisy recordings but may distort speech if set too aggressively."
+        },
+        "normalize_audio": {
+            "description": "Normalize audio levels",
+            "default": False,
+            "impact": "Ensures consistent volume throughout the audio, which can improve transcription of quiet sections."
+        },
+        "volume_boost": {
+            "description": "Boost audio volume by percentage",
+            "default": 0,
+            "range": [0, 100],
+            "impact": "Can help with very quiet recordings, but may cause distortion if set too high."
+        },
+        "low_pass": {
+            "description": "Apply low-pass filter (Hz)",
+            "default": None,
+            "range": [100, 20000],
+            "impact": "Filters out high frequencies, can help reduce hissing sounds."
+        },
+        "high_pass": {
+            "description": "Apply high-pass filter (Hz)",
+            "default": None,
+            "range": [20, 2000],
+            "impact": "Filters out low frequencies, can help reduce background rumble."
+        }
+    }
+}
+
 # Get environment variables
 LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://aws-transcription-laravel.local:80/api') # Ensure this matches Laravel's service discovery name
 AWS_BUCKET = os.environ.get('AWS_BUCKET')
@@ -46,15 +100,62 @@ cloudwatch_client = boto3.client('cloudwatch', region_name=AWS_DEFAULT_REGION)
 def start_listeners():
     threading.Thread(target=listen_for_sqs_messages, daemon=True).start()
 
-def convert_to_wav(input_path, output_path):
+def convert_to_wav(input_path, output_path, options=None):
     """Convert media to WAV format optimized for transcription."""
     try:
-        logger.info(f"Converting media to WAV: {input_path} -> {output_path}")
+        if options is None:
+            options = {}
+        
+        logger.info(f"Converting media to WAV: {input_path} -> {output_path} with options: {options}")
+        
+        # Get options with defaults
+        sample_rate = options.get("sample_rate", AUDIO_EXTRACTION_OPTIONS["common"]["sample_rate"]["default"])
+        channels = options.get("channels", AUDIO_EXTRACTION_OPTIONS["common"]["channels"]["default"])
+        audio_codec = options.get("audio_codec", AUDIO_EXTRACTION_OPTIONS["advanced"]["audio_codec"]["default"])
+        
+        # Build basic command
         command = [
             "ffmpeg", "-y", "-i", str(input_path),
-            "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", str(output_path)
+            "-vn", "-acodec", audio_codec, "-ar", sample_rate, "-ac", channels
         ]
-        logger.debug(f"FFmpeg command: {' '.join(command)}")
+        
+        # Add filter options if needed
+        filter_parts = []
+        
+        # Apply volume normalization if requested
+        if options.get("normalize_audio", AUDIO_EXTRACTION_OPTIONS["advanced"]["normalize_audio"]["default"]):
+            filter_parts.append("loudnorm")
+            
+        # Apply noise reduction if requested
+        if options.get("noise_reduction", AUDIO_EXTRACTION_OPTIONS["advanced"]["noise_reduction"]["default"]):
+            filter_parts.append("afftdn")
+        
+        # Apply volume boost if requested
+        volume_boost = options.get("volume_boost", AUDIO_EXTRACTION_OPTIONS["advanced"]["volume_boost"]["default"])
+        if volume_boost > 0:
+            # Convert percentage to multiplier (100% = 2x volume)
+            volume_multiplier = 1.0 + (volume_boost / 100.0)
+            filter_parts.append(f"volume={volume_multiplier}")
+            
+        # Apply low-pass filter if specified
+        low_pass = options.get("low_pass", AUDIO_EXTRACTION_OPTIONS["advanced"]["low_pass"]["default"])
+        if low_pass:
+            filter_parts.append(f"lowpass=f={low_pass}")
+            
+        # Apply high-pass filter if specified
+        high_pass = options.get("high_pass", AUDIO_EXTRACTION_OPTIONS["advanced"]["high_pass"]["default"])
+        if high_pass:
+            filter_parts.append(f"highpass=f={high_pass}")
+        
+        # Add filter chain to command if filters are present
+        if filter_parts:
+            filter_chain = ",".join(filter_parts)
+            command.extend(["-af", filter_chain])
+        
+        # Add output path
+        command.append(str(output_path))
+        
+        logger.debug(f"FFmpeg command: {' '.join(map(str, command))}")
         result = subprocess.run(command, capture_output=True, text=True, check=True)
         logger.info(f"Successfully converted to WAV: {output_path}")
         return True
@@ -165,6 +266,14 @@ def health_check():
         'callback_queue_url_set': bool(CALLBACK_QUEUE_URL)
     })
 
+@app.route('/audio-extraction-options', methods=['GET'])
+def get_audio_extraction_options():
+    """Return available audio extraction options for Laravel frontend."""
+    return jsonify({
+        'options': AUDIO_EXTRACTION_OPTIONS,
+        'timestamp': datetime.now().isoformat()
+    })
+
 def publish_job_metrics(job_id, processing_time):
     """
     Publish job processing metrics to CloudWatch
@@ -218,8 +327,9 @@ def process_audio_job(job_data):
     
     job_id = job_data['job_id']
     s3_video_key = job_data['video_s3_key']
+    extraction_options = job_data.get('extraction_options', {})
     
-    logger.info(f"Processing job {job_id} for S3 video key: {s3_video_key}")
+    logger.info(f"Processing job {job_id} for S3 video key: {s3_video_key} with options: {extraction_options}")
 
     if not s3_client or not AWS_BUCKET:
         logger.error("S3 client or AWS_BUCKET not configured properly.")
@@ -241,7 +351,7 @@ def process_audio_job(job_data):
 
             update_job_status(job_id, 'extracting_audio')
             
-            convert_to_wav(local_video_path, local_audio_path)
+            convert_to_wav(local_video_path, local_audio_path, extraction_options)
             
             audio_size = os.path.getsize(local_audio_path)
             duration = get_audio_duration(local_audio_path)
@@ -256,6 +366,14 @@ def process_audio_job(job_data):
             # Publish metrics
             publish_job_metrics(job_id, processing_time)
             
+            # Prepare metadata about the audio format
+            audio_format = {
+                'codec': extraction_options.get('audio_codec', AUDIO_EXTRACTION_OPTIONS["advanced"]["audio_codec"]["default"]),
+                'sample_rate': extraction_options.get('sample_rate', AUDIO_EXTRACTION_OPTIONS["common"]["sample_rate"]["default"]),
+                'channels': extraction_options.get('channels', AUDIO_EXTRACTION_OPTIONS["common"]["channels"]["default"]),
+                'processed_with_options': extraction_options
+            }
+            
             response_data = {
                 'message': 'Audio extraction completed successfully and uploaded to S3.',
                 'service_timestamp': datetime.now().isoformat(),
@@ -265,7 +383,7 @@ def process_audio_job(job_data):
                 'metadata': {
                     'service': 'audio-extraction-service',
                     'processed_by': 'FFmpeg audio extraction',
-                    'format': 'WAV', 'sample_rate': '16000 Hz', 'channels': '1 (Mono)', 'codec': 'PCM 16-bit'
+                    'format': audio_format
                 }
             }
             

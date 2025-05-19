@@ -20,6 +20,65 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 
+# Define terminology options with descriptions
+TERMINOLOGY_OPTIONS = {
+    "common": {
+        "extraction_method": {
+            "description": "Method used to extract terminology",
+            "options": ["regex", "spacy", "hybrid"],
+            "default": "regex",
+            "impact": "Regex is faster for exact matches, spaCy provides better linguistic understanding, hybrid uses both approaches."
+        },
+        "case_sensitive": {
+            "description": "Whether term matching should be case sensitive",
+            "default": False,
+            "impact": "When enabled, 'AWS' and 'aws' would be considered different terms. Usually disabled for better recall."
+        },
+        "min_term_frequency": {
+            "description": "Minimum number of occurrences to include a term",
+            "default": 1,
+            "range": [1, 10],
+            "impact": "Higher values filter out rare terms, useful for focusing on frequently mentioned concepts."
+        }
+    },
+    "advanced": {
+        "spacy_model": {
+            "description": "spaCy model to use for NLP processing",
+            "options": ["en_core_web_sm", "en_core_web_md", "en_core_web_lg"],
+            "default": "en_core_web_sm",
+            "impact": "Larger models (md, lg) have better accuracy but use more memory and are slower to process."
+        },
+        "use_lemmatization": {
+            "description": "Convert words to their base form",
+            "default": True,
+            "impact": "When enabled, different forms of a word (e.g., 'running', 'runs') are treated as the same term ('run')."
+        },
+        "max_terms": {
+            "description": "Maximum number of terms to extract",
+            "default": 200,
+            "range": [10, 1000],
+            "impact": "Limits the total number of terms extracted, preventing overwhelming results for long transcripts."
+        },
+        "context_window": {
+            "description": "Number of words around each term to capture as context",
+            "default": 5,
+            "range": [0, 20],
+            "impact": "Larger windows provide more context but can make results verbose."
+        },
+        "include_uncategorized": {
+            "description": "Include terms not in predefined categories",
+            "default": False,
+            "impact": "When enabled, extracts potentially relevant terms even if they don't match predefined categories."
+        },
+        "entity_types": {
+            "description": "Entity types to recognize with spaCy",
+            "options": ["ORG", "PRODUCT", "GPE", "PERSON", "TECH", "ALL"],
+            "default": ["ORG", "PRODUCT", "TECH"],
+            "impact": "Determines what types of entities are recognized. 'ALL' includes all entity types that spaCy can detect."
+        }
+    }
+}
+
 # Get environment variables
 LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL') # Expected to be http://aws-transcription-laravel-service.local:80/api
 AWS_BUCKET = os.environ.get('AWS_BUCKET')
@@ -51,14 +110,22 @@ TERMINOLOGY_CATEGORIES = {
     "Dev Concepts": [r"microservice", r"containerization", r"serverless", r"ci/cd", r"deployment", r"database", r"queue", r"asynchronous", r"sdk"]
 }
 
-# Placeholder for spaCy model if we re-introduce it quickly - for now, V1 is regex based.
-# nlp = None
-# try:
-#     nlp = spacy.load("en_core_web_sm") # Model is downloaded in Dockerfile
-#     logger.info("spaCy model en_core_web_sm loaded successfully.")
-# except OSError:
-#     logger.error("spaCy model 'en_core_web_sm' not found. Please ensure it was downloaded in the Dockerfile.")
-#     # Service might still run but advanced features will fail or use fallbacks.
+# Map of spaCy models for on-demand loading
+spacy_models = {}
+
+def load_spacy_model(model_name="en_core_web_sm"):
+    """Load the specified spaCy model with caching."""
+    if model_name in spacy_models:
+        return spacy_models[model_name]
+    
+    try:
+        logger.info(f"Loading spaCy model: {model_name}")
+        model = spacy.load(model_name)
+        spacy_models[model_name] = model
+        return model
+    except OSError:
+        logger.error(f"Failed to load spaCy model '{model_name}'. Falling back to regex-only extraction.")
+        return None
 
 # This will hold the terms fetched from Laravel API
 DYNAMIC_TERMINOLOGY = {}
@@ -108,64 +175,203 @@ def fetch_defined_terminology():
 # Fetch terms on startup
 fetch_defined_terminology()
 
-def extract_terms_dynamically(transcript_text: str) -> dict:
-    """Extract terms using dynamically fetched categories and their regex patterns."""
+def extract_terms_using_regex(transcript_text, options=None):
+    """Extract terms using regex patterns with configurable options."""
+    if options is None:
+        options = {}
+    
+    # Get options with defaults
+    case_sensitive = options.get("case_sensitive", TERMINOLOGY_OPTIONS["common"]["case_sensitive"]["default"])
+    min_term_frequency = options.get("min_term_frequency", TERMINOLOGY_OPTIONS["common"]["min_term_frequency"]["default"])
+    
     if not DYNAMIC_TERMINOLOGY:
         logger.warning("No dynamic terminology loaded. Term extraction will likely find nothing.")
         return {
-            "method": "dynamic_regex_v1_no_terms_loaded",
+            "method": "regex",
             "total_unique_terms": 0,
             "total_term_occurrences": 0,
             "category_summary": {},
             "terms": []
         }
 
-    logger.info("Extracting terms using dynamically fetched regex patterns.")
+    logger.info(f"Extracting terms using regex with case_sensitive={case_sensitive}, min_term_frequency={min_term_frequency}")
+    
     found_terms_details = []
     category_summary = {category_slug: 0 for category_slug in DYNAMIC_TERMINOLOGY.keys()}
     unique_terms_by_category = {category_slug: set() for category_slug in DYNAMIC_TERMINOLOGY.keys()}
     term_counts = {}
 
+    # Regex flags
+    regex_flags = 0 if case_sensitive else re.IGNORECASE
+
     for category_slug, term_definitions in DYNAMIC_TERMINOLOGY.items():
-        for term_def in term_definitions: # term_def is like {"term": "PHP", "patterns": ["php"], ...}
+        for term_def in term_definitions:
             term_display_name = term_def.get('term', 'UnknownTerm')
-            patterns = term_def.get('patterns', [re.escape(term_display_name.lower())]) # Fallback pattern
+            patterns = term_def.get('patterns', [re.escape(term_display_name.lower())])
             
             for pattern_str in patterns:
                 try:
-                    # Assuming patterns are valid regex strings. If they are plain strings for exact match, adjust regex.
-                    # For exact whole word match of potentially special char patterns: r'\b' + re.escape(pattern_str) + r'\b'
-                    # For now, assuming patterns are already well-formed regex or simple keywords for \bword\b match.
-                    regex = re.compile(r'\b' + pattern_str + r'\b', re.IGNORECASE)
+                    regex = re.compile(r'\b' + pattern_str + r'\b', regex_flags)
                     for match in regex.finditer(transcript_text):
-                        matched_text_lower = match.group(0).lower()
+                        matched_text = match.group(0)
                         
                         # Use the display name of the term for aggregation
                         term_counts[term_display_name] = term_counts.get(term_display_name, 0) + 1
                         unique_terms_by_category[category_slug].add(term_display_name)
                 except re.error as e:
                     logger.warning(f"Invalid regex pattern '{pattern_str}' for term '{term_display_name}' in category '{category_slug}': {e}")
-                    continue # Skip this pattern
+                    continue
+    
+    # Apply minimum term frequency filter
+    filtered_term_counts = {term: count for term, count in term_counts.items() if count >= min_term_frequency}
     
     total_unique_terms = 0
     for category_slug, terms_set in unique_terms_by_category.items():
-        if terms_set:
-            category_summary[category_slug] = len(terms_set)
-            total_unique_terms += len(terms_set)
-            for term_name in terms_set:
-                 found_terms_details.append({
-                     "term": term_name,
-                     "category_slug": category_slug, # Store slug for consistency with API output keys
-                     "count": term_counts.get(term_name, 0)
-                 })
+        # Filter out terms that don't meet the minimum frequency
+        filtered_terms = {term for term in terms_set if term in filtered_term_counts}
+        if filtered_terms:
+            category_summary[category_slug] = len(filtered_terms)
+            total_unique_terms += len(filtered_terms)
+            for term_name in filtered_terms:
+                found_terms_details.append({
+                    "term": term_name,
+                    "category_slug": category_slug,
+                    "count": filtered_term_counts.get(term_name, 0)
+                })
 
     return {
-        "method": "dynamic_regex_v1",
+        "method": "regex",
         "total_unique_terms": total_unique_terms,
-        "total_term_occurrences": sum(term_counts.values()),
+        "total_term_occurrences": sum(filtered_term_counts.values()),
         "category_summary": category_summary, 
         "terms": found_terms_details
     }
+
+def extract_terms_using_spacy(transcript_text, options=None):
+    """Extract terms using spaCy NLP with configurable options."""
+    if options is None:
+        options = {}
+    
+    # Get options with defaults
+    spacy_model_name = options.get("spacy_model", TERMINOLOGY_OPTIONS["advanced"]["spacy_model"]["default"])
+    entity_types = options.get("entity_types", TERMINOLOGY_OPTIONS["advanced"]["entity_types"]["default"])
+    use_lemmatization = options.get("use_lemmatization", TERMINOLOGY_OPTIONS["advanced"]["use_lemmatization"]["default"])
+    
+    # Handle 'ALL' entity types
+    if entity_types == "ALL":
+        entity_types = None  # None means include all entity types
+    
+    # Load spaCy model
+    nlp = load_spacy_model(spacy_model_name)
+    if not nlp:
+        logger.warning(f"Failed to load spaCy model {spacy_model_name}. Falling back to regex extraction.")
+        return extract_terms_using_regex(transcript_text, options)
+    
+    logger.info(f"Processing with spaCy model {spacy_model_name}")
+    doc = nlp(transcript_text)
+    
+    # Extract entities
+    entities = []
+    for ent in doc.ents:
+        if entity_types is None or ent.label_ in entity_types:
+            term_text = ent.lemma_ if use_lemmatization else ent.text
+            entities.append({
+                "term": term_text,
+                "entity_type": ent.label_,
+                "start": ent.start_char,
+                "end": ent.end_char,
+                "count": 1  # Starting count
+            })
+    
+    # Group and count entities
+    term_counts = {}
+    for entity in entities:
+        term = entity["term"]
+        if term in term_counts:
+            term_counts[term]["count"] += 1
+        else:
+            term_counts[term] = entity
+    
+    # Format for consistent output
+    found_terms = list(term_counts.values())
+    
+    return {
+        "method": "spacy",
+        "model": spacy_model_name,
+        "total_unique_terms": len(found_terms),
+        "total_term_occurrences": sum(entity["count"] for entity in found_terms),
+        "entity_types": [entity["entity_type"] for entity in found_terms],
+        "terms": found_terms
+    }
+
+def extract_terms_hybrid(transcript_text, options=None):
+    """Use both regex and spaCy for term extraction and merge results."""
+    if options is None:
+        options = {}
+    
+    regex_results = extract_terms_using_regex(transcript_text, options)
+    spacy_results = extract_terms_using_spacy(transcript_text, options)
+    
+    # Merge results
+    all_terms = {}
+    
+    # Add regex terms
+    for term in regex_results["terms"]:
+        term_key = term["term"].lower()
+        all_terms[term_key] = {
+            "term": term["term"],
+            "category_slug": term.get("category_slug", "uncategorized"),
+            "count": term["count"],
+            "sources": ["regex"]
+        }
+    
+    # Add/merge spaCy terms
+    for term in spacy_results["terms"]:
+        term_key = term["term"].lower()
+        if term_key in all_terms:
+            # Update existing term
+            all_terms[term_key]["count"] += term["count"]
+            all_terms[term_key]["sources"].append("spacy")
+            # Add entity type if from spaCy
+            all_terms[term_key]["entity_type"] = term.get("entity_type")
+        else:
+            # Add new term
+            all_terms[term_key] = {
+                "term": term["term"],
+                "category_slug": "nlp_entities",
+                "count": term["count"],
+                "entity_type": term.get("entity_type"),
+                "sources": ["spacy"]
+            }
+    
+    # Convert back to list
+    merged_terms = list(all_terms.values())
+    
+    return {
+        "method": "hybrid",
+        "total_unique_terms": len(merged_terms),
+        "total_term_occurrences": sum(term["count"] for term in merged_terms),
+        "terms": merged_terms
+    }
+
+def extract_terms(transcript_text, options=None):
+    """Extract terms using the specified method based on options."""
+    if options is None:
+        options = {}
+    
+    extraction_method = options.get("extraction_method", TERMINOLOGY_OPTIONS["common"]["extraction_method"]["default"])
+    
+    logger.info(f"Using extraction method: {extraction_method}")
+    
+    if extraction_method == "regex":
+        return extract_terms_using_regex(transcript_text, options)
+    elif extraction_method == "spacy":
+        return extract_terms_using_spacy(transcript_text, options)
+    elif extraction_method == "hybrid":
+        return extract_terms_hybrid(transcript_text, options)
+    else:
+        logger.warning(f"Unknown extraction method: {extraction_method}, falling back to regex")
+        return extract_terms_using_regex(transcript_text, options)
 
 def send_callback_via_sqs(job_id, status, response_data=None, error_message=None):
     """Send job status updates via SQS"""
@@ -248,6 +454,14 @@ def health_check():
         'callback_queue_url_set': bool(CALLBACK_QUEUE_URL)
     })
 
+@app.route('/terminology-options', methods=['GET'])
+def get_terminology_options():
+    """Return available terminology options for Laravel frontend."""
+    return jsonify({
+        'options': TERMINOLOGY_OPTIONS,
+        'timestamp': datetime.now().isoformat()
+    })
+
 @app.route('/refresh-terms', methods=['POST']) # Added endpoint to manually refresh terms
 def refresh_terms_route():
     logger.info("Received request to refresh terminology via API.")
@@ -265,7 +479,11 @@ def process_terminology_job(job_data):
     
     job_id = job_data['job_id']
     transcript_s3_key = job_data['transcript_s3_key']
+    # Get options from job data
+    options = job_data.get('options', {})
+    
     logger.info(f"Processing terminology recognition job ID: {job_id} for transcript S3 key: {transcript_s3_key}")
+    logger.info(f"Using options: {options}")
 
     if not s3_client or not AWS_BUCKET:
         logger.error("S3 client or AWS_BUCKET not configured for terminology service.")
@@ -289,13 +507,8 @@ def process_terminology_job(job_data):
             with open(local_transcript_path, 'r', encoding='utf-8') as f:
                 transcript_text = f.read()
             
-            if not DYNAMIC_TERMINOLOGY and not transcript_text.strip(): # If no terms AND no text, result is empty
-                 terminology_results = extract_terms_dynamically("")
-            elif not DYNAMIC_TERMINOLOGY:
-                 logger.warning("No dynamic terms loaded, processing with empty term set which will find nothing.")
-                 terminology_results = extract_terms_dynamically(transcript_text) # Will produce empty results based on current logic
-            else:
-                terminology_results = extract_terms_dynamically(transcript_text)
+            # Use the new extraction function with options
+            terminology_results = extract_terms(transcript_text, options)
             
             with open(local_terminology_json_path, 'w', encoding='utf-8') as f:
                 json.dump(terminology_results, f, indent=2)
@@ -314,7 +527,8 @@ def process_terminology_job(job_data):
                 'category_summary': terminology_results.get('category_summary', {}),
                 'metadata': {
                     'service': 'terminology-recognition-service',
-                    'method': terminology_results.get('method', 'unknown')
+                    'method': terminology_results.get('method', 'regex'),
+                    'options_used': options
                 }
             }
             
@@ -421,9 +635,6 @@ if TERMINOLOGY_QUEUE_URL and sqs_client:
     listener_thread = threading.Thread(target=listen_for_sqs_messages, daemon=True)
     listener_thread.start()
     logger.info("Started SQS listener in background thread")
-
-# Removed old /refresh-terms and related spacy model loading for V1 simplicity.
-# If API-driven term definitions are re-added, that logic can be restored.
 
 if __name__ == '__main__':
     # For local dev, FLASK_ENV can be set to development for debug mode

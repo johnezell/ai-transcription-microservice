@@ -1,0 +1,71 @@
+# Use an appropriate Node.js version. Alpine Linux is used for a smaller image size.
+ARG NODE_VERSION=22-alpine
+# This ARG is for potential use in the FROM line if needed, or for documentation.
+# It is NOT automatically in scope after FROM.
+ARG LARAVEL_APP_SNAPSHOT_PATH_param
+
+FROM node:${NODE_VERSION} AS builder
+
+# Re-declare LARAVEL_APP_SNAPSHOT_PATH to make it available in this build stage.
+# It will take its value from the --build-arg passed by docker-compose.
+ARG LARAVEL_APP_SNAPSHOT_PATH
+
+# Install PHP 8.3 (since composer seems to prefer it) and necessary extensions
+RUN apk add --no-cache \
+    php83 \
+    php83-cli \
+    php83-ctype \
+    php83-curl \
+    php83-dom \
+    php83-fileinfo \
+    php83-gd \
+    php83-iconv \
+    php83-intl \
+    php83-json \
+    php83-mbstring \
+    php83-openssl \
+    php83-phar \
+    php83-session \
+    php83-simplexml \
+    php83-xml \
+    php83-xmlreader \
+    php83-xmlwriter \
+    php83-zip \
+    php83-tokenizer \
+    composer \
+    git
+
+# Set the working directory in the image for the build process
+WORKDIR /app_src
+
+# Set NODE_ENV to production for optimized builds
+ENV NODE_ENV=production
+
+# For composer, tell it to use the snapshot path for source, but install vendors in current WORKDIR
+ENV COMPOSER_HOME=/app_src/.composer
+
+# Construct the full path to the source files within the build context
+# The build context is WORKSPACE_ROOT, so we need to go into .tmp_laravel_deploy_snapshot/LARAVEL_APP_SNAPSHOT_PATH
+ARG CONTEXT_SNAPSHOT_PATH=.tmp_laravel_deploy_snapshot/${LARAVEL_APP_SNAPSHOT_PATH}
+
+# Copy all application code from the snapshot first
+# This includes package.json and composer.json
+COPY ${CONTEXT_SNAPSHOT_PATH}/ ./ 
+
+# Verify PHP version (should be 8.3 now)
+RUN echo "Verifying PHP version:" && php -v || true
+RUN echo "Listing PHP extensions:" && php -m || true
+
+# Install PHP dependencies (Composer will likely use php83)
+RUN echo "Attempting to install Composer dependencies..."
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+# Install Node.js dependencies, including devDependencies needed for the build
+RUN npm install --legacy-peer-deps --include=dev
+
+# Run the build command for frontend assets
+RUN npm run build
+
+# The final built assets are in /app_src/public/
+# (e.g., /app_src/public/build/ and /app_src/public/manifest.json)
+# This image doesn't need to run, just to hold the build artifacts. 

@@ -3,3 +3,4 @@ sandbox
 sample_course
 app/shared/jobs/*
 app/laravel/storage/*
+.tmp_laravel_deploy_snapshot/

@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  asset-builder:
+    image: laravel-asset-builder:latest # Assign a name to the built image
+    build:
+      context: . # Workspace root
+      dockerfile: Dockerfile.assetbuilder
+      # Args for the Dockerfile if needed (e.g., NODE_VERSION)
+      # args:
+      #   NODE_VERSION: "18-alpine"
+    platform: linux/amd64 # Target Fargate's architecture
+    # This service is only for building the image. No ports, volumes, or commands needed here. 

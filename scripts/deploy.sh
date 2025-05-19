@@ -27,15 +27,69 @@ echo "--------------------------------------------------"
 
 # 1. Build Laravel Frontend Assets
 echo ""
-echo ">>> Step 1: Building Laravel frontend assets..."
-cd "${WORKSPACE_ROOT}/app/laravel"
-if [ -f "package.json" ]; then
-    npm run build
-else
-    echo "package.json not found in ${WORKSPACE_ROOT}/app/laravel, skipping npm run build."
+echo ">>> Step 1: Building Laravel frontend assets for linux/amd64 using an isolated snapshot..."
+cd "${WORKSPACE_ROOT}" # Ensure we are in the root
+
+# Define the temporary snapshot directory within the workspace (gitignored recommended)
+TMP_SNAPSHOT_DIR="${WORKSPACE_ROOT}/.tmp_laravel_deploy_snapshot"
+# Define the path within the snapshot that will hold the laravel app
+SNAPSHOT_APP_PATH_FRAGMENT="laravel_app_for_build" # This is a sub-path within TMP_SNAPSHOT_DIR
+SNAPSHOT_APP_FULL_PATH="${TMP_SNAPSHOT_DIR}/${SNAPSHOT_APP_PATH_FRAGMENT}"
+
+
+if [ ! -f "docker-compose.deploy.yml" ] || [ ! -f "Dockerfile.assetbuilder" ]; then
+    echo "Error: Missing docker-compose.deploy.yml or Dockerfile.assetbuilder in workspace root." >&2
+    exit 1
 fi
-cd "${WORKSPACE_ROOT}"
-echo "Frontend assets build step completed."
+
+if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null; then
+    echo "Error: docker or docker-compose command not found. Please ensure Docker is installed and running." >&2
+    exit 1
+fi
+
+echo "Preparing isolated snapshot of app/laravel..."
+# Clean up any previous snapshot
+rm -rf "${TMP_SNAPSHOT_DIR}"
+mkdir -p "${SNAPSHOT_APP_FULL_PATH}"
+
+# Copy the app/laravel contents to the snapshot directory
+# Using rsync for a more robust copy that handles hidden files and preserves attributes better.
+# The trailing slash on the source is important for rsync to copy contents.
+echo "Copying ./app/laravel to ${SNAPSHOT_APP_FULL_PATH}..."
+rm -rf "${SNAPSHOT_APP_FULL_PATH}"
+mkdir -p "${SNAPSHOT_APP_FULL_PATH}"
+rsync -a --exclude '.git' "${WORKSPACE_ROOT}/app/laravel/" "${SNAPSHOT_APP_FULL_PATH}/"
+
+echo "Removing vendor, node_modules, and lock files from snapshot..."
+rm -rf "${SNAPSHOT_APP_FULL_PATH}/vendor"
+rm -rf "${SNAPSHOT_APP_FULL_PATH}/node_modules"
+rm -f "${SNAPSHOT_APP_FULL_PATH}/composer.lock"
+rm -f "${SNAPSHOT_APP_FULL_PATH}/package-lock.json"
+
+echo "Building asset-builder Docker image (target: linux/amd64) using snapshot..."
+# The Dockerfile.assetbuilder will be modified to COPY from ./.tmp_laravel_deploy_snapshot/laravel_app_for_build
+DOCKER_BUILDKIT=1 docker-compose -f docker-compose.deploy.yml build \
+    --build-arg LARAVEL_APP_SNAPSHOT_PATH="${SNAPSHOT_APP_PATH_FRAGMENT}" \
+    --no-cache \
+    --progress=plain asset-builder
+
+LARAVEL_PUBLIC_DIR="${WORKSPACE_ROOT}/app/laravel/public"
+echo "Cleaning up previous local build artifacts from ${LARAVEL_PUBLIC_DIR}... GGGG"
+rm -rf "${LARAVEL_PUBLIC_DIR}/build"
+rm -f "${LARAVEL_PUBLIC_DIR}/hot"
+rm -f "${LARAVEL_PUBLIC_DIR}/manifest.json"
+
+echo "Extracting built assets from laravel-asset-builder:latest image..."
+TEMP_ASSET_CONTAINER_NAME="temp-asset-extractor-$RANDOM"
+docker create --name "${TEMP_ASSET_CONTAINER_NAME}" laravel-asset-builder:latest
+# The Dockerfile.assetbuilder will ensure assets are in /app_src/public inside the image
+docker cp "${TEMP_ASSET_CONTAINER_NAME}:/app_src/public/." "${LARAVEL_PUBLIC_DIR}/"
+docker rm "${TEMP_ASSET_CONTAINER_NAME}"
+
+echo "Cleaning up temporary snapshot directory: ${TMP_SNAPSHOT_DIR}"
+rm -rf "${TMP_SNAPSHOT_DIR}"
+
+echo "Frontend assets build and extraction completed. Assets are in ${LARAVEL_PUBLIC_DIR}"
 
 # 2. Deploy CDK Stacks
 echo ""

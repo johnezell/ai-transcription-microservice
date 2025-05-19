@@ -47,8 +47,8 @@ class VideoController extends Controller
         // Sort the results
         $query->latest();
         
-        // Get the videos
-        $videos = $query->get();
+        // Paginate the results
+        $videos = $query->paginate(15)->withQueryString();
         
         // Get all courses for the dropdown
         $courses = \App\Models\Course::orderBy('name')->get();

@@ -6,7 +6,7 @@ import { router } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 
 const props = defineProps({
-    videos: Array,
+    videos: Object,
     courses: Array,
     filters: Object,
     statusOptions: Array
@@ -81,6 +81,11 @@ const activeFilterCount = computed(() => {
     if (courseId.value) count++;
     return count;
 });
+
+// Computed property to access video data easily
+const videoList = computed(() => props.videos.data || []);
+const totalVideos = computed(() => props.videos.total || 0);
+const paginationLinks = computed(() => props.videos.links || []);
 </script>
 
 <template>
@@ -173,7 +178,7 @@ const activeFilterCount = computed(() => {
 
                 <!-- Results count and filter summary -->
                 <div class="mb-4 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                    <span>{{ videos.length }} {{ videos.length === 1 ? 'video' : 'videos' }}</span>
+                    <span>{{ totalVideos }} {{ totalVideos === 1 ? 'video' : 'videos' }}</span>
                     
                     <template v-if="search || status || courseId">
                         <span class="mx-1">matching:</span>
@@ -195,7 +200,7 @@ const activeFilterCount = computed(() => {
                 <!-- Video cards -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6 text-gray-900">
-                        <div v-if="videos.length === 0" class="text-center py-8">
+                        <div v-if="videoList.length === 0" class="text-center py-8">
                             <p class="text-gray-500">No videos found matching your filters.</p>
                             <button @click="clearFilters" class="mt-4 inline-block px-4 py-2 bg-gray-200 text-gray-700 rounded-md">
                                 Clear All Filters
@@ -204,13 +209,34 @@ const activeFilterCount = computed(() => {
                         
                         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <VideoCard 
-                                v-for="video in videos" 
+                                v-for="video in videoList" 
                                 :key="video.id" 
                                 :video="video"
                                 @view="handleView"
                                 @delete="handleDelete"
                             />
                         </div>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <div v-if="paginationLinks.length > 3" class="mt-6 flex justify-center">
+                    <div class="flex flex-wrap -mb-1">
+                        <template v-for="(link, key) in paginationLinks" :key="key">
+                            <div
+                                v-if="link.url === null"
+                                class="mr-1 mb-1 px-4 py-3 text-sm leading-4 text-gray-400 border rounded"
+                                v-html="link.label"
+                            />
+                            <Link
+                                v-else
+                                class="mr-1 mb-1 px-4 py-3 text-sm leading-4 border rounded hover:bg-white focus:border-indigo-500 focus:text-indigo-500"
+                                :class="{ 'bg-white font-bold': link.active }"
+                                :href="link.url"
+                                v-html="link.label"
+                                preserve-scroll
+                            />
+                        </template>
                     </div>
                 </div>
             </div>

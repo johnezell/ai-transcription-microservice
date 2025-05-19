@@ -359,6 +359,11 @@ def extract_terms(transcript_text, options=None):
     if options is None:
         options = {}
     
+    # Handle case where options is a list instead of a dictionary
+    if isinstance(options, list):
+        logger.warning("Received options as a list instead of a dictionary. Converting to empty dictionary.")
+        options = {}
+    
     extraction_method = options.get("extraction_method", TERMINOLOGY_OPTIONS["common"]["extraction_method"]["default"])
     
     logger.info(f"Using extraction method: {extraction_method}")
@@ -481,6 +486,10 @@ def process_terminology_job(job_data):
     transcript_s3_key = job_data['transcript_s3_key']
     # Get options from job data
     options = job_data.get('options', {})
+    
+    # Log warning if options is not a dictionary
+    if isinstance(options, list):
+        logger.warning(f"Job {job_id} received options as a list instead of a dictionary: {options}")
     
     logger.info(f"Processing terminology recognition job ID: {job_id} for transcript S3 key: {transcript_s3_key}")
     logger.info(f"Using options: {options}")

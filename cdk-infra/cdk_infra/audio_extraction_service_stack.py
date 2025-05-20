@@ -31,9 +31,10 @@ class AudioExtractionServiceStack(Stack):
         app_name_context = "aws-transcription" # Consistent app prefix
 
         # Docker Image Asset for Audio Extraction Service
+        # When running inside the cdk-deployer container, WORKSPACE_ROOT is mounted to /workspace.
         audio_image_asset = ecr_assets.DockerImageAsset(self, "AudioExtractionDockerImageAsset",
-            directory="..",  # Relative to cdk-infra, points to workspace root
-            file="Dockerfile.audio-service", # Name of the Dockerfile
+            directory="/workspace",  # Changed from ".." for containerized CDK
+            file="Dockerfile.audio-service", # Assumes this Dockerfile is at /workspace/Dockerfile.audio-service
             platform=ecr_assets.Platform.LINUX_AMD64
         )
 

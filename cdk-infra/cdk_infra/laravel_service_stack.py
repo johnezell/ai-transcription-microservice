@@ -49,13 +49,11 @@ class LaravelServiceStack(Stack):
         # and CDK commands are run from /Users/john/code/aws-transcription-service-je/cdk-infra,
         # the path to the Dockerfile from cdk-infra is ../Dockerfile.laravel
         # The DockerImageAsset's 'directory' parameter is the build context.
+        # When running inside the cdk-deployer container, WORKSPACE_ROOT is mounted to /workspace.
         laravel_image_asset = ecr_assets.DockerImageAsset(self, "LaravelDockerImageAsset",
-            directory="..", # Go up one level from 'cdk-infra' to the workspace root
-            file="Dockerfile.laravel", # Name of the Dockerfile
-            platform=ecr_assets.Platform.LINUX_AMD64, # Specify the target platform
-            build_args={
-                "CDK_BUILD_TIMESTAMP": str(datetime.datetime.utcnow().timestamp())
-            }
+            directory="/workspace", # Changed from ".." to "/workspace" for containerized CDK
+            file="Dockerfile.laravel", # Name of the Dockerfile (at /workspace/Dockerfile.laravel)
+            platform=ecr_assets.Platform.LINUX_AMD64 # Specify the target platform
         )
 
         # ECS Task Definition for Laravel

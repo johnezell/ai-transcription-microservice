@@ -1,0 +1,57 @@
+# Base Python image
+ARG PYTHON_VERSION=3.11-slim
+FROM python:${PYTHON_VERSION}
+
+# Set environment variables for NVM, Node.js, and CDK CLI versions
+ENV NVM_DIR=/usr/local/nvm
+ARG NODE_VERSION=22 # LTS Node.js version
+ARG CDK_CLI_VERSION=2.1014.0 # Matching your local, working CDK CLI version
+
+ENV PATH=${NVM_DIR}/versions/node/v${NODE_VERSION}/bin:${PATH}
+
+# Install prerequisites for NVM, Node.js, Python build tools, git, and Docker CLI
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    bash \
+    build-essential \
+    git \
+    docker.io && rm -rf /var/lib/apt/lists/* # For Docker-out-of-Docker capabilities & cleanup
+
+# Install NVM (Node Version Manager), Node.js, and global CDK CLI
+RUN mkdir -p ${NVM_DIR} && \
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
+    . ${NVM_DIR}/nvm.sh && \
+    nvm install ${NODE_VERSION} && \
+    nvm use ${NODE_VERSION} && \
+    nvm alias default ${NODE_VERSION} && \
+    npm install -g aws-cdk@${CDK_CLI_VERSION} && \
+    # Clean up NVM cache
+    rm -rf ${NVM_DIR}/.cache
+
+# Verify installed versions during Docker build
+RUN echo "--- Docker Build: Verifying Versions ---" && \
+    echo "Node version: $(node -v)" && \
+    echo "NPM version: $(npm -v)" && \
+    echo "CDK CLI version: $(cdk --version)" && \
+    echo "--- End Docker Build Version Verification ---"
+
+# Set working directory for the CDK app
+WORKDIR /usr/src/app/cdk
+
+# Copy Python requirements file first for layer caching
+# Ensure this file exists in your cdk-infra directory
+COPY requirements.txt ./
+
+# Install Python dependencies for the CDK app
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the CDK application code (including entrypoint.sh if placed in cdk-infra)
+COPY . .
+
+# Copy and set up the entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command is now removed as ENTRYPOINT will execute what is passed by docker run
+# CMD ["cdk", "--version"] 

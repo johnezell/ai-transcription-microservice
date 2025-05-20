@@ -3,6 +3,17 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
+# --- Log File Configuration ---
+LOG_DIR="${WORKSPACE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/..}/logs"
+mkdir -p "${LOG_DIR}"
+LOG_FILE="${LOG_DIR}/deploy_$(date +%Y%m%d_%H%M%S).log"
+
+# Redirect all output (stdout and stderr) to the log file and also to the terminal
+exec &> >(tee -a "${LOG_FILE}")
+
+echo "Logging deployment to: ${LOG_FILE}"
+echo "--------------------------------------------------"
+
 # --- Configuration ---
 AWS_PROFILE="tfs-shared-services"
 AWS_REGION="us-east-1"
@@ -93,44 +104,75 @@ echo "Frontend assets build and extraction completed. Assets are in ${LARAVEL_PU
 
 # 2. Deploy CDK Stacks
 echo ""
-echo ">>> Step 2: Deploying CDK stacks..."
+echo ">>> Step 2: Deploying CDK stacks via Dockerized environment..."
 CDK_DIR="${WORKSPACE_ROOT}/cdk-infra"
 
-if [ ! -d "${CDK_DIR}" ]; then
-    echo "Error: CDK directory ${CDK_DIR} not found." >&2
-    exit 1
-fi
-cd "${CDK_DIR}"
-
-if [ ! -d ".venv" ]; then
-    echo "Error: Python virtual environment .venv not found in ${CDK_DIR}."
-    echo "Please create and activate it first (e.g., python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt)." >&2
+if [ ! -d "${CDK_DIR}" ] || [ ! -f "${CDK_DIR}/Dockerfile.cdk" ]; then
+    echo "Error: CDK directory ${CDK_DIR} or ${CDK_DIR}/Dockerfile.cdk not found." >&2
     exit 1
 fi
 
-echo "Activating Python virtual environment..."
-source .venv/bin/activate 
-
-if [ ! -f "requirements.txt" ]; then
-    echo "Warning: requirements.txt not found in ${CDK_DIR}, skipping pip install."
-else
-    echo "Ensuring CDK Python dependencies are installed..."
-    pip install -r requirements.txt
+# Ensure Docker is available
+if ! command -v docker &> /dev/null; then
+    echo "Error: docker command not found. Please ensure Docker is installed and running." >&2
+    exit 1
 fi
 
-echo "Removing old cdk.out directory for a clean synthesis..."
-rm -rf cdk.out
+echo "Building CDK execution Docker image (cdk-deployer)..."
+# Build the Docker image that contains Python, Node.js, CDK CLI, Docker CLI, and CDK app dependencies
+docker build -t cdk-deployer --no-cache -f "${CDK_DIR}/Dockerfile.cdk" "${CDK_DIR}"
 
-echo "Deploying stack(s): ${STACKS_TO_DEPLOY}..."
-cdk deploy "${STACKS_TO_DEPLOY}" \
-    --require-approval never \
-    --profile "${AWS_PROFILE}" \
-    --region "${AWS_REGION}" \
-    -vvv
+# The old virtual environment activation and pip install are no longer needed here,
+# as dependencies are handled inside the Docker image.
+
+echo "Removing old cdk.out directory from host for a clean synthesis (if mounted)..."
+rm -rf "${CDK_DIR}/cdk.out"
+
+echo "--- Debugging Docker Run Variables ---"
+echo "HOME: ${HOME}"
+echo "CDK_DIR: ${CDK_DIR}"
+echo "WORKSPACE_ROOT: ${WORKSPACE_ROOT}"
+echo "AWS_PROFILE: ${AWS_PROFILE}"
+echo "AWS_REGION: ${AWS_REGION}"
+echo "STACKS_TO_DEPLOY: ${STACKS_TO_DEPLOY}"
+echo "--- End Debugging Docker Run Variables ---"
+
+echo "Deploying stack(s): ${STACKS_TO_DEPLOY} using cdk-deployer Docker image..."
+
+# Build the docker command and arguments in an array for robustness
+docker_cmd_args=(
+    run 
+    --rm
+    # Mount AWS credentials
+    -v "${HOME}/.aws:/root/.aws:ro"
+    # Mount Docker socket for DooD
+    -v /var/run/docker.sock:/var/run/docker.sock
+    # Mount CDK app source and allow output to cdk.out
+    -v "${CDK_DIR}:/usr/src/app/cdk"
+    # Mount the entire workspace root to access Dockerfile.laravel and its context
+    -v "${WORKSPACE_ROOT}:/workspace:ro"
+    # Mount Laravel assets (already present, might be redundant if workspace is mounted but keep for clarity or specific use)
+    -v "${WORKSPACE_ROOT}/app/laravel/public:/app_assets:ro"
+    -e "AWS_PROFILE=${AWS_PROFILE}"
+    -e "AWS_REGION=${AWS_REGION}"
+    # CDK output directory inside the container
+    -e "CDK_OUTDIR=/usr/src/app/cdk/cdk.out"
+    # Add any other environment variables that your CDK Python app might need
+    # The image name
+    cdk-deployer
+    # Command to run in the container
+    cdk deploy "${STACKS_TO_DEPLOY}"
+        --require-approval never
+        -vvv
+)
+
+echo "Executing Docker command: docker ${docker_cmd_args[*]}" # Print the command as it would be joined by the shell
+
+# Execute the command
+docker "${docker_cmd_args[@]}"
 
 cd "${WORKSPACE_ROOT}"
 echo "--------------------------------------------------"
-echo "CDK deployment command for '${STACKS_TO_DEPLOY}' initiated."
-echo "Monitor your terminal or AWS CloudFormation console for progress."
+echo "CDK deployment command for '${STACKS_TO_DEPLOY}' initiated via Docker."
 echo "Deployment Script Finished."
 echo "--------------------------------------------------" 

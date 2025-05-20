@@ -31,9 +31,10 @@ class TerminologyServiceStack(Stack):
         app_name_context = "aws-transcription" # Consistent app name
 
         # Docker Image Asset for the Terminology service
+        # When running inside the cdk-deployer container, WORKSPACE_ROOT is mounted to /workspace.
         terminology_image_asset = ecr_assets.DockerImageAsset(self, "TerminologyServiceImageAsset",
-            directory="..",  # Relative to 'cdk-infra', so it points to the workspace root
-            file="Dockerfile.terminology-service", # Corrected Dockerfile name
+            directory="/workspace",  # Changed from ".." for containerized CDK
+            file="Dockerfile.terminology-service", # Assumes this Dockerfile is at /workspace/Dockerfile.terminology-service
             platform=ecr_assets.Platform.LINUX_AMD64 # Build for Fargate
         )
 

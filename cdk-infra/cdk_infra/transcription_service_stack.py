@@ -33,9 +33,10 @@ class TranscriptionServiceStack(Stack):
         app_name_context = "aws-transcription"
 
         # Docker Image Asset for the Transcription service
+        # When running inside the cdk-deployer container, WORKSPACE_ROOT is mounted to /workspace.
         transcription_image_asset = ecr_assets.DockerImageAsset(self, "TranscriptionServiceImageAsset",
-            directory="..",  # Relative to 'cdk-infra', so it points to the workspace root
-            file="Dockerfile.transcription-service", # Corrected Dockerfile name
+            directory="/workspace",  # Changed from ".." for containerized CDK
+            file="Dockerfile.transcription-service", # Assumes this Dockerfile is at /workspace/Dockerfile.transcription-service
             platform=ecr_assets.Platform.LINUX_AMD64 # Build for x86 architecture
         )
 

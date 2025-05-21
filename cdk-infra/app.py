@@ -2,6 +2,7 @@
 import os
 
 import aws_cdk as cdk
+from aws_cdk import aws_secretsmanager as secretsmanager
 
 from cdk_infra.cdk_infra_stack import CdkInfraStack
 from cdk_infra.laravel_service_stack import LaravelServiceStack
@@ -28,6 +29,10 @@ main_infra_stack = CdkInfraStack(app, "CdkInfraStack",
     # For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html
 )
 
+# Look up the existing database secret
+db_secret_arn = "arn:aws:secretsmanager:us-east-1:542876199144:secret:prod/thoth/db-3FuVTh"
+database_secret = secretsmanager.Secret.from_secret_arn(app, "ImportedDBSecret", db_secret_arn)
+
 # Instantiate the Laravel service stack, passing resources from the main stack
 laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",
     vpc=main_infra_stack.vpc,
@@ -36,7 +41,7 @@ laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",
     ecs_task_execution_role=main_infra_stack.ecs_task_execution_role,
     shared_task_role=main_infra_stack.shared_task_role,
     laravel_log_group=main_infra_stack.laravel_log_group,
-    db_secret=main_infra_stack.db_cluster_secret,
+    db_secret=database_secret,
     app_data_bucket=main_infra_stack.app_data_bucket,
     audio_extraction_queue=main_infra_stack.audio_extraction_queue,
     transcription_queue=main_infra_stack.transcription_queue,

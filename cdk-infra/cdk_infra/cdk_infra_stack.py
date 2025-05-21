@@ -8,8 +8,6 @@ from aws_cdk import (
     aws_ecs as ecs,
     aws_iam as iam,
     aws_logs as logs,
-    aws_rds as rds,
-    aws_secretsmanager as secretsmanager,
     aws_s3 as s3,
     Duration,
     RemovalPolicy,
@@ -92,6 +90,38 @@ class CdkInfraStack(Stack):
         )
 
         # RDS Security Group - Reverted to only allow internal service access pending VPN diagnosis
+        # rds_sg = ec2.SecurityGroup(self, "RdsSecurityGroup",
+        #     vpc=vpc,
+        #     description="Security group for the RDS database",
+        #     allow_all_outbound=True
+        # )
+        # self.rds_sg = rds_sg
+        # # Allow MySQL traffic from Laravel tasks
+        # rds_sg.add_ingress_rule(
+        #     peer=laravel_ecs_task_sg,
+        #     connection=ec2.Port.tcp(3306),
+        #     description="Allow MySQL traffic from Laravel tasks"
+        # )
+        # # Allow MySQL traffic from Internal services
+        # rds_sg.add_ingress_rule(
+        #     peer=internal_services_sg,
+        #     connection=ec2.Port.tcp(3306),
+        #     description="Allow MySQL traffic from Internal services"
+        # )
+        # # Allow MySQL traffic from the TrueFire VPN Gateway IP
+        # rds_sg.add_ingress_rule(
+        #     peer=ec2.Peer.ipv4(truefire_vpn_gateway_ip), 
+        #     connection=ec2.Port.tcp(3306),
+        #     description="Allow MySQL from TrueFire VPN Gateway IP"
+        # )
+        # # Allow MySQL traffic from specific user VPN client IP (as a fallback or alternative path)
+        # rds_sg.add_ingress_rule(
+        #     peer=ec2.Peer.ipv4(user_vpn_client_ip),
+        #     connection=ec2.Port.tcp(3306),
+        #     description="Allow MySQL from user VPN client IP"
+        # )
+
+        # EFS Security Group and related EFS resources are removed as per decision to use S3.
         rds_sg = ec2.SecurityGroup(self, "RdsSecurityGroup",
             vpc=vpc,
             description="Security group for the RDS database",
@@ -350,29 +380,6 @@ class CdkInfraStack(Stack):
         )
         self.terminology_log_group = terminology_log_group
 
-        # RDS Aurora Serverless v2 MySQL Cluster
-        db_cluster = rds.DatabaseCluster(self, "AppDatabaseCluster",
-            engine=rds.DatabaseClusterEngine.aurora_mysql(
-                version=rds.AuroraMysqlEngineVersion.VER_3_04_0  # Changed to MySQL 8.0.28 compatible
-            ),
-            credentials=rds.Credentials.from_generated_secret("dbAdmin"), # Stores master credentials in Secrets Manager
-            writer=rds.ClusterInstance.serverless_v2("writerInstance"), # Defines a Serverless v2 writer instance
-            serverless_v2_min_capacity=0.5, # Min ACUs
-            serverless_v2_max_capacity=1.0, # Max ACUs for prototype, can be increased
-            vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
-            security_groups=[rds_sg],
-            default_database_name=db_name,
-            removal_policy=RemovalPolicy.RETAIN,  # Changed from DESTROY to RETAIN for production use
-            backup=rds.BackupProps(
-                retention=aws_cdk.Duration.days(7)  # Increased from 1 day to 7 days for better protection
-            ),
-            deletion_protection=True  # Add deletion protection to prevent accidental deletion
-        )
-        self.db_cluster = db_cluster
-        # Expose the secret for the Laravel stack to use
-        self.db_cluster_secret = db_cluster.secret
-
         # We can add outputs or use 'vpc' variable later to pass to other constructs
         # For example, to see the VPC ID after synthesis/deployment:
         aws_cdk.CfnOutput(self, "VpcIdOutput",
@@ -386,10 +393,6 @@ class CdkInfraStack(Stack):
         aws_cdk.CfnOutput(self, "InternalServicesSecurityGroupIdOutput",
             value=internal_services_sg.security_group_id,
             description="ID of the Internal Services Security Group"
-        )
-        aws_cdk.CfnOutput(self, "RdsSecurityGroupIdOutput",
-            value=rds_sg.security_group_id,
-            description="ID of the RDS Security Group"
         )
         aws_cdk.CfnOutput(self, "AppDataBucketNameOutput",
             value=app_data_bucket.bucket_name,
@@ -445,18 +448,6 @@ class CdkInfraStack(Stack):
         aws_cdk.CfnOutput(self, "SharedAppTaskRoleArnOutput",
             value=shared_task_role.role_arn,
             description="ARN of the Shared Application Task Role"
-        )
-        aws_cdk.CfnOutput(self, "DbClusterEndpointOutput",
-            value=db_cluster.cluster_endpoint.hostname,
-            description="Hostname of the DB Cluster Endpoint"
-        )
-        aws_cdk.CfnOutput(self, "DbClusterReadEndpointOutput",
-            value=db_cluster.cluster_read_endpoint.hostname,
-            description="Hostname of the DB Cluster Read Endpoint"
-        )
-        aws_cdk.CfnOutput(self, "DbClusterSecretArnOutput",
-            value=db_cluster.secret.secret_arn if db_cluster.secret else "N/A",
-            description="ARN of the DB Cluster master credentials secret in Secrets Manager"
         )
 
         # The code that defines your stack goes here

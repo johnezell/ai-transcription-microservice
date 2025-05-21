@@ -31,7 +31,7 @@ main_infra_stack = CdkInfraStack(app, "CdkInfraStack",
 
 # Look up the existing database secret
 db_secret_arn = "arn:aws:secretsmanager:us-east-1:542876199144:secret:prod/thoth/db-3FuVTh"
-database_secret = secretsmanager.Secret.from_secret_arn(app, "ImportedDBSecret", db_secret_arn)
+database_secret = secretsmanager.Secret.from_secret_complete_arn(app, "ImportedDBSecret", db_secret_arn)
 
 # Instantiate the Laravel service stack, passing resources from the main stack
 laravel_service_stack = LaravelServiceStack(app, "LaravelServiceStack",

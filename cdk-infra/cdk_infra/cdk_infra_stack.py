@@ -9,6 +9,7 @@ from aws_cdk import (
     aws_iam as iam,
     aws_logs as logs,
     aws_s3 as s3,
+    aws_secretsmanager as secretsmanager,
     Duration,
     RemovalPolicy,
 )
@@ -16,7 +17,7 @@ from constructs import Construct
 
 class CdkInfraStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, db_secret_arn: str = None, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         app_name = "aws-transcription"
@@ -25,6 +26,11 @@ class CdkInfraStack(Stack):
         # For now, ensure they are defined for clarity if used directly below.
         truefire_vpn_gateway_ip = self.node.try_get_context("truefire_vpn_gateway_ip") or "72.239.107.152/32" # Example, adjust as needed
         user_vpn_client_ip = self.node.try_get_context("user_vpn_client_ip") or "10.209.27.93/32" # Example, adjust as needed
+
+        if db_secret_arn:
+            self.database_secret = secretsmanager.Secret.from_secret_complete_arn(self, "ImportedDBSecretFromMainStack", db_secret_arn)
+        else:
+            self.database_secret = None # Or handle error, or create a new one if that's desired fallback
 
         # Import the existing VPC using its ID
         # This lookup will require context to be populated in cdk.context.json

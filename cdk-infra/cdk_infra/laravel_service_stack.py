@@ -115,7 +115,7 @@ class LaravelServiceStack(Stack):
             secrets={
                 "DB_HOST": ecs.Secret.from_secrets_manager(db_secret, "host"),
                 "DB_PORT": ecs.Secret.from_secrets_manager(db_secret, "port"),
-                "DB_DATABASE": ecs.Secret.from_secrets_manager(db_secret, "dbname"),
+                "DB_DATABASE": ecs.Secret.from_secrets_manager(db_secret, "dbClusterIdentifier"),
                 "DB_USERNAME": ecs.Secret.from_secrets_manager(db_secret, "username"),
                 "DB_PASSWORD": ecs.Secret.from_secrets_manager(db_secret, "password")
             }

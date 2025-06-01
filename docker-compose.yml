@@ -1,5 +1,3 @@
-# version: '3.8' # Obsolete, can be removed
-
 services:
   laravel: # PHP-FPM application service with Nginx running inside via supervisord
     build:

@@ -126,7 +126,7 @@ class TranscriptionServiceStack(Stack):
         
         # Auto-scaling based on SQS queue depth
         scaling = self.ec2_service.auto_scale_task_count(
-            min_capacity=0,  # Allow scaling to zero when idle for cost savings
+            min_capacity=1,  # Ensure at least one task is always running
             max_capacity=10  # Limit GPU instances for cost control
         )
         

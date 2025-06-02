@@ -61,9 +61,42 @@ class CourseController extends Controller
         // Get unassigned videos for the add video modal
         $unassignedVideos = Video::whereNull('course_id')->get();
         
+        // Get segments for testing - load a sample of segments from TrueFire database
+        $segments = [];
+        try {
+            $segments = \App\Models\Segment::limit(10)->get()->map(function($segment) {
+                try {
+                    return [
+                        'id' => $segment->id,
+                        'video' => $segment->video,
+                        'title' => $segment->title ?? 'Segment ' . $segment->id,
+                        'signed_url' => $segment->getSignedUrl(),
+                    ];
+                } catch (\Exception $e) {
+                    Log::warning('Failed to generate signed URL for segment', [
+                        'segment_id' => $segment->id,
+                        'error' => $e->getMessage()
+                    ]);
+                    return [
+                        'id' => $segment->id,
+                        'video' => $segment->video,
+                        'title' => $segment->title ?? 'Segment ' . $segment->id,
+                        'signed_url' => null,
+                        'error' => 'Failed to generate signed URL'
+                    ];
+                }
+            });
+        } catch (\Exception $e) {
+            Log::warning('Failed to load segments for testing', [
+                'course_id' => $course->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
         return Inertia::render('Courses/Show', [
             'course' => $course,
             'unassignedVideos' => $unassignedVideos,
+            'segments' => $segments,
         ]);
     }
     

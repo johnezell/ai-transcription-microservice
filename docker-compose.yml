@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     ports:
       - "8080:80"
+      - "5173:5173"
     volumes:
       - ./app/laravel:/var/www
       - ./app/shared:/var/www/storage/app/public/s3:delegated
@@ -14,12 +15,20 @@ services:
       - app-network
     environment:
       - APP_ENV=local
+      - APP_DEBUG=true
       - DB_CONNECTION=sqlite
       - DB_DATABASE=/var/www/database/database.sqlite
+      - CACHE_STORE=redis
+      - SESSION_DRIVER=file
+      - QUEUE_CONNECTION=sync
+      - FILESYSTEM_DISK=local
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=null
+      - REDIS_DB=0
       - AUDIO_SERVICE_URL=http://audio-extraction-service:5000
       - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
       - MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000
-      - QUEUE_CONNECTION=database
 
   audio-extraction-service:
     build:
@@ -75,6 +84,21 @@ services:
       - LARAVEL_API_URL=http://laravel/api
     ports:
       - "5052:5000"
+
+  redis:
+    image: redis:7-alpine
+    container_name: aws-transcription-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app-network
+
+volumes:
+  redis_data:
 
 networks:
   app-network:

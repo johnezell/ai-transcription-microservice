@@ -1,0 +1,1 @@
+always use docker containers when running node/npm and php.composer commands

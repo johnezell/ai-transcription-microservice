@@ -26,5 +26,5 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->create();
 
-// Include auto-authentication bootstrap - always loaded in Docker environment
-require_once __DIR__ . '/autoauth.php';
+// Auto-authentication is handled by the AutoAuthenticateTestUser middleware
+// No need to include autoauth.php here as it runs too early in the bootstrap process

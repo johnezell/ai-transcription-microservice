@@ -22,6 +22,9 @@ RUN curl -sL https://deb.nodesource.com/setup_18.x | bash - \
 # Install PHP extensions
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
+# Install Redis extension
+RUN pecl install redis && docker-php-ext-enable redis
+
 # Configure PHP for large uploads
 COPY docker/php/custom.ini /usr/local/etc/php/conf.d/custom.ini
 
@@ -35,18 +38,54 @@ RUN ln -sf /dev/stdout /var/log/nginx/access.log \
 
 # Set up Supervisor
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/supervisor/queue-workers.conf /etc/supervisor/conf.d/queue-workers.conf
+
+# Copy vite startup script
+COPY docker/scripts/start-vite.sh /usr/local/bin/start-vite.sh
+RUN chmod +x /usr/local/bin/start-vite.sh
+
+# Copy entrypoint script
+COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Copy existing application directory
 COPY ./app/laravel .
+
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader
+
+# Install Node.js dependencies
+RUN npm ci --only=production=false
+
+# Ensure all dependencies are properly installed for development
+RUN npm install --only=dev
+
+# Build assets for production (commented out for development mode)
+# RUN npm run build
+
+# Verify npm dependencies and vite installation
+RUN npm list vite || echo "Vite not found in dependencies" \
+    && ls -la /var/www/node_modules/.bin/ \
+    && which npm \
+    && which node \
+    && npm --version \
+    && node --version
+
+# Verify vite installation and make executable
+RUN ls -la /var/www/node_modules/.bin/vite && chmod +x /var/www/node_modules/.bin/vite
+
+# Add node_modules/.bin to PATH for all processes
+ENV PATH="/var/www/node_modules/.bin:$PATH"
 
 # Create required directories and set permissions
 RUN mkdir -p /var/www/storage/app/public/s3/jobs \
     && mkdir -p /var/www/bootstrap/cache \
     && chown -R www-data:www-data /var/www \
-    && chmod -R 777 /var/www/storage
+    && chmod -R 777 /var/www/storage \
+    && chmod +x /var/www/node_modules/.bin/* || true
 
-# Expose port 80
-EXPOSE 80
+# Expose ports 80 (nginx) and 5173 (vite dev server)
+EXPOSE 80 5173
 
-# Start Supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"] 
+# Start with entrypoint script
+CMD ["/usr/local/bin/entrypoint.sh"] 

@@ -41,27 +41,30 @@ return [
             'journal_mode' => null,
             'synchronous' => null,
         ],
-
-        'mysql' => [
+       'truefire' => [
             'driver' => 'mysql',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
+            'read'=>[
+                'host' => [env('TF_DB_RO_HOST', '127.0.0.1')],
+            ],
+            'write'=>[
+                'host' => [env('TF_DB_HOST', '127.0.0.1')],
+            ],
+            'sticky'=>true,
+            'port' => env('DB_PORT', 3306),
+            'database' => 'truefire',
+            'username' => env('TF_DB_USERNAME', 'root'),
+            'password' => env('TF_DB_PASSWORD', 'password'),
             'unix_socket' => env('DB_SOCKET', ''),
             'charset' => env('DB_CHARSET', 'utf8mb4'),
             'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'strict' => true,
-            'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+            'prefix' => env('DB_PREFIX', ''),
+            'strict' => env('DB_STRICT_MODE', false),
+            'engine' => env('DB_ENGINE', null),
+            'timezone' => env('DB_TIMEZONE', '+00:00'),
+            'options'   => array(
+                PDO::ATTR_CASE => PDO::CASE_LOWER,
+            ),
         ],
-
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

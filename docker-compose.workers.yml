@@ -1,0 +1,114 @@
+services:
+  # Download Worker 1
+  download-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.laravel
+    container_name: download-worker-1
+    restart: unless-stopped
+    volumes:
+      - ./app/laravel:/var/www
+    networks:
+      - app-network
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/database.sqlite
+      - QUEUE_CONNECTION=database
+      - FILESYSTEM_DISK=local
+    command: php artisan queue:work --queue=downloads --sleep=3 --tries=3 --max-time=3600 --memory=512
+    depends_on:
+      - laravel
+
+  # Download Worker 2
+  download-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.laravel
+    container_name: download-worker-2
+    restart: unless-stopped
+    volumes:
+      - ./app/laravel:/var/www
+    networks:
+      - app-network
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/database.sqlite
+      - QUEUE_CONNECTION=database
+      - FILESYSTEM_DISK=local
+    command: php artisan queue:work --queue=downloads --sleep=3 --tries=3 --max-time=3600 --memory=512
+    depends_on:
+      - laravel
+
+  # Download Worker 3
+  download-worker-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.laravel
+    container_name: download-worker-3
+    restart: unless-stopped
+    volumes:
+      - ./app/laravel:/var/www
+    networks:
+      - app-network
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/database.sqlite
+      - QUEUE_CONNECTION=database
+      - FILESYSTEM_DISK=local
+    command: php artisan queue:work --queue=downloads --sleep=3 --tries=3 --max-time=3600 --memory=512
+    depends_on:
+      - laravel
+
+  # Download Worker 4
+  download-worker-4:
+    build:
+      context: .
+      dockerfile: Dockerfile.laravel
+    container_name: download-worker-4
+    restart: unless-stopped
+    volumes:
+      - ./app/laravel:/var/www
+    networks:
+      - app-network
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/database.sqlite
+      - QUEUE_CONNECTION=database
+      - FILESYSTEM_DISK=local
+    command: php artisan queue:work --queue=downloads --sleep=3 --tries=3 --max-time=3600 --memory=512
+    depends_on:
+      - laravel
+
+  # Download Worker 5
+  download-worker-5:
+    build:
+      context: .
+      dockerfile: Dockerfile.laravel
+    container_name: download-worker-5
+    restart: unless-stopped
+    volumes:
+      - ./app/laravel:/var/www
+    networks:
+      - app-network
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/database.sqlite
+      - QUEUE_CONNECTION=database
+      - FILESYSTEM_DISK=local
+    command: php artisan queue:work --queue=downloads --sleep=3 --tries=3 --max-time=3600 --memory=512
+    depends_on:
+      - laravel
+
+networks:
+  app-network:
+    external: true

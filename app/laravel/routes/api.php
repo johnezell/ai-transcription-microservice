@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\ConnectivityController;
 use App\Http\Controllers\Api\HelloController;
 use App\Http\Controllers\Api\MusicTermController;
 use App\Http\Controllers\Api\TranscriptionController;
+use App\Http\Controllers\CloudFrontController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Models\Video;
@@ -435,4 +436,11 @@ Route::put('/videos/{id}/status', function($id) {
             'message' => 'Error updating video status: ' . $e->getMessage()
         ], 500);
     }
+});
+
+// CloudFront URL signing endpoints
+Route::prefix('cloudfront')->group(function() {
+    Route::post('/sign-url', [CloudFrontController::class, 'signUrl'])->name('api.cloudfront.sign-url');
+    Route::post('/sign-multiple-urls', [CloudFrontController::class, 'signMultipleUrls'])->name('api.cloudfront.sign-multiple-urls');
+    Route::get('/validate-config', [CloudFrontController::class, 'validateConfiguration'])->name('api.cloudfront.validate-config');
 });

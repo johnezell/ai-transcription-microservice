@@ -2,10 +2,13 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\VideoController;
+use App\Http\Controllers\TruefireCourseController;
 use App\Http\Controllers\EnhancementIdeaController;
+use App\Http\Controllers\DownloadMonitorController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Cache;
 
 /*
 |--------------------------------------------------------------------------
@@ -33,6 +36,19 @@ Route::post('/videos/{video}/transcription', [VideoController::class, 'requestTr
 
 // Course management routes
 Route::resource('courses', \App\Http\Controllers\CourseController::class);
+
+// TrueFire Course management routes
+Route::resource('truefire-courses', TruefireCourseController::class)->only(['index', 'show']);
+Route::get('/truefire-courses/{truefireCourse}/download-all', [TruefireCourseController::class, 'downloadAll'])
+    ->name('truefire-courses.download-all');
+Route::get('/truefire-courses/{truefireCourse}/download-status', [TruefireCourseController::class, 'downloadStatus'])
+    ->name('truefire-courses.download-status');
+Route::get('/truefire-courses/{truefireCourse}/download-stats', [TruefireCourseController::class, 'downloadStats'])
+    ->name('truefire-courses.download-stats');
+Route::post('/truefire-courses/clear-cache', [TruefireCourseController::class, 'clearAllCaches'])
+    ->name('truefire-courses.clear-cache');
+Route::post('/truefire-courses/warm-cache', [TruefireCourseController::class, 'warmCache'])
+    ->name('truefire-courses.warm-cache');
 Route::post('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'addVideo'])
     ->name('courses.videos.add');
 Route::delete('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'removeVideo'])
@@ -251,5 +267,115 @@ Route::get('/fix-status-immediate/{id}', function ($id) {
         ], 500);
     }
 });
+
+// CloudFront testing interface
+Route::get('/cloudfront-test', function () {
+    return view('cloudfront-test');
+})->name('cloudfront.test');
+
+// Test S3 connectivity
+Route::get('/test-s3', function () {
+    try {
+        $s3Service = new \App\Services\S3Service();
+        
+        // Test by listing files (this will verify credentials work)
+        $files = $s3Service->listFiles();
+        
+        return response()->json([
+            'status' => 'success',
+            'message' => 'S3 connection successful!',
+            'files_count' => count($files),
+            'bucket' => config('filesystems.disks.s3.bucket'),
+            'region' => config('filesystems.disks.s3.region'),
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'S3 connection failed: ' . $e->getMessage(),
+        ], 500);
+    }
+})->name('test.s3');
+
+// Test CloudFront Segment Signed URLs
+Route::get('/test-segment-url/{segmentId?}', function ($segmentId = null) {
+    try {
+        // Get a segment for testing
+        $segment = $segmentId 
+            ? \App\Models\Segment::find($segmentId)
+            : \App\Models\Segment::with('channel')->first();
+        
+        if (!$segment) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No segment found. Please provide a valid segment ID or ensure segments exist.',
+            ], 404);
+        }
+
+        // Test all URL methods
+        $urls = [
+            'signed_url_1h' => $segment->getSignedUrl(3600, false),
+            'signed_url_5m' => $segment->getSignedUrl(300, false),
+            'signed_url_with_ip' => $segment->getSignedUrl(3600, true),
+            'unsigned_url' => $segment->getUnsignedUrl(),
+            's3_url' => $segment->getS3Url(),
+            'multiple_urls' => $segment->getSignedUrls(),
+        ];
+
+        return response()->json([
+            'status' => 'success',
+            'segment_id' => $segment->id,
+            'filename' => $segment->filename,
+            'channel_slug' => $segment->channel->slug ?? 'unknown',
+            'urls' => $urls,
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'CloudFront URL generation failed: ' . $e->getMessage(),
+            'trace' => config('app.debug') ? $e->getTraceAsString() : null,
+        ], 500);
+    }
+})->name('test.segment.urls');
+
+// Download monitoring routes
+Route::get('/download-monitor', [DownloadMonitorController::class, 'index'])->name('download.monitor');
+Route::get('/api/download-stats', [DownloadMonitorController::class, 'stats'])->name('download.stats');
+
+// Test Redis cache tagging
+Route::get('/test-cache-tags', function () {
+    try {
+        // Test cache tagging
+        Cache::tags(['test_tag'])->put('test_key', 'test_value', 60);
+        $value = Cache::tags(['test_tag'])->get('test_key');
+        
+        if ($value === 'test_value') {
+            // Clean up
+            Cache::tags(['test_tag'])->flush();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Cache tagging is working properly with Redis',
+                'cache_driver' => config('cache.default'),
+                'value_retrieved' => $value
+            ]);
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cache tagging test failed - value mismatch',
+                'cache_driver' => config('cache.default'),
+                'expected' => 'test_value',
+                'actual' => $value
+            ], 500);
+        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Cache tagging not supported or Redis not available',
+            'cache_driver' => config('cache.default'),
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->name('test.cache.tags');
 
 require __DIR__.'/auth.php';

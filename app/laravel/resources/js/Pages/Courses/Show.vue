@@ -10,12 +10,14 @@ import draggable from 'vuedraggable';
 const props = defineProps({
     course: Object,
     unassignedVideos: Array,
+    segments: Array,
 });
 
 // Debug log to check course and videos data
 console.log('Course data:', props.course);
 console.log('Videos from course:', props.course.videos);
 console.log('Unassigned videos:', props.unassignedVideos);
+console.log('Segments data:', props.segments);
 
 // Video ordering
 const videos = ref(props.course.videos || []);
@@ -128,6 +130,24 @@ const getStatusClass = (status, isProcessing) => {
         case 'uploaded': return 'bg-blue-100 text-blue-800';
         case 'failed': return 'bg-red-100 text-red-800';
         default: return 'bg-gray-100 text-gray-800';
+    }
+};
+
+// Copy to clipboard function
+const copyToClipboard = async (text) => {
+    try {
+        await navigator.clipboard.writeText(text);
+        // You could add a toast notification here if you have one
+        console.log('URL copied to clipboard');
+    } catch (err) {
+        console.error('Failed to copy URL: ', err);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
     }
 };
 </script>
@@ -337,6 +357,113 @@ const getStatusClass = (status, isProcessing) => {
                             <div class="mt-4 text-center text-gray-500 text-sm">
                                 <p>Drag and drop videos to reorder them in the course</p>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Segments Section -->
+                <div v-if="segments && segments.length > 0" class="bg-white overflow-hidden shadow-sm sm:rounded-lg mt-6">
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 class="text-lg font-medium">TrueFire Segments Testing</h3>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Sample segments with signed CloudFront URLs for testing
+                                </p>
+                            </div>
+                            <div class="flex items-center space-x-4">
+                                <div class="text-sm text-gray-500">
+                                    {{ segments.length }} segments loaded
+                                </div>
+                                <div class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                                    Testing Mode
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Segment ID
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Title
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Video File
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Signed URL
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="segment in segments" :key="segment.id" class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            {{ segment.id }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {{ segment.title }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <code class="bg-gray-100 px-2 py-1 rounded text-xs">
+                                                {{ segment.video }}
+                                            </code>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-gray-500">
+                                            <div v-if="segment.signed_url" class="flex items-center">
+                                                <div class="truncate max-w-xs mr-2">
+                                                    <code class="bg-green-50 text-green-700 px-2 py-1 rounded text-xs">
+                                                        {{ segment.signed_url.substring(0, 50) }}...
+                                                    </code>
+                                                </div>
+                                                <button
+                                                    @click="copyToClipboard(segment.signed_url)"
+                                                    class="text-blue-600 hover:text-blue-800 text-xs"
+                                                    title="Copy URL"
+                                                >
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <div v-else class="text-red-500 text-xs">
+                                                {{ segment.error || 'No signed URL available' }}
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <div class="flex space-x-2">
+                                                <a
+                                                    v-if="segment.signed_url"
+                                                    :href="segment.signed_url"
+                                                    target="_blank"
+                                                    class="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 rounded-md text-xs hover:bg-blue-100"
+                                                >
+                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                                    </svg>
+                                                    Test
+                                                </a>
+                                                <button
+                                                    v-if="segment.signed_url"
+                                                    @click="copyToClipboard(segment.signed_url)"
+                                                    class="inline-flex items-center px-3 py-1 bg-gray-50 text-gray-700 rounded-md text-xs hover:bg-gray-100"
+                                                >
+                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                                    </svg>
+                                                    Copy
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

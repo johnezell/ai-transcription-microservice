@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'cloudfront' => [
+        'private_key_path' => env('CLOUDFRONT_PRIVATE_KEY_PATH', storage_path('app/cloudfront/pk-APKAJKYJ7CQO2ZKTVR4Q.pem')),
+        'key_pair_id' => env('CLOUDFRONT_KEY_PAIR_ID', 'APKAJKYJ7CQO2ZKTVR4Q'),
+        'region' => env('CLOUDFRONT_REGION', 'us-east-1'),
+        'default_expiration' => env('CLOUDFRONT_DEFAULT_EXPIRATION', 300),
+    ],
+
 ];

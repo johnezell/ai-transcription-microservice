@@ -11,3 +11,21 @@ coverage
 .coverage
 .vscode
 app/laravel/node_modules
+# Additional exclusions to reduce build context size
+test-results/
+.roo/
+.venv/
+database.sqlite
+*.md
+LICENSE
+scripts/
+app/laravel/vendor/
+app/laravel/storage/logs/
+app/laravel/storage/framework/cache/
+app/laravel/storage/framework/sessions/
+app/laravel/storage/framework/views/
+app/services/*/venv/
+app/services/*/__pycache__/
+app/services/*/.pytest_cache/
+**/.DS_Store
+**/Thumbs.db

@@ -464,6 +464,8 @@ const formatDate = (timestamp) => {
                         </div>
                     </div>
                 </div>
+<!-- Channels Table -->
+<div class="overflow-hidden bg-white shadow-sm sm:rounded-lg" v-if="course.channels && course.channels.length > 1">
                 <!-- Channels Table -->
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                     <div class="p-6 text-gray-900">
@@ -525,6 +527,7 @@ const formatDate = (timestamp) => {
                                     This course doesn't have any channels associated with it.
                                 </p>
                             </div>
+</div>
                         </div>
                     </div>
                 </div>

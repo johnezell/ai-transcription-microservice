@@ -69,7 +69,9 @@ class TruefireCourseController extends Controller
         $cacheKey = 'truefire_course_s3_show_' . $truefireCourse->id;
         
         $courseData = Cache::remember($cacheKey, 120, function () use ($truefireCourse) {
-            $course = $truefireCourse->load(['channels.segments']);
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
             
             // Set up course directory path for checking downloaded files
             $courseDir = "truefire-courses/{$truefireCourse->id}";
@@ -140,20 +142,22 @@ class TruefireCourseController extends Controller
     public function downloadAll(TruefireCourse $truefireCourse, Request $request)
     {
         try {
-            // Load all segments for the course through channels (same as downloadStatus method)
-            $course = $truefireCourse->load(['channels.segments']);
+            // Load segments with valid video fields for the course through channels
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
             
-            // Collect all segments from all channels
+            // Collect segments with valid video fields from all channels
             $allSegments = collect();
             foreach ($course->channels as $channel) {
                 $allSegments = $allSegments->merge($channel->segments);
             }
             
-            // Check if course has any segments
+            // Check if course has any segments with valid video fields
             if ($allSegments->isEmpty()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No segments found for this course.',
+                    'message' => 'No segments with valid video fields found for this course.',
                     'stats' => [
                         'total_segments' => 0,
                         'already_downloaded' => 0,
@@ -185,13 +189,14 @@ class TruefireCourseController extends Controller
             Log::info('Starting background download jobs for TrueFire course', [
                 'course_id' => $truefireCourse->id,
                 'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
-                'total_segments' => $stats['total_segments'],
+                'total_segments_with_video' => $stats['total_segments'],
                 'test_mode' => $testMode,
                 'storage_path' => storage_path("app/{$courseDir}"),
                 'channels_count' => $course->channels->count(),
-                'all_segments_count' => $allSegments->count(),
+                'segments_with_video_count' => $allSegments->count(),
                 'segments_to_process' => $segments->count(),
-                'stats_cache_key' => $statsKey
+                'stats_cache_key' => $statsKey,
+                'video_field_filtering' => 'enabled'
             ]);
 
             // Dispatch jobs for each segment
@@ -301,10 +306,12 @@ class TruefireCourseController extends Controller
             $cacheKey = 'truefire_s3_download_status_' . $truefireCourse->id;
             
             $status = Cache::remember($cacheKey, 60, function () use ($truefireCourse) {
-                $course = $truefireCourse->load(['channels.segments']);
+                $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                    $query->withVideo(); // Only load segments with valid video fields
+                }]);
                 $courseDir = "truefire-courses/{$truefireCourse->id}";
                 
-                // Collect all segments from all channels
+                // Collect segments with valid video fields from all channels
                 $allSegments = collect();
                 foreach ($course->channels as $channel) {
                     $allSegments = $allSegments->merge($channel->segments);
@@ -567,8 +574,10 @@ class TruefireCourseController extends Controller
     public function queueStatus(TruefireCourse $truefireCourse)
     {
         try {
-            // Get all segments for this course
-            $course = $truefireCourse->load(['channels.segments']);
+            // Get segments with valid video fields for this course
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
             $allSegments = collect();
             foreach ($course->channels as $channel) {
                 $allSegments = $allSegments->merge($channel->segments);
@@ -769,10 +778,12 @@ class TruefireCourseController extends Controller
     public function downloadSegment(TruefireCourse $truefireCourse, $segmentId)
     {
         try {
-            // Load the course with segments to find the requested segment
-            $course = $truefireCourse->load(['channels.segments']);
+            // Load the course with segments (including video field filtering) to find the requested segment
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
             
-            // Find the specific segment
+            // Find the specific segment (must have valid video field)
             $segment = null;
             foreach ($course->channels as $channel) {
                 $foundSegment = $channel->segments->where('id', $segmentId)->first();
@@ -785,7 +796,7 @@ class TruefireCourseController extends Controller
             if (!$segment) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Segment {$segmentId} not found in this course."
+                    'message' => "Segment {$segmentId} not found in this course or does not have a valid video field."
                 ], 404);
             }
             

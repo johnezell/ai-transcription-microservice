@@ -48,7 +48,23 @@ class TruefireCourse extends Model
     }
 
     /**
-     * Get all segments for the course through channels.
+     * Get all segments for the course through channels (includes all segments for backward compatibility).
+     */
+    public function allSegments()
+    {
+        return $this->hasManyThrough(
+            Segment::class,
+            Channel::class,
+            'courseid',   // Foreign key on channels table
+            'channel_id', // Foreign key on segments table
+            'id',         // Local key on courses table
+            'id'          // Local key on channels table
+        );
+    }
+
+    /**
+     * Get segments with valid video fields for the course through channels.
+     * Only includes segments that have a valid video field (not null, not empty, starts with 'mp4:').
      */
     public function segments()
     {
@@ -59,6 +75,6 @@ class TruefireCourse extends Model
             'channel_id', // Foreign key on segments table
             'id',         // Local key on courses table
             'id'          // Local key on channels table
-        );
+        )->withVideo(); // Apply the scope to filter for segments with valid video fields
     }
 }

@@ -65,6 +65,31 @@ class Segment extends Model
         );
     }
 
+    /**
+     * Scope a query to only include segments with valid video fields.
+     * A valid video field must be not null, not empty, start with 'mp4:', and have content after the prefix.
+     */
+    public function scopeWithVideo($query)
+    {
+        $tableName = $this->getTable();
+        return $query->whereNotNull($tableName . '.video')
+                    ->where($tableName . '.video', '!=', '')
+                    ->where($tableName . '.video', 'LIKE', 'mp4:_%'); // Changed to require at least one character after mp4:
+    }
+
+    /**
+     * Check if this segment has a valid video field.
+     * A valid video field must be not null, not empty, start with 'mp4:', and have content after the prefix.
+     *
+     * @return bool
+     */
+    public function hasValidVideo()
+    {
+        return !empty($this->video) &&
+               str_starts_with($this->video, 'mp4:') &&
+               strlen($this->video) > 4; // Ensure there's content after 'mp4:'
+    }
+
     public function getSignedUrl($expirationSeconds = 604800)
     {
         try {

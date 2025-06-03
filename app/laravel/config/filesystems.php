@@ -58,7 +58,13 @@ return [
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             // Add profile support for local AWS credentials
-            'profile' => env('AWS_PROFILE', 'default'),
+            'profile' => env('AWS_PROFILE', 'tfs-shared-services'),
+            // Support for custom credential files in Docker environment
+            'credentials' => [
+                'profile' => env('AWS_PROFILE', 'tfs-shared-services'),
+                'filename' => env('AWS_SHARED_CREDENTIALS_FILE', '/mnt/aws_creds_mounted/credentials'),
+                'config_filename' => env('AWS_CONFIG_FILE', '/mnt/aws_creds_mounted/config'),
+            ],
             'throw' => false,
             'report' => false,
         ],

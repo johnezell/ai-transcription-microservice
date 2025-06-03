@@ -12,16 +12,22 @@ const props = defineProps({
 // Download state management
 const isDownloading = ref(false);
 const downloadStatus = ref(null);
+const queueStatus = ref(null);
+const downloadingSegments = ref(new Set()); // Track which segments are being downloaded
 const downloadProgress = ref({
     current: 0,
     total: 0,
     successful: 0,
     failed: 0,
+    skipped: 0,
+    processing: 0,
+    queued: 0,
     errors: []
 });
 const showConfirmDialog = ref(false);
 const showProgressDialog = ref(false);
 const showResultsDialog = ref(false);
+const notifications = ref([]); // For toast notifications
 
 // Computed properties
 const totalSegments = computed(() => {
@@ -69,8 +75,20 @@ const loadDownloadStatus = async () => {
     }
 };
 
-// Load status when component mounts
+// Load queue status to see segment processing states
+const loadQueueStatus = async () => {
+    try {
+        const response = await axios.get(`/truefire-courses/${props.course.id}/queue-status`);
+        queueStatus.value = response.data;
+        console.log('Queue status loaded:', response.data);
+    } catch (error) {
+        console.error('Failed to load queue status:', error);
+    }
+};
+
+// Load both statuses when component mounts
 loadDownloadStatus();
+loadQueueStatus();
 
 // Download functionality
 const showDownloadConfirmation = () => {
@@ -90,6 +108,81 @@ const confirmDownload = () => {
     startDownload();
 };
 
+// NEW: Download individual segment
+const downloadSegment = async (segment) => {
+    try {
+        console.log('🔥 Downloading individual segment:', segment.id);
+        
+        // Add visual feedback immediately
+        downloadingSegments.value.add(segment.id);
+        
+        // Check if already downloaded
+        if (segment.is_downloaded) {
+            if (!confirm(`Segment ${segment.id} is already downloaded. Download again?`)) {
+                downloadingSegments.value.delete(segment.id);
+                return;
+            }
+        }
+        
+        // Show immediate feedback
+        showNotification(`Queuing download for segment ${segment.id}...`, 'info');
+        
+        // Make API call to trigger download for this specific segment
+        const response = await axios.post(`/truefire-courses/${props.course.id}/download-segment/${segment.id}`);
+        const result = response.data;
+        
+        console.log('✅ Segment download job queued:', result);
+        
+        // Update queue status immediately in the UI
+        if (queueStatus.value && queueStatus.value.segments) {
+            const segmentIndex = queueStatus.value.segments.findIndex(s => s.segment_id === segment.id);
+            if (segmentIndex !== -1) {
+                queueStatus.value.segments[segmentIndex].status = 'queued';
+            }
+            // Update status counts
+            queueStatus.value.status_counts.queued = (queueStatus.value.status_counts.queued || 0) + 1;
+            queueStatus.value.status_counts.not_started = Math.max(0, (queueStatus.value.status_counts.not_started || 0) - 1);
+        }
+        
+        // Show success notification
+        showNotification(`✅ Segment ${segment.id} queued for download!`, 'success');
+        
+        // Refresh status to get accurate queue state (but don't wait for it)
+        setTimeout(() => {
+            loadQueueStatus();
+            downloadingSegments.value.delete(segment.id);
+        }, 1000);
+        
+    } catch (error) {
+        console.error('❌ Failed to queue segment download:', error);
+        downloadingSegments.value.delete(segment.id);
+        showNotification(`❌ Failed to queue segment ${segment.id}: ${error.response?.data?.message || error.message}`, 'error');
+    }
+};
+
+// Toast notification system
+const showNotification = (message, type = 'info') => {
+    const id = Date.now();
+    notifications.value.push({
+        id,
+        message,
+        type,
+        show: true
+    });
+    
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        removeNotification(id);
+    }, 3000);
+};
+
+const removeNotification = (id) => {
+    const index = notifications.value.findIndex(n => n.id === id);
+    if (index > -1) {
+        notifications.value.splice(index, 1);
+    }
+};
+
 const startTestDownload = async () => {
     console.log('=== STARTING TEST DOWNLOAD (1 FILE) ===');
     console.log('Course ID:', props.course.id);
@@ -103,11 +196,17 @@ const startTestDownload = async () => {
         total: 0,
         successful: 0,
         failed: 0,
+        skipped: 0,
+        processing: 0,
+        queued: 0,
         errors: []
     };
 
     try {
         console.log('🧪 Triggering test download job (1 file only)...');
+        
+        // Show immediate feedback
+        showNotification('Queuing test download job (1 file)...', 'info');
         
         // Make API call to trigger server-side test download (1 file only)
         const response = await axios.get(`/truefire-courses/${props.course.id}/download-all?test=1`);
@@ -122,8 +221,25 @@ const startTestDownload = async () => {
             total: result.stats.total_segments,
             successful: 0,
             failed: 0,
+            skipped: 0,
+            processing: 0,
+            queued: 0,
             errors: []
         };
+        
+        // Update UI for test download (just the first segment)
+        if (queueStatus.value && queueStatus.value.segments && result.stats.queued_downloads > 0) {
+            const firstNotStartedSegment = queueStatus.value.segments.find(s => s.status === 'not_started');
+            if (firstNotStartedSegment) {
+                firstNotStartedSegment.status = 'queued';
+                queueStatus.value.status_counts.queued = (queueStatus.value.status_counts.queued || 0) + 1;
+                queueStatus.value.status_counts.not_started = Math.max(0, (queueStatus.value.status_counts.not_started || 0) - 1);
+                console.log(`Updated UI: Test segment ${firstNotStartedSegment.segment_id} marked as queued`);
+            }
+        }
+        
+        // Show success notification
+        showNotification(`✅ Test download job queued successfully!`, 'success');
         
         // Start polling for real-time progress updates (shorter polling for test)
         console.log('🔄 Starting real-time progress polling for test download...');
@@ -131,6 +247,7 @@ const startTestDownload = async () => {
         
     } catch (error) {
         console.error('❌ Failed to start test download job:', error);
+        showNotification(`❌ Failed to queue test download: ${error.response?.data?.message || error.message}`, 'error');
         downloadProgress.value.errors.push({
             segment_id: 'SERVER_ERROR',
             error: error.response?.data?.message || 'Failed to start test download job'
@@ -155,11 +272,17 @@ const startDownload = async () => {
         total: 0,
         successful: 0,
         failed: 0,
+        skipped: 0,
+        processing: 0,
+        queued: 0,
         errors: []
     };
 
     try {
         console.log('🚀 Triggering server-side download jobs...');
+        
+        // Show immediate feedback
+        showNotification('Queuing download jobs for all segments...', 'info');
         
         // Make API call to trigger server-side downloads
         const response = await axios.get(`/truefire-courses/${props.course.id}/download-all`);
@@ -174,8 +297,32 @@ const startDownload = async () => {
             total: result.stats.total_segments,
             successful: 0,
             failed: 0,
+            skipped: 0,
+            processing: 0,
+            queued: 0,
             errors: []
         };
+        
+        // Immediately update UI to show segments as queued
+        if (queueStatus.value && queueStatus.value.segments) {
+            let queuedCount = 0;
+            queueStatus.value.segments.forEach(segment => {
+                // Only update segments that were actually queued (not already downloaded)
+                if (segment.status === 'not_started') {
+                    segment.status = 'queued';
+                    queuedCount++;
+                }
+            });
+            
+            // Update status counts
+            queueStatus.value.status_counts.queued = (queueStatus.value.status_counts.queued || 0) + queuedCount;
+            queueStatus.value.status_counts.not_started = Math.max(0, (queueStatus.value.status_counts.not_started || 0) - queuedCount);
+            
+            console.log(`Updated UI: ${queuedCount} segments marked as queued`);
+        }
+        
+        // Show success notification
+        showNotification(`✅ ${result.stats.queued_downloads} download jobs queued successfully!`, 'success');
         
         // Start polling for real-time progress updates
         console.log('🔄 Starting real-time progress polling...');
@@ -183,6 +330,7 @@ const startDownload = async () => {
         
     } catch (error) {
         console.error('❌ Failed to start download jobs:', error);
+        showNotification(`❌ Failed to queue download jobs: ${error.response?.data?.message || error.message}`, 'error');
         downloadProgress.value.errors.push({
             segment_id: 'SERVER_ERROR',
             error: error.response?.data?.message || 'Failed to start download jobs'
@@ -202,53 +350,79 @@ const pollDownloadProgress = async (isTestMode = false) => {
     const startTime = Date.now();
     
     let consecutiveNoChange = 0;
-    let lastSuccessful = 0;
+    let lastTotalProcessed = 0;
     
     const poll = async () => {
         try {
             console.log('🔍 Polling download progress...');
             
-            // Get current download status
+            // Get current download status (files on disk)
             const statusResponse = await axios.get(`/truefire-courses/${props.course.id}/download-status`);
             const status = statusResponse.data;
             
-            console.log('📊 Current status:', {
-                downloaded: status.downloaded_segments,
-                total: status.total_segments,
-                progress: Math.round((status.downloaded_segments / status.total_segments) * 100) + '%'
-            });
+            // Get queue status for real-time segment states
+            await loadQueueStatus();
             
-            // Get download stats from cache (if available)
-            let stats = { successful: 0, failed: 0, skipped: 0 };
+            // Get download stats from queue cache
+            let queueStats = { success: 0, failed: 0, skipped: 0 };
             try {
                 const statsResponse = await axios.get(`/truefire-courses/${props.course.id}/download-stats`);
-                stats = statsResponse.data;
-                console.log('📈 Queue stats:', stats);
+                queueStats = statsResponse.data;
+                console.log('📈 Queue stats from cache:', queueStats);
             } catch (statsError) {
-                console.log('⚠️ Could not fetch queue stats (this is normal):', statsError.message);
+                console.log('⚠️ Could not fetch queue stats:', statsError.message);
             }
             
-            // Update progress
-            const newSuccessful = status.downloaded_segments;
+            // Calculate total jobs processed
+            const totalProcessed = queueStats.success + queueStats.failed + queueStats.skipped;
+            const filesOnDisk = status.downloaded_segments;
+            
+            console.log('📊 Progress summary:', {
+                files_on_disk: filesOnDisk,
+                total_segments: status.total_segments,
+                queue_processed: totalProcessed,
+                queue_success: queueStats.success,
+                queue_failed: queueStats.failed,
+                queue_skipped: queueStats.skipped,
+                completion_pct: Math.round((filesOnDisk / status.total_segments) * 100) + '%'
+            });
+            
+            // Update progress with comprehensive data
             downloadProgress.value = {
-                current: newSuccessful,
-                total: status.total_segments,
-                successful: Math.max(stats.successful || 0, newSuccessful - lastSuccessful),
-                failed: stats.failed || 0,
-                errors: [] // We'll get errors from logs if needed
+                current: filesOnDisk, // Files actually downloaded to disk
+                total: status.total_segments, // Total segments in course
+                successful: queueStats.success, // Jobs that completed successfully
+                failed: queueStats.failed, // Jobs that failed
+                skipped: queueStats.skipped, // Jobs that were skipped (already downloaded)
+                processing: queueStatus.value?.status_counts?.processing || 0, // Currently processing
+                queued: queueStatus.value?.status_counts?.queued || 0, // Still queued
+                errors: queueStats.failed > 0 ? [{ 
+                    segment_id: 'QUEUE_ERRORS', 
+                    error: `${queueStats.failed} download jobs failed. Check logs for details.` 
+                }] : []
             };
             
-            // Check if downloads are complete
-            const isComplete = newSuccessful >= status.total_segments;
-            const hasNoProgress = newSuccessful === lastSuccessful;
+            // Log progress for debugging
+            console.log('📊 Updated progress:', {
+                progress_current: downloadProgress.value.current,
+                progress_total: downloadProgress.value.total,
+                progress_successful: downloadProgress.value.successful,
+                progress_failed: downloadProgress.value.failed,
+                progress_queued: downloadProgress.value.queued,
+                progress_processing: downloadProgress.value.processing
+            });
             
-            if (hasNoProgress) {
+            // Check progress
+            const isComplete = filesOnDisk >= status.total_segments;
+            const hasProgress = totalProcessed > lastTotalProcessed || filesOnDisk > lastTotalProcessed;
+            
+            if (!hasProgress) {
                 consecutiveNoChange++;
                 console.log(`⏳ No progress detected (${consecutiveNoChange} consecutive polls)`);
             } else {
                 consecutiveNoChange = 0;
-                lastSuccessful = newSuccessful;
-                console.log(`✅ Progress detected: ${newSuccessful}/${status.total_segments} files downloaded`);
+                lastTotalProcessed = Math.max(totalProcessed, filesOnDisk);
+                console.log(`✅ Progress detected: ${totalProcessed} jobs processed, ${filesOnDisk} files on disk`);
             }
             
             // Stop polling conditions
@@ -266,7 +440,7 @@ const pollDownloadProgress = async (isTestMode = false) => {
                 console.log('⚠️ No progress for 60 seconds, stopping polling');
                 downloadProgress.value.errors.push({
                     segment_id: 'TIMEOUT',
-                    error: 'Download progress stalled - queue may be stuck or paused'
+                    error: `Download progress stalled - ${totalProcessed} jobs processed, ${filesOnDisk} files downloaded. Queue may be stuck or paused.`
                 });
                 isDownloading.value = false;
                 showProgressDialog.value = false;
@@ -279,7 +453,7 @@ const pollDownloadProgress = async (isTestMode = false) => {
                 console.log('⚠️ Maximum polling time reached');
                 downloadProgress.value.errors.push({
                     segment_id: 'TIMEOUT',
-                    error: 'Download polling timeout - downloads may still be running in background'
+                    error: `Download polling timeout - ${totalProcessed} jobs processed, ${filesOnDisk} files downloaded. Downloads may still be running in background.`
                 });
                 isDownloading.value = false;
                 showProgressDialog.value = false;
@@ -324,6 +498,9 @@ const closeResultsDialog = () => {
         total: 0,
         successful: 0,
         failed: 0,
+        skipped: 0,
+        processing: 0,
+        queued: 0,
         errors: []
     };
 };
@@ -331,6 +508,57 @@ const closeResultsDialog = () => {
 // Refresh download status
 const refreshStatus = async () => {
     await loadDownloadStatus();
+    await loadQueueStatus();
+};
+
+// Get queue status for a specific segment
+const getSegmentQueueStatus = (segmentId) => {
+    if (!queueStatus.value || !queueStatus.value.segments) {
+        return 'unknown';
+    }
+    
+    const segment = queueStatus.value.segments.find(s => s.segment_id === segmentId);
+    return segment ? segment.status : 'unknown';
+};
+
+// Get status display info for a segment
+const getStatusDisplay = (segmentId) => {
+    const status = getSegmentQueueStatus(segmentId);
+    
+    const statusConfig = {
+        'completed': {
+            icon: '✅',
+            text: 'Downloaded',
+            class: 'text-green-600',
+            bgClass: 'bg-green-50'
+        },
+        'processing': {
+            icon: '🔄',
+            text: 'Processing',
+            class: 'text-blue-600',
+            bgClass: 'bg-blue-50'
+        },
+        'queued': {
+            icon: '⏳',
+            text: 'Queued',
+            class: 'text-yellow-600',
+            bgClass: 'bg-yellow-50'
+        },
+        'not_started': {
+            icon: '⏸️',
+            text: 'Not Started',
+            class: 'text-gray-600',
+            bgClass: 'bg-gray-50'
+        },
+        'unknown': {
+            icon: '❓',
+            text: 'Unknown',
+            class: 'text-gray-600',
+            bgClass: 'bg-gray-50'
+        }
+    };
+    
+    return statusConfig[status] || statusConfig['unknown'];
 };
 
 // Utility functions for formatting
@@ -376,21 +604,6 @@ const formatDate = (timestamp) => {
                         </button>
                     </div>
                     
-                    <button
-                        @click="startTestDownload"
-                        :disabled="!hasSegments || isDownloading"
-                        class="inline-flex items-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-green-700 focus:bg-green-700 active:bg-green-800 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition ease-in-out duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                        :class="{ 'opacity-50 cursor-not-allowed': !hasSegments || isDownloading }"
-                    >
-                        <svg v-if="isDownloading" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-                        </svg>
-                        {{ isDownloading ? 'Testing...' : 'Test Download (1 File)' }}
-                    </button>
                     
                     <button
                         @click="showDownloadConfirmation"
@@ -405,7 +618,7 @@ const formatDate = (timestamp) => {
                         <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                         </svg>
-                        {{ isDownloading ? 'Downloading...' : 'Download All (Server)' }}
+                        {{ isDownloading ? 'Downloading...' : 'Download All' }}
                     </button>
                     <Link
                         :href="route('truefire-courses.index')"
@@ -432,11 +645,6 @@ const formatDate = (timestamp) => {
                                 <dd class="mt-1 text-sm text-gray-900">{{ course.id }}</dd>
                             </div>
                             
-                            <div>
-                                <dt class="text-sm font-medium text-gray-500">Total Channels</dt>
-                                <dd class="mt-1 text-sm text-gray-900">{{ course.channels ? course.channels.length : 0 }}</dd>
-                            </div>
-                            
                             <div v-if="course.description">
                                 <dt class="text-sm font-medium text-gray-500">Description</dt>
                                 <dd class="mt-1 text-sm text-gray-900">{{ course.description }}</dd>
@@ -459,6 +667,33 @@ const formatDate = (timestamp) => {
                                 <div class="text-right">
                                     <div class="text-blue-700">Progress: <span class="font-bold">{{ downloadedCount }}/{{ downloadStatus.total_segments }}</span></div>
                                     <div class="text-xs text-blue-600 mt-1">{{ downloadProgressPercent }}% complete</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Queue Status Summary -->
+                        <div v-if="queueStatus" class="mt-4 p-4 bg-green-50 rounded-lg">
+                            <h4 class="text-sm font-medium text-green-900 mb-2">Queue Status ({{ queueStatus.queue_driver }} driver)</h4>
+                            <div class="grid grid-cols-4 gap-4 text-sm">
+                                <div class="text-center">
+                                    <div class="text-2xl">✅</div>
+                                    <div class="font-bold text-green-700">{{ queueStatus.status_counts?.completed || 0 }}</div>
+                                    <div class="text-xs text-green-600">Completed</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-2xl">🔄</div>
+                                    <div class="font-bold text-blue-700">{{ queueStatus.status_counts?.processing || 0 }}</div>
+                                    <div class="text-xs text-blue-600">Processing</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-2xl">⏳</div>
+                                    <div class="font-bold text-yellow-700">{{ queueStatus.status_counts?.queued || 0 }}</div>
+                                    <div class="text-xs text-yellow-600">Queued</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-2xl">⏸️</div>
+                                    <div class="font-bold text-gray-700">{{ queueStatus.status_counts?.not_started || 0 }}</div>
+                                    <div class="text-xs text-gray-600">Not Started</div>
                                 </div>
                             </div>
                         </div>
@@ -574,17 +809,12 @@ const formatDate = (timestamp) => {
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="segment in segmentsWithSignedUrls" :key="segment.id" class="hover:bg-gray-50" :class="{ 'bg-green-50': segment.is_downloaded }">
+                                    <tr v-for="segment in segmentsWithSignedUrls" :key="segment.id" class="hover:bg-gray-50" :class="getStatusDisplay(segment.id).bgClass">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                             <div class="flex items-center">
-                                                <!-- Download indicator icon -->
-                                                <div class="mr-2">
-                                                    <svg v-if="segment.is_downloaded" class="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                                                    </svg>
-                                                    <svg v-else class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                    </svg>
+                                                <!-- Queue Status indicator icon -->
+                                                <div class="mr-2" :class="getStatusDisplay(segment.id).class">
+                                                    <span class="text-lg">{{ getStatusDisplay(segment.id).icon }}</span>
                                                 </div>
                                                 {{ segment.id }}
                                             </div>
@@ -597,29 +827,42 @@ const formatDate = (timestamp) => {
                                             {{ segment.title }}
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <div v-if="segment.is_downloaded" class="flex items-center text-green-600">
-                                                <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                                                </svg>
+                                            <div class="flex items-center" :class="getStatusDisplay(segment.id).class">
+                                                <span class="text-lg mr-2">{{ getStatusDisplay(segment.id).icon }}</span>
                                                 <div>
-                                                    <div class="font-medium">Downloaded</div>
-                                                    <div class="text-xs text-gray-500" v-if="segment.file_size">
+                                                    <div class="font-medium">{{ getStatusDisplay(segment.id).text }}</div>
+                                                    <div v-if="segment.is_downloaded && segment.file_size" class="text-xs text-gray-500">
                                                         {{ formatFileSize(segment.file_size) }}
                                                     </div>
-                                                    <div class="text-xs text-gray-500" v-if="segment.downloaded_at">
+                                                    <div v-if="segment.is_downloaded && segment.downloaded_at" class="text-xs text-gray-500">
                                                         {{ formatDate(segment.downloaded_at) }}
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div v-else class="flex items-center text-gray-400">
-                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                </svg>
-                                                <span class="font-medium">Not downloaded</span>
-                                            </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">
+                                                <!-- Download Button -->
+                                                <button
+                                                    v-if="segment.signed_url"
+                                                    @click="downloadSegment(segment)"
+                                                    :disabled="downloadingSegments.has(segment.id)"
+                                                    class="inline-flex items-center px-3 py-1 bg-green-50 text-green-700 rounded-md text-xs hover:bg-green-100 transition-all duration-200"
+                                                    :class="{ 
+                                                        'opacity-50 cursor-not-allowed': segment.is_downloaded && !downloadingSegments.has(segment.id),
+                                                        'animate-pulse bg-yellow-50 text-yellow-700': downloadingSegments.has(segment.id)
+                                                    }"
+                                                >
+                                                    <svg v-if="downloadingSegments.has(segment.id)" class="animate-spin w-3 h-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                    <svg v-else class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                                    </svg>
+                                                    {{ downloadingSegments.has(segment.id) ? 'Queuing...' : (segment.is_downloaded ? 'Re-download' : 'Download') }}
+                                                </button>
+                                                <!-- Test Link -->
                                                 <a
                                                     v-if="segment.signed_url"
                                                     :href="segment.signed_url"
@@ -631,6 +874,7 @@ const formatDate = (timestamp) => {
                                                     </svg>
                                                     Test
                                                 </a>
+                                                <!-- Copy URL Button -->
                                                 <button
                                                     v-if="segment.signed_url"
                                                     @click="copyToClipboard(segment.signed_url)"
@@ -671,7 +915,7 @@ const formatDate = (timestamp) => {
                                 </h3>
                                 <div class="mt-2">
                                     <p class="text-sm text-gray-500">
-                                        This will download all {{ totalSegments }} video files from this course to the server's local storage.
+                                        This will download all {{ downloadStatus ? downloadStatus.total_segments : totalSegments }} video files from this course to the server's local storage.
                                         Files will be saved as "{segment_id}.mp4" in the course directory.
                                     </p>
                                     <p class="text-sm text-gray-500 mt-2">
@@ -714,31 +958,60 @@ const formatDate = (timestamp) => {
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
                             </div>
-                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
                                 <h3 class="text-lg leading-6 font-medium text-gray-900">
                                     Downloading Course Videos
                                 </h3>
                                 <div class="mt-2">
                                     <p class="text-sm text-gray-500">
-                                        Server is downloading {{ downloadProgress.total }} files...
+                                        Server is downloading {{ downloadProgress.total || 0 }} files...
                                     </p>
-                                    <div class="w-full bg-gray-200 rounded-full h-2 mt-3">
+                                    
+                                    <!-- Progress Bar -->
+                                    <div class="w-full bg-gray-200 rounded-full h-3 mt-3">
                                         <div
-                                            class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                            class="bg-blue-600 h-3 rounded-full transition-all duration-300"
                                             :style="{ width: downloadProgress.total > 0 ? (downloadProgress.current / downloadProgress.total * 100) + '%' : '0%' }"
                                         ></div>
                                     </div>
-                                    <div class="text-xs text-gray-500 mt-2 text-center">
-                                        <div class="font-medium">
-                                            {{ downloadProgress.current }} / {{ downloadProgress.total }} files completed
+                                    
+                                    <!-- Detailed Progress Stats -->
+                                    <div class="text-xs text-gray-500 mt-3 space-y-2">
+                                        <!-- Main Progress -->
+                                        <div class="text-center">
+                                            <div class="font-medium text-sm text-gray-700">
+                                                {{ downloadProgress.current || 0 }} / {{ downloadProgress.total || 0 }} files completed
+                                            </div>
+                                            <div class="text-blue-600">
+                                                {{ downloadProgress.total > 0 ? Math.round((downloadProgress.current / downloadProgress.total) * 100) : 0 }}% complete
+                                            </div>
                                         </div>
-                                        <div class="mt-1">
-                                            ✅ {{ downloadProgress.successful }} successful
-                                            <span v-if="downloadProgress.failed > 0" class="text-red-600 ml-2">
-                                                ❌ {{ downloadProgress.failed }} failed
-                                            </span>
+                                        
+                                        <!-- Queue Status Grid -->
+                                        <div class="grid grid-cols-4 gap-2 text-center bg-gray-50 rounded-lg p-2">
+                                            <div class="text-green-600">
+                                                <div class="font-bold">{{ downloadProgress.successful || 0 }}</div>
+                                                <div class="text-xs">✅ Success</div>
+                                            </div>
+                                            <div class="text-blue-600">
+                                                <div class="font-bold">{{ downloadProgress.processing || 0 }}</div>
+                                                <div class="text-xs">🔄 Processing</div>
+                                            </div>
+                                            <div class="text-yellow-600">
+                                                <div class="font-bold">{{ downloadProgress.queued || 0 }}</div>
+                                                <div class="text-xs">⏳ Queued</div>
+                                            </div>
+                                            <div class="text-red-600" v-if="downloadProgress.failed > 0">
+                                                <div class="font-bold">{{ downloadProgress.failed || 0 }}</div>
+                                                <div class="text-xs">❌ Failed</div>
+                                            </div>
+                                            <div class="text-gray-600" v-else>
+                                                <div class="font-bold">{{ downloadProgress.skipped || 0 }}</div>
+                                                <div class="text-xs">⏭️ Skipped</div>
+                                            </div>
                                         </div>
-                                        <div class="text-blue-600 mt-1">
+                                        
+                                        <div class="text-blue-600 text-center">
                                             Queue jobs running in background...
                                         </div>
                                     </div>
@@ -807,6 +1080,61 @@ const formatDate = (timestamp) => {
                         <button @click="closeResultsDialog" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
                             Close
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="fixed top-4 right-4 z-50 space-y-2">
+            <div
+                v-for="notification in notifications"
+                :key="notification.id"
+                class="transform transition-all duration-300 ease-in-out"
+                :class="{
+                    'translate-x-0 opacity-100': notification.show,
+                    'translate-x-full opacity-0': !notification.show
+                }"
+            >
+                <div
+                    class="bg-white rounded-lg shadow-lg border-l-4 p-4 max-w-sm"
+                    :class="{
+                        'border-blue-500': notification.type === 'info',
+                        'border-green-500': notification.type === 'success',
+                        'border-red-500': notification.type === 'error',
+                        'border-yellow-500': notification.type === 'warning'
+                    }"
+                >
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <svg v-if="notification.type === 'success'" class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                            <svg v-else-if="notification.type === 'error'" class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                            </svg>
+                            <svg v-else-if="notification.type === 'warning'" class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                            </svg>
+                            <svg v-else class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3 flex-1">
+                            <p class="text-sm font-medium text-gray-900">
+                                {{ notification.message }}
+                            </p>
+                        </div>
+                        <div class="ml-4 flex-shrink-0">
+                            <button
+                                @click="removeNotification(notification.id)"
+                                class="inline-flex text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600"
+                            >
+                                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -26,7 +26,20 @@ export default defineConfig({
         },
         watch: {
             usePolling: true,
-            interval: 1000,
+            interval: 1000, // Increased from 50ms to 1000ms for better performance
+            ignored: ['**/node_modules/**', '**/vendor/**'], // Ignore unnecessary directories
+        },
+    },
+    optimizeDeps: {
+        include: ['vue', '@inertiajs/vue3'], // Pre-bundle common dependencies
+    },
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    vendor: ['vue', '@inertiajs/vue3'],
+                },
+            },
         },
     },
 });

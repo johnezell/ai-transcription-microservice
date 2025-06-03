@@ -44,6 +44,12 @@ const showingNavigationDropdown = ref(false);
                                     Courses
                                 </NavLink>
                                 <NavLink
+                                    :href="route('jobs.index')"
+                                    :active="route().current('jobs.*')"
+                                >
+                                    Jobs
+                                </NavLink>
+                                <NavLink
                                     :href="route('truefire-courses.index')"
                                     :active="route().current('truefire-courses.*')"
                                 >
@@ -127,6 +133,12 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('courses.*')"
                         >
                             Courses
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('jobs.index')"
+                            :active="route().current('jobs.*')"
+                        >
+                            Jobs
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
                             :href="route('truefire-courses.index')"

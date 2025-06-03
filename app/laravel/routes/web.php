@@ -5,6 +5,7 @@ use App\Http\Controllers\VideoController;
 use App\Http\Controllers\TruefireCourseController;
 use App\Http\Controllers\EnhancementIdeaController;
 use App\Http\Controllers\DownloadMonitorController;
+use App\Http\Controllers\JobsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -45,6 +46,8 @@ Route::get('/truefire-courses/{truefireCourse}/download-status', [TruefireCourse
     ->name('truefire-courses.download-status');
 Route::get('/truefire-courses/{truefireCourse}/download-stats', [TruefireCourseController::class, 'downloadStats'])
     ->name('truefire-courses.download-stats');
+Route::get('/truefire-courses/{truefireCourse}/queue-status', [TruefireCourseController::class, 'queueStatus'])
+    ->name('truefire-courses.queue-status');
 Route::post('/truefire-courses/clear-cache', [TruefireCourseController::class, 'clearAllCaches'])
     ->name('truefire-courses.clear-cache');
 Route::post('/truefire-courses/warm-cache', [TruefireCourseController::class, 'warmCache'])
@@ -59,6 +62,8 @@ Route::get('/courses/{course}/analysis', [\App\Http\Controllers\CourseController
     ->name('courses.analysis');
 Route::delete('/courses/{course}/destroy-with-videos', [\App\Http\Controllers\CourseController::class, 'destroyWithVideos'])
     ->name('courses.destroy-with-videos');
+Route::post('/truefire-courses/{truefireCourse}/download-segment/{segmentId}', [TruefireCourseController::class, 'downloadSegment'])
+    ->name('truefire-courses.download-segment');
 
 // Terminology Management (admin routes)
 Route::prefix('admin')->name('admin.')->group(function () {
@@ -142,6 +147,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // Jobs visualization route - protected by auth
+    Route::get('/jobs', [JobsController::class, 'index'])->name('jobs.index');
     
     // Enhancement Ideas routes - protected by auth
     Route::prefix('enhancement-ideas')->name('enhancement-ideas.')->group(function () {

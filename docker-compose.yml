@@ -11,6 +11,8 @@ services:
     volumes:
       - ./app/laravel:/var/www
       - ./app/shared:/var/www/storage/app/public/s3:delegated
+      # Mount AWS credentials for profile-based authentication
+      - ~/.aws:/mnt/aws_creds_mounted:ro
     networks:
       - app-network
     environment:
@@ -19,8 +21,8 @@ services:
       - DB_CONNECTION=sqlite
       - DB_DATABASE=/var/www/database/database.sqlite
       - CACHE_STORE=redis
-      - SESSION_DRIVER=file
-      - QUEUE_CONNECTION=sync
+      - SESSION_DRIVER=redis
+      - QUEUE_CONNECTION=database
       - FILESYSTEM_DISK=local
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -29,6 +31,12 @@ services:
       - AUDIO_SERVICE_URL=http://audio-extraction-service:5000
       - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
       - MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000
+      # AWS Configuration for credential resolution
+      - AWS_PROFILE=tfs-shared-services
+      - AWS_SHARED_CREDENTIALS_FILE=/mnt/aws_creds_mounted/credentials
+      - AWS_CONFIG_FILE=/mnt/aws_creds_mounted/config
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_BUCKET=aws-transcription-data-542876199144-us-east-1
 
   audio-extraction-service:
     build:

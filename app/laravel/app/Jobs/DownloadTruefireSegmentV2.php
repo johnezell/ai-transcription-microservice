@@ -46,19 +46,21 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
         // Rate limiting: max 5 concurrent downloads
         $this->enforceRateLimit();
         
+        // Mark segment as processing
+        $this->updateQueueStatus('processing');
+        
         try {
             Log::info("Starting download for segment {$this->segment->id} (Course: {$this->courseId})");
             
-            // Create filename from video_file or segment ID
-            $videoFile = $this->segment->video_file ?? "segment-{$this->segment->id}";
-            $filename = $videoFile . '.mp4';
-            $singleDownloadFolder = 'downloads'; // Single folder for all downloads
-            $filePath = storage_path($singleDownloadFolder . '/' . $filename);
+            // Create filename using segment ID to match controller expectations
+            $filename = "{$this->segment->id}.mp4";
+            $filePath = "{$this->courseDir}/{$filename}";
             
             // Check if file already exists and is valid
             if ($this->isFileAlreadyDownloaded($filePath)) {
                 Log::info("File already exists and is valid, skipping: {$filePath}");
                 $this->updateDownloadStats('skipped');
+                $this->updateQueueStatus('completed');
                 return;
             }
             
@@ -69,6 +71,7 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
             if ($this->verifyDownload($filePath)) {
                 Log::info("Successfully downloaded and verified segment {$this->segment->id}: {$filename}");
                 $this->updateDownloadStats('success');
+                $this->updateQueueStatus('completed');
             } else {
                 throw new \Exception("Downloaded file failed verification");
             }
@@ -79,17 +82,18 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
         } catch (\Exception $e) {
             $this->handleDownloadError($e, 'Download failed');
         } finally {
-            // Release rate limit slot
+            // Always clean up processing status and release rate limit
+            $this->updateQueueStatus('completed');
             $this->releaseRateLimit();
         }
     }
 
     /**
-     * Enforce rate limiting to prevent overwhelming CloudFront
+     * Enforce rate limiting to prevent overwhelming S3
      */
     private function enforceRateLimit(): void
     {
-        $maxConcurrent = 5;
+        $maxConcurrent = 10; // Increased from 5 since S3 can handle more concurrent requests than CloudFront
         $lockKey = 'download_rate_limit';
         
         // Wait for available slot (max 60 seconds)
@@ -110,8 +114,8 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
             throw new \Exception("Rate limit timeout - too many concurrent downloads");
         }
         
-        // Add small delay between requests
-        usleep(rand(500000, 1500000)); // 0.5-1.5 second random delay
+        // Reduced delay since S3 is more resilient
+        usleep(rand(100000, 500000)); // 0.1-0.5 second random delay
     }
 
     /**
@@ -131,46 +135,66 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
      */
     private function isFileAlreadyDownloaded(string $filePath): bool
     {
-        $singleDownloadFolder = 'downloads'; // Single folder for all downloads
-        $fullPath = storage_path($singleDownloadFolder . '/' . basename($filePath));
-        
-        if (!Storage::disk('local')->exists($fullPath)) {
+        if (!Storage::disk('local')->exists($filePath)) {
             return false;
         }
         
-        $fileSize = Storage::disk('local')->size($fullPath);
+        $fileSize = Storage::disk('local')->size($filePath);
         
         // Consider files smaller than 1KB as invalid (likely error pages)
         return $fileSize > 1024;
     }
 
     /**
-     * Download file with proper error handling
+     * Download file with proper error handling for S3
      */
     private function downloadFile(string $filePath): void
     {
-        // Create Guzzle client with optimized configuration
+        // Create Guzzle client optimized for S3
         $client = new Client([
             'timeout' => 300, // 5 minutes per request
             'connect_timeout' => 30, // 30 seconds to connect
-            'verify' => false,
+            'verify' => true, // Enable SSL verification for S3
             'decode_content' => false, // Don't decode content automatically
             'stream' => true, // Stream large files to avoid memory issues
             'headers' => [
-                'Accept-Encoding' => 'identity', // Request no encoding
-                'User-Agent' => 'Laravel-TrueFire-Downloader/2.0',
-                'Accept' => '*/*',
-                'Connection' => 'keep-alive'
+                'User-Agent' => 'Laravel-TrueFire-S3-Downloader/2.0',
+                'Accept' => '*/*'
             ]
         ]);
 
-        Log::info("Downloading from: {$this->signedUrl}");
+        Log::info("Downloading from S3: {$this->signedUrl}");
         
         // Download the file
         $response = $client->get($this->signedUrl);
         
-        if ($response->getStatusCode() !== 200) {
-            throw new \Exception("HTTP {$response->getStatusCode()}: Failed to download from signed URL");
+        $statusCode = $response->getStatusCode();
+        if ($statusCode !== 200) {
+            // Handle S3-specific error responses
+            $errorMessage = "HTTP {$statusCode}: Failed to download from S3 signed URL";
+            
+            if ($statusCode === 400) {
+                $errorMessage .= " (Bad Request - likely AWS credentials or signature issue)";
+            } elseif ($statusCode === 403) {
+                $errorMessage .= " (Access Denied - URL may have expired or insufficient permissions)";
+            } elseif ($statusCode === 404) {
+                $errorMessage .= " (File not found in S3 bucket)";
+            } elseif ($statusCode >= 500) {
+                $errorMessage .= " (S3 server error - may be temporary)";
+            }
+            
+            // Log additional debugging information for 400/403 errors
+            if ($statusCode === 400 || $statusCode === 403) {
+                Log::error("S3 download authentication error", [
+                    'segment_id' => $this->segment->id,
+                    'status_code' => $statusCode,
+                    'url_length' => strlen($this->signedUrl),
+                    'url_contains_signature' => strpos($this->signedUrl, 'X-Amz-Signature') !== false,
+                    'url_contains_tfstream' => strpos($this->signedUrl, 'tfstream') !== false,
+                ]);
+            }
+            
+            throw new \Exception($errorMessage);
         }
         
         // Save the file using streaming to handle large files
@@ -246,6 +270,13 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
         $stats = Cache::get($key, ['success' => 0, 'failed' => 0, 'skipped' => 0]);
         $stats[$status]++;
         Cache::put($key, $stats, 3600); // Store for 1 hour
+        
+        Log::debug("Updated download stats for course {$this->courseId}", [
+            'status' => $status,
+            'segment_id' => $this->segment->id,
+            'updated_stats' => $stats,
+            'cache_key' => $key
+        ]);
     }
 
     /**
@@ -262,5 +293,35 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
         
         $this->updateDownloadStats('failed');
         $this->releaseRateLimit();
+    }
+
+    /**
+     * Update queue status for this segment
+     */
+    private function updateQueueStatus(string $status): void
+    {
+        $processingKey = "processing_segments_{$this->courseId}";
+        $processingSegments = Cache::get($processingKey, []);
+        
+        if ($status === 'processing') {
+            // Add to processing list
+            if (!in_array($this->segment->id, $processingSegments)) {
+                $processingSegments[] = $this->segment->id;
+                Cache::put($processingKey, $processingSegments, 3600); // Store for 1 hour
+            }
+        } elseif ($status === 'completed') {
+            // Remove from processing list
+            $processingSegments = array_filter($processingSegments, function($id) {
+                return $id !== $this->segment->id;
+            });
+            Cache::put($processingKey, array_values($processingSegments), 3600);
+        }
+        
+        Log::debug("Updated queue status for segment {$this->segment->id}", [
+            'status' => $status,
+            'course_id' => $this->courseId,
+            'processing_segments_count' => count($processingSegments),
+            'cache_key' => $processingKey
+        ]);
     }
 }

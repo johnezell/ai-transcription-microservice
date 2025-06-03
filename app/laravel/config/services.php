@@ -35,11 +35,21 @@ return [
         ],
     ],
 
+    // S3 Configuration - Now primary for TrueFire video access
+    's3' => [
+        'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+        'bucket' => env('AWS_BUCKET', 'tfstream'), // Default to tfstream bucket for TrueFire videos
+        'default_expiration' => env('S3_DEFAULT_EXPIRATION', 604800), // 7 days (S3 presigned URL maximum)
+    ],
+
+    // CloudFront Configuration - DEPRECATED: No longer used for TrueFire video access
+    // Switched to direct S3 access due to CloudFront 403 errors
     'cloudfront' => [
         'private_key_path' => env('CLOUDFRONT_PRIVATE_KEY_PATH', storage_path('app/cloudfront/pk-APKAJKYJ7CQO2ZKTVR4Q.pem')),
         'key_pair_id' => env('CLOUDFRONT_KEY_PAIR_ID', 'APKAJKYJ7CQO2ZKTVR4Q'),
         'region' => env('CLOUDFRONT_REGION', 'us-east-1'),
-        'default_expiration' => env('CLOUDFRONT_DEFAULT_EXPIRATION', 300),
+        'default_expiration' => env('CLOUDFRONT_DEFAULT_EXPIRATION', 86400),
+        // NOTE: This configuration is kept for backward compatibility but is no longer actively used
     ],
 
 ];

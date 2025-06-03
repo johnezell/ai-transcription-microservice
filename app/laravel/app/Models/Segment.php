@@ -130,8 +130,8 @@ class Segment extends Model
                 
                 if (!file_exists($credentialsFile) && !file_exists($configFile)) {
                     throw new \Exception(
-                        'AWS credentials not configured. Either set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY ' .
-                        'or ensure AWS credential files are mounted at /mnt/aws_creds_mounted/'
+                        'AWS credentials not configured. Either set TF_AWS_ACCESS_KEY_ID/TF_SECRET_ACCESS_KEY ' .
+                        'or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or ensure AWS credential files are mounted at /mnt/aws_creds_mounted/'
                     );
                 }
             }

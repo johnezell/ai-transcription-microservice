@@ -30,6 +30,79 @@ class JobsController extends Controller
     }
 
     /**
+     * Prune all completed jobs from the jobs table.
+     */
+    public function pruneAll()
+    {
+        try {
+            // Get count before deletion for response
+            $completedJobsCount = DB::table('jobs')
+                ->whereNull('reserved_at')
+                ->where('available_at', '<=', time())
+                ->count();
+
+            // Delete completed jobs (jobs that are not reserved and are available)
+            $deletedCount = DB::table('jobs')
+                ->whereNull('reserved_at')
+                ->where('available_at', '<=', time())
+                ->delete();
+
+            // Get updated statistics
+            $remainingJobs = DB::table('jobs')->count();
+            $failedJobs = DB::table('failed_jobs')->count();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully pruned {$deletedCount} completed jobs",
+                'deleted_count' => $deletedCount,
+                'remaining_active_jobs' => $remainingJobs,
+                'failed_jobs' => $failedJobs,
+                'total_jobs' => $remainingJobs + $failedJobs,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to prune jobs: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Clear all failed jobs from the failed_jobs table.
+     */
+    public function clearFailed()
+    {
+        try {
+            // Get count before deletion for response
+            $failedJobsCount = DB::table('failed_jobs')->count();
+
+            // Delete all failed jobs
+            $deletedCount = DB::table('failed_jobs')->delete();
+
+            // Get updated statistics
+            $activeJobs = DB::table('jobs')->count();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully cleared {$deletedCount} failed jobs",
+                'deleted_count' => $deletedCount,
+                'remaining_active_jobs' => $activeJobs,
+                'failed_jobs' => 0,
+                'total_jobs' => $activeJobs,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to clear failed jobs: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Get active jobs from the jobs table.
      */
     private function getActiveJobs()

@@ -32,11 +32,11 @@ services:
       - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
       - MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000
       # AWS Configuration for credential resolution
-      - AWS_PROFILE=tfs-shared-services
+      - AWS_PROFILE=truefire
       - AWS_SHARED_CREDENTIALS_FILE=/mnt/aws_creds_mounted/credentials
       - AWS_CONFIG_FILE=/mnt/aws_creds_mounted/config
       - AWS_DEFAULT_REGION=us-east-1
-      - AWS_BUCKET=aws-transcription-data-542876199144-us-east-1
+      - AWS_BUCKET=tfstream
 
   audio-extraction-service:
     build:

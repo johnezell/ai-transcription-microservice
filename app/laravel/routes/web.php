@@ -151,6 +151,10 @@ Route::middleware('auth')->group(function () {
     // Jobs visualization route - protected by auth
     Route::get('/jobs', [JobsController::class, 'index'])->name('jobs.index');
     
+    // Job management routes - protected by auth
+    Route::post('/jobs/prune-all', [JobsController::class, 'pruneAll'])->name('jobs.prune-all');
+    Route::post('/jobs/clear-failed', [JobsController::class, 'clearFailed'])->name('jobs.clear-failed');
+    
     // Enhancement Ideas routes - protected by auth
     Route::prefix('enhancement-ideas')->name('enhancement-ideas.')->group(function () {
         Route::get('/', [EnhancementIdeaController::class, 'index'])->name('index');

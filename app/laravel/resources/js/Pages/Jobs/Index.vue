@@ -1,6 +1,9 @@
 <script setup>
 import { Head, router } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import Modal from '@/Components/Modal.vue';
+import DangerButton from '@/Components/DangerButton.vue';
+import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 
 const props = defineProps({
@@ -24,6 +27,13 @@ const selectedJobType = ref('');
 const selectedStatus = ref('');
 const sortField = ref('created_at');
 const sortDirection = ref('desc');
+
+// Job management state
+const showPruneConfirmModal = ref(false);
+const showClearFailedConfirmModal = ref(false);
+const isPruningJobs = ref(false);
+const isClearingFailedJobs = ref(false);
+const notification = ref(null);
 
 // Auto-refresh functionality
 const startAutoRefresh = () => {
@@ -167,6 +177,85 @@ const sortBy = (field) => {
     }
 };
 
+// Job management functions
+const pruneAllJobs = async () => {
+    isPruningJobs.value = true;
+    showPruneConfirmModal.value = false;
+    
+    try {
+        const response = await fetch('/jobs/prune-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(`Successfully pruned ${data.pruned_count} completed jobs`, 'success');
+            refreshData();
+        } else {
+            showNotification(data.message || 'Failed to prune jobs', 'error');
+        }
+    } catch (error) {
+        console.error('Error pruning jobs:', error);
+        showNotification('An error occurred while pruning jobs', 'error');
+    } finally {
+        isPruningJobs.value = false;
+    }
+};
+
+const clearFailedJobs = async () => {
+    isClearingFailedJobs.value = true;
+    showClearFailedConfirmModal.value = false;
+    
+    try {
+        const response = await fetch('/jobs/clear-failed', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(`Successfully cleared ${data.cleared_count} failed jobs`, 'success');
+            refreshData();
+        } else {
+            showNotification(data.message || 'Failed to clear failed jobs', 'error');
+        }
+    } catch (error) {
+        console.error('Error clearing failed jobs:', error);
+        showNotification('An error occurred while clearing failed jobs', 'error');
+    } finally {
+        isClearingFailedJobs.value = false;
+    }
+};
+
+const showNotification = (message, type = 'info') => {
+    notification.value = { message, type };
+    setTimeout(() => {
+        notification.value = null;
+    }, 5000);
+};
+
+const dismissNotification = () => {
+    notification.value = null;
+};
+
+// Computed properties for button states
+const hasFailedJobs = computed(() => {
+    return props.failedJobs && props.failedJobs.length > 0;
+});
+
+const hasCompletedJobs = computed(() => {
+    return props.queueStats && props.queueStats.total_active_jobs > 0;
+});
+
 // Lifecycle hooks
 onMounted(() => {
     startAutoRefresh();
@@ -202,10 +291,32 @@ const uniqueStatuses = computed(() => {
                     <div class="text-sm text-gray-500">
                         Last updated: {{ lastUpdated.toLocaleTimeString() }}
                     </div>
-                    <button 
+                    
+                    <!-- Job Management Buttons -->
+                    <div class="flex items-center space-x-2">
+                        <SecondaryButton
+                            @click="showPruneConfirmModal = true"
+                            :disabled="isPruningJobs || !hasCompletedJobs"
+                            class="text-xs"
+                        >
+                            <span v-if="isPruningJobs">Pruning...</span>
+                            <span v-else>Prune All Jobs</span>
+                        </SecondaryButton>
+                        
+                        <DangerButton
+                            @click="showClearFailedConfirmModal = true"
+                            :disabled="isClearingFailedJobs || !hasFailedJobs"
+                            class="text-xs"
+                        >
+                            <span v-if="isClearingFailedJobs">Clearing...</span>
+                            <span v-else>Clear Failed Jobs</span>
+                        </DangerButton>
+                    </div>
+                    
+                    <button
                         @click="refreshData"
                         :disabled="isRefreshing"
-                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
                     >
                         <span v-if="isRefreshing">Refreshing...</span>
                         <span v-else>Refresh</span>
@@ -216,6 +327,65 @@ const uniqueStatuses = computed(() => {
 
         <div class="py-12">
             <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+                
+                <!-- Notification -->
+                <div v-if="notification" class="fixed top-4 right-4 z-50 max-w-sm">
+                    <div
+                        class="rounded-md p-4 shadow-lg"
+                        :class="{
+                            'bg-green-50 border border-green-200': notification.type === 'success',
+                            'bg-red-50 border border-red-200': notification.type === 'error',
+                            'bg-blue-50 border border-blue-200': notification.type === 'info'
+                        }"
+                    >
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <!-- Success Icon -->
+                                <svg v-if="notification.type === 'success'" class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                </svg>
+                                <!-- Error Icon -->
+                                <svg v-else-if="notification.type === 'error'" class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                                </svg>
+                                <!-- Info Icon -->
+                                <svg v-else class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p
+                                    class="text-sm font-medium"
+                                    :class="{
+                                        'text-green-800': notification.type === 'success',
+                                        'text-red-800': notification.type === 'error',
+                                        'text-blue-800': notification.type === 'info'
+                                    }"
+                                >
+                                    {{ notification.message }}
+                                </p>
+                            </div>
+                            <div class="ml-auto pl-3">
+                                <div class="-mx-1.5 -my-1.5">
+                                    <button
+                                        @click="dismissNotification"
+                                        class="inline-flex rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                                        :class="{
+                                            'text-green-500 hover:bg-green-100 focus:ring-green-600': notification.type === 'success',
+                                            'text-red-500 hover:bg-red-100 focus:ring-red-600': notification.type === 'error',
+                                            'text-blue-500 hover:bg-blue-100 focus:ring-blue-600': notification.type === 'info'
+                                        }"
+                                    >
+                                        <span class="sr-only">Dismiss</span>
+                                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Queue Statistics Dashboard -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -594,5 +764,84 @@ const uniqueStatuses = computed(() => {
 
             </div>
         </div>
+        
+        <!-- Prune All Jobs Confirmation Modal -->
+        <Modal :show="showPruneConfirmModal" @close="showPruneConfirmModal = false">
+            <div class="p-6">
+                <div class="flex items-center">
+                    <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
+                        <svg class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                    </div>
+                    <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                        <h3 class="text-base font-semibold leading-6 text-gray-900">
+                            Prune All Completed Jobs
+                        </h3>
+                        <div class="mt-2">
+                            <p class="text-sm text-gray-500">
+                                This will permanently remove all completed jobs from the queue. This action cannot be undone.
+                                Are you sure you want to continue?
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                    <SecondaryButton
+                        @click="pruneAllJobs"
+                        class="w-full justify-center sm:ml-3 sm:w-auto"
+                    >
+                        Yes, Prune Jobs
+                    </SecondaryButton>
+                    <SecondaryButton
+                        @click="showPruneConfirmModal = false"
+                        class="mt-3 w-full justify-center sm:mt-0 sm:w-auto"
+                    >
+                        Cancel
+                    </SecondaryButton>
+                </div>
+            </div>
+        </Modal>
+        
+        <!-- Clear Failed Jobs Confirmation Modal -->
+        <Modal :show="showClearFailedConfirmModal" @close="showClearFailedConfirmModal = false">
+            <div class="p-6">
+                <div class="flex items-center">
+                    <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                        <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                    </div>
+                    <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                        <h3 class="text-base font-semibold leading-6 text-gray-900">
+                            Clear All Failed Jobs
+                        </h3>
+                        <div class="mt-2">
+                            <p class="text-sm text-gray-500">
+                                This will permanently remove all failed jobs from the queue. You will lose the ability to retry these jobs.
+                                Are you sure you want to continue?
+                            </p>
+                            <p class="text-sm text-red-600 mt-1 font-medium">
+                                {{ failedJobs?.length || 0 }} failed jobs will be deleted.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                    <DangerButton
+                        @click="clearFailedJobs"
+                        class="w-full justify-center sm:ml-3 sm:w-auto"
+                    >
+                        Yes, Clear Failed Jobs
+                    </DangerButton>
+                    <SecondaryButton
+                        @click="showClearFailedConfirmModal = false"
+                        class="mt-3 w-full justify-center sm:mt-0 sm:w-auto"
+                    >
+                        Cancel
+                    </SecondaryButton>
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>

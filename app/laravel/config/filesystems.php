@@ -49,19 +49,19 @@ return [
 
         's3' => [
             'driver' => 's3',
-            // Use local AWS credentials if not specified in .env
-            'key' => env('AWS_ACCESS_KEY_ID', null),
-            'secret' => env('AWS_SECRET_ACCESS_KEY', null),
+            // Use TrueFire AWS credentials
+            'key' => env('TF_AWS_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID', null)),
+            'secret' => env('TF_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY', null)),
             'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
             'bucket' => env('AWS_BUCKET'),
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            // Add profile support for local AWS credentials
-            'profile' => env('AWS_PROFILE', 'tfs-shared-services'),
-            // Support for custom credential files in Docker environment
+            'use_path_style_endpoint' => filter_var(env('AWS_USE_PATH_STYLE_ENDPOINT', false), FILTER_VALIDATE_BOOLEAN),
+            // Add profile support for local AWS credentials (fallback)
+            'profile' => env('AWS_PROFILE', 'truefire'),
+            // Support for custom credential files in Docker environment (fallback)
             'credentials' => [
-                'profile' => env('AWS_PROFILE', 'tfs-shared-services'),
+                'profile' => env('AWS_PROFILE', 'truefire'),
                 'filename' => env('AWS_SHARED_CREDENTIALS_FILE', '/mnt/aws_creds_mounted/credentials'),
                 'config_filename' => env('AWS_CONFIG_FILE', '/mnt/aws_creds_mounted/config'),
             ],

@@ -13,6 +13,8 @@ services:
       - ./app/shared:/var/www/storage/app/public/s3:delegated
       # Mount AWS credentials for profile-based authentication
       - ~/.aws:/mnt/aws_creds_mounted:ro
+      # Mount D: drive for video downloads
+      - D:/ai-transcription-downloads:/mnt/d_drive
     networks:
       - app-network
     environment:
@@ -23,7 +25,8 @@ services:
       - CACHE_STORE=redis
       - SESSION_DRIVER=redis
       - QUEUE_CONNECTION=database
-      - FILESYSTEM_DISK=local
+      - FILESYSTEM_DISK=d_drive
+      - D_DRIVE_PATH=/mnt/d_drive
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=null

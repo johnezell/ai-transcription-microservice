@@ -74,7 +74,7 @@ class TruefireCourseController extends Controller
             }]);
             
             // Set up course directory path for checking downloaded files
-            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $courseDir = "ai-transcription-downloads/truefire-courses/{$truefireCourse->id}";
             
             // Generate signed URLs for all segments and include download status
             $segmentsWithSignedUrls = [];
@@ -86,8 +86,8 @@ class TruefireCourseController extends Controller
                     $newFilePath = "{$courseDir}/{$newFilename}";
                     $legacyFilePath = "{$courseDir}/{$legacyFilename}";
                     
-                    $isNewFormatDownloaded = Storage::disk('local')->exists($newFilePath);
-                    $isLegacyFormatDownloaded = Storage::disk('local')->exists($legacyFilePath);
+                    $isNewFormatDownloaded = Storage::exists($newFilePath);
+                    $isLegacyFormatDownloaded = Storage::exists($legacyFilePath);
                     $isDownloaded = $isNewFormatDownloaded || $isLegacyFormatDownloaded;
                     
                     // Use the format that exists, prefer new format
@@ -102,8 +102,8 @@ class TruefireCourseController extends Controller
                             'title' => $segment->title ?? "Segment #{$segment->id}",
                             'signed_url' => $segment->getSignedUrl(),
                             'is_downloaded' => $isDownloaded,
-                            'file_size' => $isDownloaded ? Storage::disk('local')->size($actualFilePath) : null,
-                            'downloaded_at' => $isDownloaded ? Storage::disk('local')->lastModified($actualFilePath) : null,
+                            'file_size' => $isDownloaded ? Storage::size($actualFilePath) : null,
+                            'downloaded_at' => $isDownloaded ? Storage::lastModified($actualFilePath) : null,
                         ];
                     } catch (\Exception $e) {
                         \Log::warning('Failed to generate signed URL for segment', [
@@ -119,8 +119,8 @@ class TruefireCourseController extends Controller
                             'signed_url' => null,
                             'error' => 'Failed to generate signed URL',
                             'is_downloaded' => $isDownloaded,
-                            'file_size' => $isDownloaded ? Storage::disk('local')->size($actualFilePath) : null,
-                            'downloaded_at' => $isDownloaded ? Storage::disk('local')->lastModified($actualFilePath) : null,
+                            'file_size' => $isDownloaded ? Storage::size($actualFilePath) : null,
+                            'downloaded_at' => $isDownloaded ? Storage::lastModified($actualFilePath) : null,
                         ];
                     }
                 }
@@ -170,10 +170,10 @@ class TruefireCourseController extends Controller
             $testMode = $request->get('test', false);
             $segments = $testMode ? $allSegments->take(1) : $allSegments;
 
-            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $courseDir = "ai-transcription-downloads/truefire-courses/{$truefireCourse->id}";
             
             // Ensure course directory exists
-            Storage::disk('local')->makeDirectory($courseDir);
+            Storage::makeDirectory($courseDir);
 
             $stats = [
                 'total_segments' => $segments->count(),
@@ -207,8 +207,8 @@ class TruefireCourseController extends Controller
                 $newFilePath = "{$courseDir}/{$newFilename}";
                 $legacyFilePath = "{$courseDir}/{$legacyFilename}";
                 
-                $isNewFormatDownloaded = Storage::disk('local')->exists($newFilePath);
-                $isLegacyFormatDownloaded = Storage::disk('local')->exists($legacyFilePath);
+                $isNewFormatDownloaded = Storage::exists($newFilePath);
+                $isLegacyFormatDownloaded = Storage::exists($legacyFilePath);
                 $isAlreadyDownloaded = $isNewFormatDownloaded || $isLegacyFormatDownloaded;
                 
                 // Check if file already exists in either format
@@ -309,7 +309,7 @@ class TruefireCourseController extends Controller
                 $course = $truefireCourse->load(['channels.segments' => function ($query) {
                     $query->withVideo(); // Only load segments with valid video fields
                 }]);
-                $courseDir = "truefire-courses/{$truefireCourse->id}";
+                $courseDir = "ai-transcription-downloads/truefire-courses/{$truefireCourse->id}";
                 
                 // Collect segments with valid video fields from all channels
                 $allSegments = collect();
@@ -332,8 +332,8 @@ class TruefireCourseController extends Controller
                     $newFilePath = "{$courseDir}/{$newFilename}";
                     $legacyFilePath = "{$courseDir}/{$legacyFilename}";
                     
-                    $isNewFormatDownloaded = Storage::disk('local')->exists($newFilePath);
-                    $isLegacyFormatDownloaded = Storage::disk('local')->exists($legacyFilePath);
+                    $isNewFormatDownloaded = Storage::exists($newFilePath);
+                    $isLegacyFormatDownloaded = Storage::exists($legacyFilePath);
                     $isDownloaded = $isNewFormatDownloaded || $isLegacyFormatDownloaded;
                     
                     // Use the format that exists, prefer new format
@@ -349,8 +349,8 @@ class TruefireCourseController extends Controller
                         'title' => $segment->title ?? "Segment #{$segment->id}",
                         'filename' => $actualFilename,
                         'is_downloaded' => $isDownloaded,
-                        'file_size' => $isDownloaded ? Storage::disk('local')->size($actualFilePath) : null,
-                        'downloaded_at' => $isDownloaded ? Storage::disk('local')->lastModified($actualFilePath) : null
+                        'file_size' => $isDownloaded ? Storage::size($actualFilePath) : null,
+                        'downloaded_at' => $isDownloaded ? Storage::lastModified($actualFilePath) : null
                     ];
                 }
                 
@@ -584,7 +584,7 @@ class TruefireCourseController extends Controller
             }
             
             $segmentIds = $allSegments->pluck('id')->toArray();
-            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $courseDir = "ai-transcription-downloads/truefire-courses/{$truefireCourse->id}";
             
             // Get queued jobs from database (if using database queue driver)
             $queuedJobs = collect();
@@ -680,7 +680,7 @@ class TruefireCourseController extends Controller
                 // Check if file exists
                 $filename = "{$segment->id}.mp4";
                 $filePath = "{$courseDir}/{$filename}";
-                $isDownloaded = Storage::disk('local')->exists($filePath);
+                $isDownloaded = Storage::exists($filePath);
                 
                 // Determine status
                 $status = 'not_started';
@@ -734,7 +734,7 @@ class TruefireCourseController extends Controller
                     'segment_id' => $segment->id,
                     'title' => $segment->title ?? "Segment #{$segment->id}",
                     'status' => $status,
-                    'file_size' => $isDownloaded ? Storage::disk('local')->size($filePath) : null,
+                    'file_size' => $isDownloaded ? Storage::size($filePath) : null,
                     'failed_at' => $failedAt,
                     'failure_reason' => $failureReason ? substr($failureReason, 0, 200) . '...' : null, // Truncate long error messages
                 ];
@@ -800,15 +800,15 @@ class TruefireCourseController extends Controller
                 ], 404);
             }
             
-            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $courseDir = "ai-transcription-downloads/truefire-courses/{$truefireCourse->id}";
             
             // Ensure course directory exists
-            Storage::disk('local')->makeDirectory($courseDir);
+            Storage::makeDirectory($courseDir);
             
             // Check if file already exists
             $filename = "{$segment->id}.mp4";
             $filePath = "{$courseDir}/{$filename}";
-            $isAlreadyDownloaded = Storage::disk('local')->exists($filePath);
+            $isAlreadyDownloaded = Storage::exists($filePath);
             
             Log::info('Starting individual segment download', [
                 'course_id' => $truefireCourse->id,

@@ -135,11 +135,11 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
      */
     private function isFileAlreadyDownloaded(string $filePath): bool
     {
-        if (!Storage::disk('local')->exists($filePath)) {
+        if (!Storage::exists($filePath)) {
             return false;
         }
         
-        $fileSize = Storage::disk('local')->size($filePath);
+        $fileSize = Storage::size($filePath);
         
         // Consider files smaller than 1KB as invalid (likely error pages)
         return $fileSize > 1024;
@@ -199,7 +199,7 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
         
         // Save the file using streaming to handle large files
         $stream = $response->getBody();
-        Storage::disk('local')->put($filePath, $stream->getContents());
+        Storage::put($filePath, $stream->getContents());
     }
 
     /**
@@ -207,11 +207,11 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
      */
     private function verifyDownload(string $filePath): bool
     {
-        if (!Storage::disk('local')->exists($filePath)) {
+        if (!Storage::exists($filePath)) {
             return false;
         }
         
-        $fileSize = Storage::disk('local')->size($filePath);
+        $fileSize = Storage::size($filePath);
         
         // Basic validation: file should be larger than 1KB
         if ($fileSize < 1024) {
@@ -220,7 +220,7 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
         }
         
         // Additional validation: check if it's actually a video file
-        $content = Storage::disk('local')->get($filePath);
+        $content = Storage::get($filePath);
         $header = substr($content, 0, 12);
         
         // Check for common video file signatures

@@ -1,0 +1,839 @@
+[2025-06-03 18:12:24] === Video File Migration Started at 2025-06-03 18:12:24 ===
+[2025-06-03 18:12:24] Starting video file migration process...
+[2025-06-03 18:12:24] 
+--- Step 1: Analyzing Existing Files ---
+[2025-06-03 18:12:24] Scanning current format files in: /var/www/storage/app/private/truefire-courses
+[2025-06-03 18:12:25] Found: 1/7959.mp4 (17.43 MB)
+[2025-06-03 18:12:25] Found: 1/7961.mp4 (3.08 MB)
+[2025-06-03 18:12:25] Found: 1/7962.mp4 (8.57 MB)
+[2025-06-03 18:12:25] Found: 1/7963.mp4 (7.89 MB)
+[2025-06-03 18:12:25] Found: 1/7964.mp4 (5.66 MB)
+[2025-06-03 18:12:25] Found: 1/7965.mp4 (3.85 MB)
+[2025-06-03 18:12:25] Found: 1/7966.mp4 (5.71 MB)
+[2025-06-03 18:12:25] Found: 1/7967.mp4 (3.99 MB)
+[2025-06-03 18:12:25] Found: 1/7968.mp4 (8.84 MB)
+[2025-06-03 18:12:25] Found: 1/7969.mp4 (5.79 MB)
+[2025-06-03 18:12:26] Found: 1/7970.mp4 (12.13 MB)
+[2025-06-03 18:12:26] Found: 1/7971.mp4 (8.18 MB)
+[2025-06-03 18:12:26] Found: 1/7972.mp4 (11.13 MB)
+[2025-06-03 18:12:26] Found: 1/7973.mp4 (8.34 MB)
+[2025-06-03 18:12:27] Found: 1/7974.mp4 (63.23 MB)
+[2025-06-03 18:12:27] Found: 1/7975.mp4 (1.86 MB)
+[2025-06-03 18:12:27] Found: 1/7976.mp4 (14.41 MB)
+[2025-06-03 18:12:28] Found: 1/7977.mp4 (10.06 MB)
+[2025-06-03 18:12:28] Found: 1/7978.mp4 (8.76 MB)
+[2025-06-03 18:12:28] Found: 1/7979.mp4 (11.66 MB)
+[2025-06-03 18:12:28] Found: 1/7980.mp4 (2.67 MB)
+[2025-06-03 18:12:28] Found: 1/7981.mp4 (13.82 MB)
+[2025-06-03 18:12:29] Found: 1/7982.mp4 (15.16 MB)
+[2025-06-03 18:12:29] Found: 1/7983.mp4 (9.34 MB)
+[2025-06-03 18:12:29] Found: 1/7984.mp4 (10.48 MB)
+[2025-06-03 18:12:29] Found: 1/7985.mp4 (31.65 MB)
+[2025-06-03 18:12:29] Found: 1/7986.mp4 (2.39 MB)
+[2025-06-03 18:12:30] Found: 1/7987.mp4 (6.71 MB)
+[2025-06-03 18:12:30] Found: 1/7988.mp4 (3.8 MB)
+[2025-06-03 18:12:30] Found: 1/7989.mp4 (5.54 MB)
+[2025-06-03 18:12:30] Found: 1/7990.mp4 (1.02 MB)
+[2025-06-03 18:12:30] Found: 1/7991.mp4 (6.56 MB)
+[2025-06-03 18:12:30] Found: 1/7992.mp4 (6.76 MB)
+[2025-06-03 18:12:30] Found: 1/7993.mp4 (6.23 MB)
+[2025-06-03 18:12:30] Found: 1/7994.mp4 (1.52 MB)
+[2025-06-03 18:12:30] Found: 1/7995.mp4 (10.04 MB)
+[2025-06-03 18:12:30] Found: 1/7996.mp4 (4.11 MB)
+[2025-06-03 18:12:31] Found: 1/7997.mp4 (9.91 MB)
+[2025-06-03 18:12:31] Found: 1/7998.mp4 (3.25 MB)
+[2025-06-03 18:12:31] Found: 1/7999.mp4 (4.56 MB)
+[2025-06-03 18:12:31] Found: 1/8000.mp4 (6.65 MB)
+[2025-06-03 18:12:31] Found: 1/8001.mp4 (9.01 MB)
+[2025-06-03 18:12:31] Found: 1/8002.mp4 (1.71 MB)
+[2025-06-03 18:12:31] Found: 1/8003.mp4 (13.93 MB)
+[2025-06-03 18:12:31] Found: 1/8004.mp4 (10.65 MB)
+[2025-06-03 18:12:32] Found: 1/8005.mp4 (10.25 MB)
+[2025-06-03 18:12:32] Found: 1/8006.mp4 (7.01 MB)
+[2025-06-03 18:12:32] Found: 1/8007.mp4 (26.58 MB)
+[2025-06-03 18:12:32] Found: 1/8008.mp4 (1.69 MB)
+[2025-06-03 18:12:32] Found: 1/8009.mp4 (8.3 MB)
+[2025-06-03 18:12:32] Found: 1/8010.mp4 (6.66 MB)
+[2025-06-03 18:12:33] Found: 1/8011.mp4 (9.99 MB)
+[2025-06-03 18:12:33] Found: 1/8012.mp4 (1.85 MB)
+[2025-06-03 18:12:33] Found: 1/8013.mp4 (8.17 MB)
+[2025-06-03 18:12:33] Found: 1/8014.mp4 (6.24 MB)
+[2025-06-03 18:12:33] Found: 1/8015.mp4 (5.51 MB)
+[2025-06-03 18:12:33] Found: 1/8016.mp4 (1.67 MB)
+[2025-06-03 18:12:33] Found: 1/8017.mp4 (9.52 MB)
+[2025-06-03 18:12:33] Found: 1/8018.mp4 (5.59 MB)
+[2025-06-03 18:12:34] Found: 1/8019.mp4 (15.53 MB)
+[2025-06-03 18:12:34] Found: 1/8020.mp4 (1.34 MB)
+[2025-06-03 18:12:34] Found: 1/8021.mp4 (8 MB)
+[2025-06-03 18:12:34] Found: 1/8022.mp4 (6.45 MB)
+[2025-06-03 18:12:34] Found: 1/8023.mp4 (7.74 MB)
+[2025-06-03 18:12:34] Found: 1/8024.mp4 (1.77 MB)
+[2025-06-03 18:12:34] Found: 1/8025.mp4 (9.86 MB)
+[2025-06-03 18:12:34] Found: 1/8026.mp4 (6.84 MB)
+[2025-06-03 18:12:34] Found: 1/8027.mp4 (7.34 MB)
+[2025-06-03 18:12:34] Found: 1/8028.mp4 (1.17 MB)
+[2025-06-03 18:12:35] Found: 1/8029.mp4 (10.56 MB)
+[2025-06-03 18:12:35] Found: 1/8030.mp4 (11.66 MB)
+[2025-06-03 18:12:35] Found: 1/8031.mp4 (7.89 MB)
+[2025-06-03 18:12:35] Found: 1/8032.mp4 (2.36 MB)
+[2025-06-03 18:12:35] Found: 1/8033.mp4 (6.2 MB)
+[2025-06-03 18:12:35] Found: 1/8034.mp4 (4.44 MB)
+[2025-06-03 18:12:35] Found: 1/8035.mp4 (9.48 MB)
+[2025-06-03 18:12:35] Found: 1/8036.mp4 (1.87 MB)
+[2025-06-03 18:12:36] Found: 1/8037.mp4 (10.76 MB)
+[2025-06-03 18:12:36] Found: 1/8038.mp4 (17.67 MB)
+[2025-06-03 18:12:36] Found: 1/8039.mp4 (14.26 MB)
+[2025-06-03 18:12:36] Found: 1/8040.mp4 (4.59 MB)
+[2025-06-03 18:12:37] Found: 1/8041.mp4 (27.4 MB)
+[2025-06-03 18:12:37] Found: 1/8042.mp4 (7.38 MB)
+[2025-06-03 18:12:37] Found: 1/8043.mp4 (22.78 MB)
+[2025-06-03 18:12:38] Found: 1/8044.mp4 (5.9 MB)
+[2025-06-03 18:12:38] Found: 1/8045.mp4 (33.7 MB)
+[2025-06-03 18:12:38] Found: 1/8046.mp4 (4.01 MB)
+[2025-06-03 18:12:38] Found: 3/2860.mp4 (5.08 MB)
+[2025-06-03 18:12:38] Found: 3/2862.mp4 (8.71 MB)
+[2025-06-03 18:12:39] Found: 3/2863.mp4 (12.85 MB)
+[2025-06-03 18:12:39] Found: 3/2864.mp4 (22.87 MB)
+[2025-06-03 18:12:39] Found: 3/2865.mp4 (16.66 MB)
+[2025-06-03 18:12:40] Found: 3/2866.mp4 (15.68 MB)
+[2025-06-03 18:12:40] Found: 3/2867.mp4 (18.21 MB)
+[2025-06-03 18:12:40] Found: 3/2868.mp4 (16.03 MB)
+[2025-06-03 18:12:41] Found: 3/2869.mp4 (24.14 MB)
+[2025-06-03 18:12:41] Found: 3/2870.mp4 (16.42 MB)
+[2025-06-03 18:12:41] Found: 3/2871.mp4 (15.68 MB)
+[2025-06-03 18:12:42] Found: 3/2872.mp4 (22.22 MB)
+[2025-06-03 18:12:42] Found: 3/2873.mp4 (26.47 MB)
+[2025-06-03 18:12:42] Found: 3/2874.mp4 (14.83 MB)
+[2025-06-03 18:12:43] Found: 3/2875.mp4 (16.35 MB)
+[2025-06-03 18:12:43] Found: 3/2876.mp4 (16.64 MB)
+[2025-06-03 18:12:43] Found: 3/2877.mp4 (12.77 MB)
+[2025-06-03 18:12:43] Found: 3/2878.mp4 (13.48 MB)
+[2025-06-03 18:12:44] Found: 3/2879.mp4 (19.66 MB)
+[2025-06-03 18:12:44] Found: 3/2880.mp4 (13.93 MB)
+[2025-06-03 18:12:44] Found: 3/2881.mp4 (15.32 MB)
+[2025-06-03 18:12:44] Found: 3/2882.mp4 (8.78 MB)
+[2025-06-03 18:12:45] Found: 3/2883.mp4 (19.56 MB)
+[2025-06-03 18:12:45] Found: 3/2884.mp4 (10.94 MB)
+[2025-06-03 18:12:45] Found: 3/2885.mp4 (24.21 MB)
+[2025-06-03 18:12:45] Found: 3/2886.mp4 (12.63 MB)
+[2025-06-03 18:12:46] Found: 3/2887.mp4 (22.89 MB)
+[2025-06-03 18:12:46] Found: 3/2888.mp4 (21.17 MB)
+[2025-06-03 18:12:47] Found: 3/2889.mp4 (19.31 MB)
+[2025-06-03 18:12:47] Found: 3/2890.mp4 (14.3 MB)
+[2025-06-03 18:12:47] Found: 3/2891.mp4 (19.64 MB)
+[2025-06-03 18:12:47] Found: 3/2892.mp4 (3.02 MB)
+[2025-06-03 18:12:48] Found: 4/8476.mp4 (28.39 MB)
+[2025-06-03 18:12:48] Found: 4/8478.mp4 (18.91 MB)
+[2025-06-03 18:12:48] Found: 4/8479.mp4 (17.96 MB)
+[2025-06-03 18:12:49] Found: 4/8480.mp4 (33.7 MB)
+[2025-06-03 18:12:49] Found: 4/8481.mp4 (29.9 MB)
+[2025-06-03 18:12:49] Found: 4/8482.mp4 (8.92 MB)
+[2025-06-03 18:12:49] Found: 4/8483.mp4 (32.57 MB)
+[2025-06-03 18:12:50] Found: 4/8484.mp4 (29.88 MB)
+[2025-06-03 18:12:50] Found: 4/8485.mp4 (41.85 MB)
+[2025-06-03 18:12:50] Found: 4/8486.mp4 (19.14 MB)
+[2025-06-03 18:12:51] Found: 4/8487.mp4 (22.06 MB)
+[2025-06-03 18:12:51] Found: 4/8488.mp4 (5.75 MB)
+[2025-06-03 18:12:52] Found: 4/8489.mp4 (83.4 MB)
+[2025-06-03 18:12:52] Found: 4/8490.mp4 (36.72 MB)
+[2025-06-03 18:12:52] Found: 4/8491.mp4 (24.77 MB)
+[2025-06-03 18:12:53] Found: 4/8492.mp4 (18.31 MB)
+[2025-06-03 18:12:54] Found: 4/8493.mp4 (73.47 MB)
+[2025-06-03 18:12:54] Found: 4/8494.mp4 (30.22 MB)
+[2025-06-03 18:12:54] Found: 4/8495.mp4 (9.69 MB)
+[2025-06-03 18:12:54] Found: 4/8496.mp4 (30.85 MB)
+[2025-06-03 18:12:55] Found: 4/8497.mp4 (51.9 MB)
+[2025-06-03 18:12:56] Found: 4/8498.mp4 (78.84 MB)
+[2025-06-03 18:12:56] Found: 4/8499.mp4 (14.39 MB)
+[2025-06-03 18:12:57] Found: 4/8500.mp4 (47.04 MB)
+[2025-06-03 18:12:57] Found: 4/8501.mp4 (16.16 MB)
+[2025-06-03 18:12:57] Found: 4/8502.mp4 (23.05 MB)
+[2025-06-03 18:12:57] Found: 4/8503.mp4 (9.4 MB)
+[2025-06-03 18:12:57] Found: 4/8504.mp4 (19.3 MB)
+[2025-06-03 18:12:57] Found: 4/8505.mp4 (13.81 MB)
+[2025-06-03 18:12:58] Found: 4/8506.mp4 (7.46 MB)
+[2025-06-03 18:12:58] Found: 4/8507.mp4 (21.35 MB)
+[2025-06-03 18:12:58] Found: 4/8508.mp4 (6.55 MB)
+[2025-06-03 18:12:58] Found: 4/8509.mp4 (16.36 MB)
+[2025-06-03 18:12:58] Found: 4/8510.mp4 (27.23 MB)
+[2025-06-03 18:12:58] Found: 4/8511.mp4 (2.93 MB)
+[2025-06-03 18:12:59] Found: 5/4510.mp4 (10.9 MB)
+[2025-06-03 18:12:59] Found: 5/4512.mp4 (18.9 MB)
+[2025-06-03 18:12:59] Found: 5/4513.mp4 (21.32 MB)
+[2025-06-03 18:13:00] Found: 5/4514.mp4 (13.35 MB)
+[2025-06-03 18:13:00] Found: 5/4515.mp4 (13.42 MB)
+[2025-06-03 18:13:00] Found: 5/4516.mp4 (25.61 MB)
+[2025-06-03 18:13:01] Found: 5/4517.mp4 (18.65 MB)
+[2025-06-03 18:13:01] Found: 5/4518.mp4 (18.28 MB)
+[2025-06-03 18:13:01] Found: 5/4519.mp4 (21.97 MB)
+[2025-06-03 18:13:02] Found: 5/4520.mp4 (20.1 MB)
+[2025-06-03 18:13:02] Found: 5/4521.mp4 (18.2 MB)
+[2025-06-03 18:13:02] Found: 5/4522.mp4 (20 MB)
+[2025-06-03 18:13:03] Found: 5/4523.mp4 (15.85 MB)
+[2025-06-03 18:13:03] Found: 5/4524.mp4 (10.52 MB)
+[2025-06-03 18:13:03] Found: 5/4525.mp4 (10.94 MB)
+[2025-06-03 18:13:03] Found: 5/4526.mp4 (12.79 MB)
+[2025-06-03 18:13:03] Found: 5/4527.mp4 (14.9 MB)
+[2025-06-03 18:13:04] Found: 5/4528.mp4 (12.24 MB)
+[2025-06-03 18:13:04] Found: 5/4529.mp4 (12.78 MB)
+[2025-06-03 18:13:04] Found: 5/4530.mp4 (13.23 MB)
+[2025-06-03 18:13:04] Found: 5/4531.mp4 (17.94 MB)
+[2025-06-03 18:13:05] Found: 5/4532.mp4 (15.97 MB)
+[2025-06-03 18:13:05] Found: 5/4533.mp4 (10.25 MB)
+[2025-06-03 18:13:05] Found: 5/4534.mp4 (11.61 MB)
+[2025-06-03 18:13:05] Found: 5/4535.mp4 (8.85 MB)
+[2025-06-03 18:13:05] Found: 5/4536.mp4 (9.7 MB)
+[2025-06-03 18:13:06] Found: 5/4537.mp4 (10.18 MB)
+[2025-06-03 18:13:06] Found: 5/4538.mp4 (16.78 MB)
+[2025-06-03 18:13:06] Found: 5/4539.mp4 (15.63 MB)
+[2025-06-03 18:13:06] Found: 5/4540.mp4 (8.99 MB)
+[2025-06-03 18:13:06] Found: 5/4541.mp4 (16.08 MB)
+[2025-06-03 18:13:07] Found: 5/4542.mp4 (22.24 MB)
+[2025-06-03 18:13:07] Found: 5/4543.mp4 (11.4 MB)
+[2025-06-03 18:13:07] Found: 5/4544.mp4 (14.24 MB)
+[2025-06-03 18:13:08] Found: 5/4545.mp4 (21.79 MB)
+[2025-06-03 18:13:08] Found: 5/4546.mp4 (11.78 MB)
+[2025-06-03 18:13:08] Found: 5/4547.mp4 (16.89 MB)
+[2025-06-03 18:13:08] Found: 5/4548.mp4 (11.47 MB)
+[2025-06-03 18:13:08] Found: 5/4549.mp4 (8.45 MB)
+[2025-06-03 18:13:09] Found: 5/4550.mp4 (9 MB)
+[2025-06-03 18:13:09] Found: 5/4551.mp4 (22.47 MB)
+[2025-06-03 18:13:09] Found: 5/4552.mp4 (8.13 MB)
+[2025-06-03 18:13:09] Found: 5/4553.mp4 (15.45 MB)
+[2025-06-03 18:13:10] Found: 5/4554.mp4 (10.5 MB)
+[2025-06-03 18:13:10] Found: 5/4555.mp4 (14.1 MB)
+[2025-06-03 18:13:10] Found: 5/4556.mp4 (12.02 MB)
+[2025-06-03 18:13:10] Found: 5/4557.mp4 (13.16 MB)
+[2025-06-03 18:13:10] Found: 5/4558.mp4 (8.48 MB)
+[2025-06-03 18:13:11] Found: 5/4559.mp4 (13.17 MB)
+[2025-06-03 18:13:11] Found: 5/4560.mp4 (10.74 MB)
+[2025-06-03 18:13:11] Found: 5/4561.mp4 (18.58 MB)
+[2025-06-03 18:13:11] Found: 5/4562.mp4 (2.4 MB)
+[2025-06-03 18:13:11] Found: 6/4570.mp4 (12.2 MB)
+[2025-06-03 18:13:11] Found: 6/4572.mp4 (10.45 MB)
+[2025-06-03 18:13:12] Found: 6/4573.mp4 (9.97 MB)
+[2025-06-03 18:13:12] Found: 6/4574.mp4 (9.19 MB)
+[2025-06-03 18:13:12] Found: 6/4575.mp4 (10.4 MB)
+[2025-06-03 18:13:12] Found: 6/4576.mp4 (9.31 MB)
+[2025-06-03 18:13:12] Found: 6/4577.mp4 (9.67 MB)
+[2025-06-03 18:13:12] Found: 6/4578.mp4 (9.12 MB)
+[2025-06-03 18:13:12] Found: 6/4579.mp4 (9.6 MB)
+[2025-06-03 18:13:12] Found: 6/4580.mp4 (8.63 MB)
+[2025-06-03 18:13:12] Found: 6/4581.mp4 (12.08 MB)
+[2025-06-03 18:13:13] Found: 6/4582.mp4 (12.16 MB)
+[2025-06-03 18:13:13] Found: 6/4583.mp4 (12.99 MB)
+[2025-06-03 18:13:13] Found: 6/4584.mp4 (11.21 MB)
+[2025-06-03 18:13:13] Found: 6/4585.mp4 (12.36 MB)
+[2025-06-03 18:13:13] Found: 6/4586.mp4 (10.87 MB)
+[2025-06-03 18:13:13] Found: 6/4587.mp4 (10.91 MB)
+[2025-06-03 18:13:13] Found: 6/4588.mp4 (10.6 MB)
+[2025-06-03 18:13:14] Found: 6/4589.mp4 (10.52 MB)
+[2025-06-03 18:13:14] Found: 6/4590.mp4 (11.93 MB)
+[2025-06-03 18:13:14] Found: 6/4591.mp4 (11.73 MB)
+[2025-06-03 18:13:14] Found: 6/4592.mp4 (10.56 MB)
+[2025-06-03 18:13:14] Found: 6/4593.mp4 (10.39 MB)
+[2025-06-03 18:13:14] Found: 6/4594.mp4 (7.2 MB)
+[2025-06-03 18:13:14] Found: 6/4595.mp4 (8.24 MB)
+[2025-06-03 18:13:14] Found: 6/4596.mp4 (10.34 MB)
+[2025-06-03 18:13:15] Found: 6/4597.mp4 (6.75 MB)
+[2025-06-03 18:13:15] Found: 6/4598.mp4 (9.35 MB)
+[2025-06-03 18:13:15] Found: 6/4599.mp4 (8.79 MB)
+[2025-06-03 18:13:15] Found: 6/4600.mp4 (7.42 MB)
+[2025-06-03 18:13:15] Found: 6/4601.mp4 (8.92 MB)
+[2025-06-03 18:13:15] Found: 6/4602.mp4 (8.72 MB)
+[2025-06-03 18:13:15] Found: 6/4603.mp4 (7.26 MB)
+[2025-06-03 18:13:15] Found: 6/4604.mp4 (12.36 MB)
+[2025-06-03 18:13:15] Found: 6/4605.mp4 (9.86 MB)
+[2025-06-03 18:13:15] Found: 6/4606.mp4 (8.83 MB)
+[2025-06-03 18:13:16] Found: 6/4607.mp4 (10.3 MB)
+[2025-06-03 18:13:16] Found: 6/4608.mp4 (7.07 MB)
+[2025-06-03 18:13:16] Found: 6/4609.mp4 (6.88 MB)
+[2025-06-03 18:13:16] Found: 6/4610.mp4 (11.85 MB)
+[2025-06-03 18:13:16] Found: 6/4611.mp4 (9.24 MB)
+[2025-06-03 18:13:16] Found: 6/4612.mp4 (10.79 MB)
+[2025-06-03 18:13:16] Found: 6/4613.mp4 (9.45 MB)
+[2025-06-03 18:13:16] Found: 6/4614.mp4 (7.98 MB)
+[2025-06-03 18:13:16] Found: 6/4615.mp4 (8.29 MB)
+[2025-06-03 18:13:17] Found: 6/4616.mp4 (10.42 MB)
+[2025-06-03 18:13:17] Found: 6/4617.mp4 (9.5 MB)
+[2025-06-03 18:13:17] Found: 6/4618.mp4 (9.95 MB)
+[2025-06-03 18:13:17] Found: 6/4619.mp4 (10.9 MB)
+[2025-06-03 18:13:17] Found: 6/4620.mp4 (11.63 MB)
+[2025-06-03 18:13:17] Found: 6/4621.mp4 (11.89 MB)
+[2025-06-03 18:13:17] Found: 6/4622.mp4 (2.1 MB)
+[2025-06-03 18:13:17] Scanning legacy format files in: /var/www/storage/app/private/var/www/storage/downloads
+[2025-06-03 18:13:18] Found: segment-8476.mp4 (28.39 MB)
+[2025-06-03 18:13:18] Found: segment-8478.mp4 (18.91 MB)
+[2025-06-03 18:13:18] Found: segment-8479.mp4 (17.96 MB)
+[2025-06-03 18:13:19] Found: segment-8480.mp4 (33.7 MB)
+[2025-06-03 18:13:19] Found: segment-8481.mp4 (29.9 MB)
+[2025-06-03 18:13:20] Found: segment-8482.mp4 (8.92 MB)
+[2025-06-03 18:13:20] Found: segment-8483.mp4 (32.57 MB)
+[2025-06-03 18:13:21] Found: segment-8484.mp4 (29.88 MB)
+[2025-06-03 18:13:21] Found: segment-8485.mp4 (41.85 MB)
+[2025-06-03 18:13:22] Found: segment-8486.mp4 (19.14 MB)
+[2025-06-03 18:13:22] Found: segment-8487.mp4 (22.06 MB)
+[2025-06-03 18:13:22] Found: segment-8488.mp4 (5.75 MB)
+[2025-06-03 18:13:24] Found: segment-8489.mp4 (83.4 MB)
+[2025-06-03 18:13:24] Analysis complete. Found 271 files totaling 3.8 GB
+[2025-06-03 18:13:24] 
+--- Step 2: Verifying D: Drive Access ---
+[2025-06-03 18:13:24] Created target directory: /mnt/d_drive/ai-transcription-downloads/truefire-courses
+[2025-06-03 18:13:24] D: drive access verified successfully
+[2025-06-03 18:13:24] 
+--- Step 3: Creating Backup Manifest ---
+[2025-06-03 18:13:24] Backup manifest created: /var/www/migration-manifest-2025-06-03-18-13-24.json
+[2025-06-03 18:13:24] 
+--- Step 4: Migrating Files ---
+[2025-06-03 18:13:25] MIGRATED: 7959.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7959.mp4
+[2025-06-03 18:13:25] MIGRATED: 7961.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7961.mp4
+[2025-06-03 18:13:26] MIGRATED: 7962.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7962.mp4
+[2025-06-03 18:13:27] MIGRATED: 7963.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7963.mp4
+[2025-06-03 18:13:27] MIGRATED: 7964.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7964.mp4
+[2025-06-03 18:13:27] MIGRATED: 7965.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7965.mp4
+[2025-06-03 18:13:28] MIGRATED: 7966.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7966.mp4
+[2025-06-03 18:13:28] MIGRATED: 7967.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7967.mp4
+[2025-06-03 18:13:28] MIGRATED: 7968.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7968.mp4
+[2025-06-03 18:13:28] MIGRATED: 7969.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7969.mp4
+[2025-06-03 18:13:29] MIGRATED: 7970.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7970.mp4
+[2025-06-03 18:13:29] MIGRATED: 7971.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7971.mp4
+[2025-06-03 18:13:29] MIGRATED: 7972.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7972.mp4
+[2025-06-03 18:13:30] MIGRATED: 7973.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7973.mp4
+[2025-06-03 18:13:33] MIGRATED: 7974.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7974.mp4
+[2025-06-03 18:13:33] MIGRATED: 7975.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7975.mp4
+[2025-06-03 18:13:34] MIGRATED: 7976.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7976.mp4
+[2025-06-03 18:13:34] MIGRATED: 7977.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7977.mp4
+[2025-06-03 18:13:35] MIGRATED: 7978.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7978.mp4
+[2025-06-03 18:13:35] MIGRATED: 7979.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7979.mp4
+[2025-06-03 18:13:35] MIGRATED: 7980.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7980.mp4
+[2025-06-03 18:13:36] MIGRATED: 7981.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7981.mp4
+[2025-06-03 18:13:37] MIGRATED: 7982.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7982.mp4
+[2025-06-03 18:13:37] MIGRATED: 7983.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7983.mp4
+[2025-06-03 18:13:38] MIGRATED: 7984.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7984.mp4
+[2025-06-03 18:13:39] MIGRATED: 7985.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7985.mp4
+[2025-06-03 18:13:40] MIGRATED: 7986.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7986.mp4
+[2025-06-03 18:13:40] MIGRATED: 7987.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7987.mp4
+[2025-06-03 18:13:40] MIGRATED: 7988.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7988.mp4
+[2025-06-03 18:13:41] MIGRATED: 7989.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7989.mp4
+[2025-06-03 18:13:41] MIGRATED: 7990.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7990.mp4
+[2025-06-03 18:13:41] MIGRATED: 7991.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7991.mp4
+[2025-06-03 18:13:41] MIGRATED: 7992.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7992.mp4
+[2025-06-03 18:13:42] MIGRATED: 7993.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7993.mp4
+[2025-06-03 18:13:42] MIGRATED: 7994.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7994.mp4
+[2025-06-03 18:13:42] MIGRATED: 7995.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7995.mp4
+[2025-06-03 18:13:42] MIGRATED: 7996.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7996.mp4
+[2025-06-03 18:13:43] MIGRATED: 7997.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7997.mp4
+[2025-06-03 18:13:43] MIGRATED: 7998.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7998.mp4
+[2025-06-03 18:13:43] MIGRATED: 7999.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/7999.mp4
+[2025-06-03 18:13:44] MIGRATED: 8000.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8000.mp4
+[2025-06-03 18:13:44] MIGRATED: 8001.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8001.mp4
+[2025-06-03 18:13:44] MIGRATED: 8002.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8002.mp4
+[2025-06-03 18:13:45] MIGRATED: 8003.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8003.mp4
+[2025-06-03 18:13:45] MIGRATED: 8004.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8004.mp4
+[2025-06-03 18:13:45] MIGRATED: 8005.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8005.mp4
+[2025-06-03 18:13:46] MIGRATED: 8006.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8006.mp4
+[2025-06-03 18:13:47] MIGRATED: 8007.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8007.mp4
+[2025-06-03 18:13:47] MIGRATED: 8008.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8008.mp4
+[2025-06-03 18:13:47] MIGRATED: 8009.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8009.mp4
+[2025-06-03 18:13:48] MIGRATED: 8010.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8010.mp4
+[2025-06-03 18:13:48] MIGRATED: 8011.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8011.mp4
+[2025-06-03 18:13:48] MIGRATED: 8012.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8012.mp4
+[2025-06-03 18:13:49] MIGRATED: 8013.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8013.mp4
+[2025-06-03 18:13:49] MIGRATED: 8014.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8014.mp4
+[2025-06-03 18:13:49] MIGRATED: 8015.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8015.mp4
+[2025-06-03 18:13:49] MIGRATED: 8016.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8016.mp4
+[2025-06-03 18:13:50] MIGRATED: 8017.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8017.mp4
+[2025-06-03 18:13:50] MIGRATED: 8018.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8018.mp4
+[2025-06-03 18:13:51] MIGRATED: 8019.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8019.mp4
+[2025-06-03 18:13:51] MIGRATED: 8020.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8020.mp4
+[2025-06-03 18:13:51] MIGRATED: 8021.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8021.mp4
+[2025-06-03 18:13:52] MIGRATED: 8022.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8022.mp4
+[2025-06-03 18:13:52] MIGRATED: 8023.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8023.mp4
+[2025-06-03 18:13:52] MIGRATED: 8024.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8024.mp4
+[2025-06-03 18:13:53] MIGRATED: 8025.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8025.mp4
+[2025-06-03 18:13:53] MIGRATED: 8026.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8026.mp4
+[2025-06-03 18:13:53] MIGRATED: 8027.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8027.mp4
+[2025-06-03 18:13:53] MIGRATED: 8028.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8028.mp4
+[2025-06-03 18:13:54] MIGRATED: 8029.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8029.mp4
+[2025-06-03 18:13:54] MIGRATED: 8030.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8030.mp4
+[2025-06-03 18:13:55] MIGRATED: 8031.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8031.mp4
+[2025-06-03 18:13:55] MIGRATED: 8032.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8032.mp4
+[2025-06-03 18:13:55] MIGRATED: 8033.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8033.mp4
+[2025-06-03 18:13:55] MIGRATED: 8034.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8034.mp4
+[2025-06-03 18:13:56] MIGRATED: 8035.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8035.mp4
+[2025-06-03 18:13:56] MIGRATED: 8036.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8036.mp4
+[2025-06-03 18:13:57] MIGRATED: 8037.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8037.mp4
+[2025-06-03 18:13:57] MIGRATED: 8038.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8038.mp4
+[2025-06-03 18:13:58] MIGRATED: 8039.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8039.mp4
+[2025-06-03 18:13:58] MIGRATED: 8040.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8040.mp4
+[2025-06-03 18:13:59] MIGRATED: 8041.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8041.mp4
+[2025-06-03 18:13:59] MIGRATED: 8042.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8042.mp4
+[2025-06-03 18:14:01] MIGRATED: 8043.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8043.mp4
+[2025-06-03 18:14:01] MIGRATED: 8044.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8044.mp4
+[2025-06-03 18:14:02] MIGRATED: 8045.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8045.mp4
+[2025-06-03 18:14:03] MIGRATED: 8046.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/1/8046.mp4
+[2025-06-03 18:14:03] MIGRATED: 2860.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2860.mp4
+[2025-06-03 18:14:03] MIGRATED: 2862.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2862.mp4
+[2025-06-03 18:14:04] MIGRATED: 2863.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2863.mp4
+[2025-06-03 18:14:05] MIGRATED: 2864.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2864.mp4
+[2025-06-03 18:14:06] MIGRATED: 2865.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2865.mp4
+[2025-06-03 18:14:06] MIGRATED: 2866.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2866.mp4
+[2025-06-03 18:14:07] MIGRATED: 2867.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2867.mp4
+[2025-06-03 18:14:08] MIGRATED: 2868.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2868.mp4
+[2025-06-03 18:14:09] MIGRATED: 2869.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2869.mp4
+[2025-06-03 18:14:10] MIGRATED: 2870.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2870.mp4
+[2025-06-03 18:14:10] MIGRATED: 2871.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2871.mp4
+[2025-06-03 18:14:11] MIGRATED: 2872.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2872.mp4
+[2025-06-03 18:14:13] MIGRATED: 2873.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2873.mp4
+[2025-06-03 18:14:13] MIGRATED: 2874.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2874.mp4
+[2025-06-03 18:14:14] MIGRATED: 2875.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2875.mp4
+[2025-06-03 18:14:15] MIGRATED: 2876.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2876.mp4
+[2025-06-03 18:14:15] MIGRATED: 2877.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2877.mp4
+[2025-06-03 18:14:16] MIGRATED: 2878.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2878.mp4
+[2025-06-03 18:14:17] MIGRATED: 2879.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2879.mp4
+[2025-06-03 18:14:17] MIGRATED: 2880.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2880.mp4
+[2025-06-03 18:14:18] MIGRATED: 2881.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2881.mp4
+[2025-06-03 18:14:19] MIGRATED: 2882.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2882.mp4
+[2025-06-03 18:14:20] MIGRATED: 2883.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2883.mp4
+[2025-06-03 18:14:20] MIGRATED: 2884.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2884.mp4
+[2025-06-03 18:14:21] MIGRATED: 2885.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2885.mp4
+[2025-06-03 18:14:22] MIGRATED: 2886.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2886.mp4
+[2025-06-03 18:14:23] MIGRATED: 2887.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2887.mp4
+[2025-06-03 18:14:23] MIGRATED: 2888.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2888.mp4
+[2025-06-03 18:14:24] MIGRATED: 2889.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2889.mp4
+[2025-06-03 18:14:25] MIGRATED: 2890.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2890.mp4
+[2025-06-03 18:14:25] MIGRATED: 2891.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2891.mp4
+[2025-06-03 18:14:26] MIGRATED: 2892.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/3/2892.mp4
+[2025-06-03 18:14:27] MIGRATED: 8476.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8476.mp4
+[2025-06-03 18:14:28] MIGRATED: 8478.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8478.mp4
+[2025-06-03 18:14:28] MIGRATED: 8479.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8479.mp4
+[2025-06-03 18:14:30] MIGRATED: 8480.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8480.mp4
+[2025-06-03 18:14:32] MIGRATED: 8481.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8481.mp4
+[2025-06-03 18:14:32] MIGRATED: 8482.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8482.mp4
+[2025-06-03 18:14:33] MIGRATED: 8483.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8483.mp4
+[2025-06-03 18:14:34] MIGRATED: 8484.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8484.mp4
+[2025-06-03 18:14:36] MIGRATED: 8485.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8485.mp4
+[2025-06-03 18:14:37] MIGRATED: 8486.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8486.mp4
+[2025-06-03 18:14:38] MIGRATED: 8487.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8487.mp4
+[2025-06-03 18:14:38] MIGRATED: 8488.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8488.mp4
+[2025-06-03 18:14:41] MIGRATED: 8489.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8489.mp4
+[2025-06-03 18:14:43] MIGRATED: 8490.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8490.mp4
+[2025-06-03 18:14:44] MIGRATED: 8491.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8491.mp4
+[2025-06-03 18:14:44] MIGRATED: 8492.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8492.mp4
+[2025-06-03 18:14:47] MIGRATED: 8493.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8493.mp4
+[2025-06-03 18:14:48] MIGRATED: 8494.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8494.mp4
+[2025-06-03 18:14:49] MIGRATED: 8495.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8495.mp4
+[2025-06-03 18:14:50] MIGRATED: 8496.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8496.mp4
+[2025-06-03 18:14:52] MIGRATED: 8497.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8497.mp4
+[2025-06-03 18:14:56] MIGRATED: 8498.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8498.mp4
+[2025-06-03 18:14:56] MIGRATED: 8499.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8499.mp4
+[2025-06-03 18:14:58] MIGRATED: 8500.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8500.mp4
+[2025-06-03 18:14:59] MIGRATED: 8501.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8501.mp4
+[2025-06-03 18:15:00] MIGRATED: 8502.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8502.mp4
+[2025-06-03 18:15:00] MIGRATED: 8503.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8503.mp4
+[2025-06-03 18:15:01] MIGRATED: 8504.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8504.mp4
+[2025-06-03 18:15:02] MIGRATED: 8505.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8505.mp4
+[2025-06-03 18:15:02] MIGRATED: 8506.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8506.mp4
+[2025-06-03 18:15:03] MIGRATED: 8507.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8507.mp4
+[2025-06-03 18:15:03] MIGRATED: 8508.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8508.mp4
+[2025-06-03 18:15:04] MIGRATED: 8509.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8509.mp4
+[2025-06-03 18:15:06] MIGRATED: 8510.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8510.mp4
+[2025-06-03 18:15:06] MIGRATED: 8511.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/4/8511.mp4
+[2025-06-03 18:15:06] MIGRATED: 4510.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4510.mp4
+[2025-06-03 18:15:07] MIGRATED: 4512.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4512.mp4
+[2025-06-03 18:15:08] MIGRATED: 4513.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4513.mp4
+[2025-06-03 18:15:09] MIGRATED: 4514.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4514.mp4
+[2025-06-03 18:15:09] MIGRATED: 4515.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4515.mp4
+[2025-06-03 18:15:10] MIGRATED: 4516.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4516.mp4
+[2025-06-03 18:15:11] MIGRATED: 4517.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4517.mp4
+[2025-06-03 18:15:12] MIGRATED: 4518.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4518.mp4
+[2025-06-03 18:15:13] MIGRATED: 4519.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4519.mp4
+[2025-06-03 18:15:13] MIGRATED: 4520.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4520.mp4
+[2025-06-03 18:15:14] MIGRATED: 4521.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4521.mp4
+[2025-06-03 18:15:15] MIGRATED: 4522.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4522.mp4
+[2025-06-03 18:15:16] MIGRATED: 4523.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4523.mp4
+[2025-06-03 18:15:16] MIGRATED: 4524.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4524.mp4
+[2025-06-03 18:15:17] MIGRATED: 4525.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4525.mp4
+[2025-06-03 18:15:18] MIGRATED: 4526.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4526.mp4
+[2025-06-03 18:15:18] MIGRATED: 4527.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4527.mp4
+[2025-06-03 18:15:19] MIGRATED: 4528.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4528.mp4
+[2025-06-03 18:15:19] MIGRATED: 4529.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4529.mp4
+[2025-06-03 18:15:20] MIGRATED: 4530.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4530.mp4
+[2025-06-03 18:15:21] MIGRATED: 4531.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4531.mp4
+[2025-06-03 18:15:22] MIGRATED: 4532.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4532.mp4
+[2025-06-03 18:15:22] MIGRATED: 4533.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4533.mp4
+[2025-06-03 18:15:23] MIGRATED: 4534.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4534.mp4
+[2025-06-03 18:15:24] MIGRATED: 4535.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4535.mp4
+[2025-06-03 18:15:24] MIGRATED: 4536.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4536.mp4
+[2025-06-03 18:15:24] MIGRATED: 4537.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4537.mp4
+[2025-06-03 18:15:25] MIGRATED: 4538.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4538.mp4
+[2025-06-03 18:15:26] MIGRATED: 4539.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4539.mp4
+[2025-06-03 18:15:26] MIGRATED: 4540.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4540.mp4
+[2025-06-03 18:15:27] MIGRATED: 4541.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4541.mp4
+[2025-06-03 18:15:28] MIGRATED: 4542.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4542.mp4
+[2025-06-03 18:15:28] MIGRATED: 4543.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4543.mp4
+[2025-06-03 18:15:29] MIGRATED: 4544.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4544.mp4
+[2025-06-03 18:15:30] MIGRATED: 4545.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4545.mp4
+[2025-06-03 18:15:31] MIGRATED: 4546.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4546.mp4
+[2025-06-03 18:15:32] MIGRATED: 4547.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4547.mp4
+[2025-06-03 18:15:32] MIGRATED: 4548.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4548.mp4
+[2025-06-03 18:15:33] MIGRATED: 4549.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4549.mp4
+[2025-06-03 18:15:33] MIGRATED: 4550.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4550.mp4
+[2025-06-03 18:15:34] MIGRATED: 4551.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4551.mp4
+[2025-06-03 18:15:35] MIGRATED: 4552.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4552.mp4
+[2025-06-03 18:15:35] MIGRATED: 4553.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4553.mp4
+[2025-06-03 18:15:36] MIGRATED: 4554.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4554.mp4
+[2025-06-03 18:15:36] MIGRATED: 4555.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4555.mp4
+[2025-06-03 18:15:37] MIGRATED: 4556.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4556.mp4
+[2025-06-03 18:15:38] MIGRATED: 4557.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4557.mp4
+[2025-06-03 18:15:38] MIGRATED: 4558.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4558.mp4
+[2025-06-03 18:15:39] MIGRATED: 4559.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4559.mp4
+[2025-06-03 18:15:39] MIGRATED: 4560.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4560.mp4
+[2025-06-03 18:15:40] MIGRATED: 4561.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4561.mp4
+[2025-06-03 18:15:40] MIGRATED: 4562.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/5/4562.mp4
+[2025-06-03 18:15:41] MIGRATED: 4570.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4570.mp4
+[2025-06-03 18:15:41] MIGRATED: 4572.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4572.mp4
+[2025-06-03 18:15:42] MIGRATED: 4573.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4573.mp4
+[2025-06-03 18:15:42] MIGRATED: 4574.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4574.mp4
+[2025-06-03 18:15:43] MIGRATED: 4575.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4575.mp4
+[2025-06-03 18:15:43] MIGRATED: 4576.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4576.mp4
+[2025-06-03 18:15:44] MIGRATED: 4577.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4577.mp4
+[2025-06-03 18:15:44] MIGRATED: 4578.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4578.mp4
+[2025-06-03 18:15:45] MIGRATED: 4579.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4579.mp4
+[2025-06-03 18:15:45] MIGRATED: 4580.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4580.mp4
+[2025-06-03 18:15:45] MIGRATED: 4581.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4581.mp4
+[2025-06-03 18:15:46] MIGRATED: 4582.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4582.mp4
+[2025-06-03 18:15:47] MIGRATED: 4583.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4583.mp4
+[2025-06-03 18:15:47] MIGRATED: 4584.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4584.mp4
+[2025-06-03 18:15:48] MIGRATED: 4585.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4585.mp4
+[2025-06-03 18:15:48] MIGRATED: 4586.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4586.mp4
+[2025-06-03 18:15:49] MIGRATED: 4587.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4587.mp4
+[2025-06-03 18:15:49] MIGRATED: 4588.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4588.mp4
+[2025-06-03 18:15:50] MIGRATED: 4589.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4589.mp4
+[2025-06-03 18:15:51] MIGRATED: 4590.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4590.mp4
+[2025-06-03 18:15:51] MIGRATED: 4591.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4591.mp4
+[2025-06-03 18:15:52] MIGRATED: 4592.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4592.mp4
+[2025-06-03 18:15:52] MIGRATED: 4593.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4593.mp4
+[2025-06-03 18:15:53] MIGRATED: 4594.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4594.mp4
+[2025-06-03 18:15:54] MIGRATED: 4595.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4595.mp4
+[2025-06-03 18:15:54] MIGRATED: 4596.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4596.mp4
+[2025-06-03 18:15:55] MIGRATED: 4597.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4597.mp4
+[2025-06-03 18:15:55] MIGRATED: 4598.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4598.mp4
+[2025-06-03 18:15:55] MIGRATED: 4599.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4599.mp4
+[2025-06-03 18:15:56] MIGRATED: 4600.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4600.mp4
+[2025-06-03 18:15:56] MIGRATED: 4601.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4601.mp4
+[2025-06-03 18:15:57] MIGRATED: 4602.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4602.mp4
+[2025-06-03 18:15:57] MIGRATED: 4603.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4603.mp4
+[2025-06-03 18:15:58] MIGRATED: 4604.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4604.mp4
+[2025-06-03 18:15:58] MIGRATED: 4605.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4605.mp4
+[2025-06-03 18:15:59] MIGRATED: 4606.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4606.mp4
+[2025-06-03 18:15:59] MIGRATED: 4607.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4607.mp4
+[2025-06-03 18:16:00] MIGRATED: 4608.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4608.mp4
+[2025-06-03 18:16:00] MIGRATED: 4609.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4609.mp4
+[2025-06-03 18:16:00] MIGRATED: 4610.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4610.mp4
+[2025-06-03 18:16:01] MIGRATED: 4611.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4611.mp4
+[2025-06-03 18:16:01] MIGRATED: 4612.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4612.mp4
+[2025-06-03 18:16:02] MIGRATED: 4613.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4613.mp4
+[2025-06-03 18:16:02] MIGRATED: 4614.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4614.mp4
+[2025-06-03 18:16:03] MIGRATED: 4615.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4615.mp4
+[2025-06-03 18:16:03] MIGRATED: 4616.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4616.mp4
+[2025-06-03 18:16:03] MIGRATED: 4617.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4617.mp4
+[2025-06-03 18:16:04] MIGRATED: 4618.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4618.mp4
+[2025-06-03 18:16:04] MIGRATED: 4619.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4619.mp4
+[2025-06-03 18:16:05] MIGRATED: 4620.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4620.mp4
+[2025-06-03 18:16:05] MIGRATED: 4621.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4621.mp4
+[2025-06-03 18:16:06] MIGRATED: 4622.mp4 -> /mnt/d_drive/ai-transcription-downloads/truefire-courses/6/4622.mp4
+[2025-06-03 18:16:06] SKIP: File already exists with same checksum: 8476.mp4
+[2025-06-03 18:16:06] SKIP: File already exists with same checksum: 8478.mp4
+[2025-06-03 18:16:06] SKIP: File already exists with same checksum: 8479.mp4
+[2025-06-03 18:16:07] SKIP: File already exists with same checksum: 8480.mp4
+[2025-06-03 18:16:07] SKIP: File already exists with same checksum: 8481.mp4
+[2025-06-03 18:16:07] SKIP: File already exists with same checksum: 8482.mp4
+[2025-06-03 18:16:08] SKIP: File already exists with same checksum: 8483.mp4
+[2025-06-03 18:16:08] SKIP: File already exists with same checksum: 8484.mp4
+[2025-06-03 18:16:08] SKIP: File already exists with same checksum: 8485.mp4
+[2025-06-03 18:16:09] SKIP: File already exists with same checksum: 8486.mp4
+[2025-06-03 18:16:09] SKIP: File already exists with same checksum: 8487.mp4
+[2025-06-03 18:16:09] SKIP: File already exists with same checksum: 8488.mp4
+[2025-06-03 18:16:10] SKIP: File already exists with same checksum: 8489.mp4
+[2025-06-03 18:16:10] 
+--- Step 5: Verifying Migration ---
+[2025-06-03 18:16:10] VERIFIED: 7959.mp4
+[2025-06-03 18:16:10] VERIFIED: 7961.mp4
+[2025-06-03 18:16:10] VERIFIED: 7962.mp4
+[2025-06-03 18:16:10] VERIFIED: 7963.mp4
+[2025-06-03 18:16:10] VERIFIED: 7964.mp4
+[2025-06-03 18:16:10] VERIFIED: 7965.mp4
+[2025-06-03 18:16:10] VERIFIED: 7966.mp4
+[2025-06-03 18:16:10] VERIFIED: 7967.mp4
+[2025-06-03 18:16:10] VERIFIED: 7968.mp4
+[2025-06-03 18:16:11] VERIFIED: 7969.mp4
+[2025-06-03 18:16:11] VERIFIED: 7970.mp4
+[2025-06-03 18:16:11] VERIFIED: 7971.mp4
+[2025-06-03 18:16:11] VERIFIED: 7972.mp4
+[2025-06-03 18:16:11] VERIFIED: 7973.mp4
+[2025-06-03 18:16:12] VERIFIED: 7974.mp4
+[2025-06-03 18:16:12] VERIFIED: 7975.mp4
+[2025-06-03 18:16:12] VERIFIED: 7976.mp4
+[2025-06-03 18:16:12] VERIFIED: 7977.mp4
+[2025-06-03 18:16:12] VERIFIED: 7978.mp4
+[2025-06-03 18:16:12] VERIFIED: 7979.mp4
+[2025-06-03 18:16:12] VERIFIED: 7980.mp4
+[2025-06-03 18:16:12] VERIFIED: 7981.mp4
+[2025-06-03 18:16:13] VERIFIED: 7982.mp4
+[2025-06-03 18:16:13] VERIFIED: 7983.mp4
+[2025-06-03 18:16:13] VERIFIED: 7984.mp4
+[2025-06-03 18:16:13] VERIFIED: 7985.mp4
+[2025-06-03 18:16:13] VERIFIED: 7986.mp4
+[2025-06-03 18:16:13] VERIFIED: 7987.mp4
+[2025-06-03 18:16:13] VERIFIED: 7988.mp4
+[2025-06-03 18:16:13] VERIFIED: 7989.mp4
+[2025-06-03 18:16:13] VERIFIED: 7990.mp4
+[2025-06-03 18:16:14] VERIFIED: 7991.mp4
+[2025-06-03 18:16:14] VERIFIED: 7992.mp4
+[2025-06-03 18:16:14] VERIFIED: 7993.mp4
+[2025-06-03 18:16:14] VERIFIED: 7994.mp4
+[2025-06-03 18:16:14] VERIFIED: 7995.mp4
+[2025-06-03 18:16:14] VERIFIED: 7996.mp4
+[2025-06-03 18:16:14] VERIFIED: 7997.mp4
+[2025-06-03 18:16:14] VERIFIED: 7998.mp4
+[2025-06-03 18:16:14] VERIFIED: 7999.mp4
+[2025-06-03 18:16:14] VERIFIED: 8000.mp4
+[2025-06-03 18:16:14] VERIFIED: 8001.mp4
+[2025-06-03 18:16:14] VERIFIED: 8002.mp4
+[2025-06-03 18:16:14] VERIFIED: 8003.mp4
+[2025-06-03 18:16:15] VERIFIED: 8004.mp4
+[2025-06-03 18:16:15] VERIFIED: 8005.mp4
+[2025-06-03 18:16:15] VERIFIED: 8006.mp4
+[2025-06-03 18:16:15] VERIFIED: 8007.mp4
+[2025-06-03 18:16:15] VERIFIED: 8008.mp4
+[2025-06-03 18:16:15] VERIFIED: 8009.mp4
+[2025-06-03 18:16:15] VERIFIED: 8010.mp4
+[2025-06-03 18:16:15] VERIFIED: 8011.mp4
+[2025-06-03 18:16:15] VERIFIED: 8012.mp4
+[2025-06-03 18:16:15] VERIFIED: 8013.mp4
+[2025-06-03 18:16:16] VERIFIED: 8014.mp4
+[2025-06-03 18:16:16] VERIFIED: 8015.mp4
+[2025-06-03 18:16:16] VERIFIED: 8016.mp4
+[2025-06-03 18:16:16] VERIFIED: 8017.mp4
+[2025-06-03 18:16:16] VERIFIED: 8018.mp4
+[2025-06-03 18:16:16] VERIFIED: 8019.mp4
+[2025-06-03 18:16:16] VERIFIED: 8020.mp4
+[2025-06-03 18:16:16] VERIFIED: 8021.mp4
+[2025-06-03 18:16:16] VERIFIED: 8022.mp4
+[2025-06-03 18:16:16] VERIFIED: 8023.mp4
+[2025-06-03 18:16:16] VERIFIED: 8024.mp4
+[2025-06-03 18:16:16] VERIFIED: 8025.mp4
+[2025-06-03 18:16:16] VERIFIED: 8026.mp4
+[2025-06-03 18:16:17] VERIFIED: 8027.mp4
+[2025-06-03 18:16:17] VERIFIED: 8028.mp4
+[2025-06-03 18:16:17] VERIFIED: 8029.mp4
+[2025-06-03 18:16:17] VERIFIED: 8030.mp4
+[2025-06-03 18:16:17] VERIFIED: 8031.mp4
+[2025-06-03 18:16:17] VERIFIED: 8032.mp4
+[2025-06-03 18:16:17] VERIFIED: 8033.mp4
+[2025-06-03 18:16:17] VERIFIED: 8034.mp4
+[2025-06-03 18:16:17] VERIFIED: 8035.mp4
+[2025-06-03 18:16:17] VERIFIED: 8036.mp4
+[2025-06-03 18:16:17] VERIFIED: 8037.mp4
+[2025-06-03 18:16:17] VERIFIED: 8038.mp4
+[2025-06-03 18:16:18] VERIFIED: 8039.mp4
+[2025-06-03 18:16:18] VERIFIED: 8040.mp4
+[2025-06-03 18:16:18] VERIFIED: 8041.mp4
+[2025-06-03 18:16:18] VERIFIED: 8042.mp4
+[2025-06-03 18:16:18] VERIFIED: 8043.mp4
+[2025-06-03 18:16:18] VERIFIED: 8044.mp4
+[2025-06-03 18:16:19] VERIFIED: 8045.mp4
+[2025-06-03 18:16:19] VERIFIED: 8046.mp4
+[2025-06-03 18:16:19] VERIFIED: 2860.mp4
+[2025-06-03 18:16:19] VERIFIED: 2862.mp4
+[2025-06-03 18:16:19] VERIFIED: 2863.mp4
+[2025-06-03 18:16:19] VERIFIED: 2864.mp4
+[2025-06-03 18:16:19] VERIFIED: 2865.mp4
+[2025-06-03 18:16:20] VERIFIED: 2866.mp4
+[2025-06-03 18:16:20] VERIFIED: 2867.mp4
+[2025-06-03 18:16:20] VERIFIED: 2868.mp4
+[2025-06-03 18:16:20] VERIFIED: 2869.mp4
+[2025-06-03 18:16:20] VERIFIED: 2870.mp4
+[2025-06-03 18:16:20] VERIFIED: 2871.mp4
+[2025-06-03 18:16:21] VERIFIED: 2872.mp4
+[2025-06-03 18:16:21] VERIFIED: 2873.mp4
+[2025-06-03 18:16:21] VERIFIED: 2874.mp4
+[2025-06-03 18:16:21] VERIFIED: 2875.mp4
+[2025-06-03 18:16:21] VERIFIED: 2876.mp4
+[2025-06-03 18:16:22] VERIFIED: 2877.mp4
+[2025-06-03 18:16:22] VERIFIED: 2878.mp4
+[2025-06-03 18:16:22] VERIFIED: 2879.mp4
+[2025-06-03 18:16:22] VERIFIED: 2880.mp4
+[2025-06-03 18:16:22] VERIFIED: 2881.mp4
+[2025-06-03 18:16:22] VERIFIED: 2882.mp4
+[2025-06-03 18:16:22] VERIFIED: 2883.mp4
+[2025-06-03 18:16:23] VERIFIED: 2884.mp4
+[2025-06-03 18:16:23] VERIFIED: 2885.mp4
+[2025-06-03 18:16:23] VERIFIED: 2886.mp4
+[2025-06-03 18:16:23] VERIFIED: 2887.mp4
+[2025-06-03 18:16:24] VERIFIED: 2888.mp4
+[2025-06-03 18:16:24] VERIFIED: 2889.mp4
+[2025-06-03 18:16:24] VERIFIED: 2890.mp4
+[2025-06-03 18:16:24] VERIFIED: 2891.mp4
+[2025-06-03 18:16:24] VERIFIED: 2892.mp4
+[2025-06-03 18:16:25] VERIFIED: 8476.mp4
+[2025-06-03 18:16:25] VERIFIED: 8478.mp4
+[2025-06-03 18:16:25] VERIFIED: 8479.mp4
+[2025-06-03 18:16:25] VERIFIED: 8480.mp4
+[2025-06-03 18:16:26] VERIFIED: 8481.mp4
+[2025-06-03 18:16:26] VERIFIED: 8482.mp4
+[2025-06-03 18:16:26] VERIFIED: 8483.mp4
+[2025-06-03 18:16:26] VERIFIED: 8484.mp4
+[2025-06-03 18:16:27] VERIFIED: 8485.mp4
+[2025-06-03 18:16:27] VERIFIED: 8486.mp4
+[2025-06-03 18:16:27] VERIFIED: 8487.mp4
+[2025-06-03 18:16:27] VERIFIED: 8488.mp4
+[2025-06-03 18:16:28] VERIFIED: 8489.mp4
+[2025-06-03 18:16:29] VERIFIED: 8490.mp4
+[2025-06-03 18:16:29] VERIFIED: 8491.mp4
+[2025-06-03 18:16:29] VERIFIED: 8492.mp4
+[2025-06-03 18:16:30] VERIFIED: 8493.mp4
+[2025-06-03 18:16:30] VERIFIED: 8494.mp4
+[2025-06-03 18:16:30] VERIFIED: 8495.mp4
+[2025-06-03 18:16:30] VERIFIED: 8496.mp4
+[2025-06-03 18:16:31] VERIFIED: 8497.mp4
+[2025-06-03 18:16:32] VERIFIED: 8498.mp4
+[2025-06-03 18:16:32] VERIFIED: 8499.mp4
+[2025-06-03 18:16:32] VERIFIED: 8500.mp4
+[2025-06-03 18:16:33] VERIFIED: 8501.mp4
+[2025-06-03 18:16:33] VERIFIED: 8502.mp4
+[2025-06-03 18:16:33] VERIFIED: 8503.mp4
+[2025-06-03 18:16:33] VERIFIED: 8504.mp4
+[2025-06-03 18:16:33] VERIFIED: 8505.mp4
+[2025-06-03 18:16:33] VERIFIED: 8506.mp4
+[2025-06-03 18:16:34] VERIFIED: 8507.mp4
+[2025-06-03 18:16:34] VERIFIED: 8508.mp4
+[2025-06-03 18:16:34] VERIFIED: 8509.mp4
+[2025-06-03 18:16:34] VERIFIED: 8510.mp4
+[2025-06-03 18:16:34] VERIFIED: 8511.mp4
+[2025-06-03 18:16:34] VERIFIED: 4510.mp4
+[2025-06-03 18:16:35] VERIFIED: 4512.mp4
+[2025-06-03 18:16:35] VERIFIED: 4513.mp4
+[2025-06-03 18:16:35] VERIFIED: 4514.mp4
+[2025-06-03 18:16:35] VERIFIED: 4515.mp4
+[2025-06-03 18:16:36] VERIFIED: 4516.mp4
+[2025-06-03 18:16:36] VERIFIED: 4517.mp4
+[2025-06-03 18:16:36] VERIFIED: 4518.mp4
+[2025-06-03 18:16:36] VERIFIED: 4519.mp4
+[2025-06-03 18:16:37] VERIFIED: 4520.mp4
+[2025-06-03 18:16:37] VERIFIED: 4521.mp4
+[2025-06-03 18:16:37] VERIFIED: 4522.mp4
+[2025-06-03 18:16:37] VERIFIED: 4523.mp4
+[2025-06-03 18:16:37] VERIFIED: 4524.mp4
+[2025-06-03 18:16:37] VERIFIED: 4525.mp4
+[2025-06-03 18:16:37] VERIFIED: 4526.mp4
+[2025-06-03 18:16:38] VERIFIED: 4527.mp4
+[2025-06-03 18:16:38] VERIFIED: 4528.mp4
+[2025-06-03 18:16:38] VERIFIED: 4529.mp4
+[2025-06-03 18:16:38] VERIFIED: 4530.mp4
+[2025-06-03 18:16:38] VERIFIED: 4531.mp4
+[2025-06-03 18:16:38] VERIFIED: 4532.mp4
+[2025-06-03 18:16:39] VERIFIED: 4533.mp4
+[2025-06-03 18:16:39] VERIFIED: 4534.mp4
+[2025-06-03 18:16:39] VERIFIED: 4535.mp4
+[2025-06-03 18:16:39] VERIFIED: 4536.mp4
+[2025-06-03 18:16:39] VERIFIED: 4537.mp4
+[2025-06-03 18:16:39] VERIFIED: 4538.mp4
+[2025-06-03 18:16:39] VERIFIED: 4539.mp4
+[2025-06-03 18:16:39] VERIFIED: 4540.mp4
+[2025-06-03 18:16:40] VERIFIED: 4541.mp4
+[2025-06-03 18:16:40] VERIFIED: 4542.mp4
+[2025-06-03 18:16:40] VERIFIED: 4543.mp4
+[2025-06-03 18:16:40] VERIFIED: 4544.mp4
+[2025-06-03 18:16:41] VERIFIED: 4545.mp4
+[2025-06-03 18:16:41] VERIFIED: 4546.mp4
+[2025-06-03 18:16:41] VERIFIED: 4547.mp4
+[2025-06-03 18:16:41] VERIFIED: 4548.mp4
+[2025-06-03 18:16:41] VERIFIED: 4549.mp4
+[2025-06-03 18:16:41] VERIFIED: 4550.mp4
+[2025-06-03 18:16:42] VERIFIED: 4551.mp4
+[2025-06-03 18:16:42] VERIFIED: 4552.mp4
+[2025-06-03 18:16:42] VERIFIED: 4553.mp4
+[2025-06-03 18:16:42] VERIFIED: 4554.mp4
+[2025-06-03 18:16:42] VERIFIED: 4555.mp4
+[2025-06-03 18:16:42] VERIFIED: 4556.mp4
+[2025-06-03 18:16:42] VERIFIED: 4557.mp4
+[2025-06-03 18:16:42] VERIFIED: 4558.mp4
+[2025-06-03 18:16:43] VERIFIED: 4559.mp4
+[2025-06-03 18:16:43] VERIFIED: 4560.mp4
+[2025-06-03 18:16:43] VERIFIED: 4561.mp4
+[2025-06-03 18:16:43] VERIFIED: 4562.mp4
+[2025-06-03 18:16:43] VERIFIED: 4570.mp4
+[2025-06-03 18:16:43] VERIFIED: 4572.mp4
+[2025-06-03 18:16:43] VERIFIED: 4573.mp4
+[2025-06-03 18:16:43] VERIFIED: 4574.mp4
+[2025-06-03 18:16:44] VERIFIED: 4575.mp4
+[2025-06-03 18:16:44] VERIFIED: 4576.mp4
+[2025-06-03 18:16:44] VERIFIED: 4577.mp4
+[2025-06-03 18:16:44] VERIFIED: 4578.mp4
+[2025-06-03 18:16:44] VERIFIED: 4579.mp4
+[2025-06-03 18:16:44] VERIFIED: 4580.mp4
+[2025-06-03 18:16:44] VERIFIED: 4581.mp4
+[2025-06-03 18:16:44] VERIFIED: 4582.mp4
+[2025-06-03 18:16:44] VERIFIED: 4583.mp4
+[2025-06-03 18:16:45] VERIFIED: 4584.mp4
+[2025-06-03 18:16:45] VERIFIED: 4585.mp4
+[2025-06-03 18:16:45] VERIFIED: 4586.mp4
+[2025-06-03 18:16:45] VERIFIED: 4587.mp4
+[2025-06-03 18:16:45] VERIFIED: 4588.mp4
+[2025-06-03 18:16:45] VERIFIED: 4589.mp4
+[2025-06-03 18:16:45] VERIFIED: 4590.mp4
+[2025-06-03 18:16:45] VERIFIED: 4591.mp4
+[2025-06-03 18:16:46] VERIFIED: 4592.mp4
+[2025-06-03 18:16:46] VERIFIED: 4593.mp4
+[2025-06-03 18:16:46] VERIFIED: 4594.mp4
+[2025-06-03 18:16:46] VERIFIED: 4595.mp4
+[2025-06-03 18:16:46] VERIFIED: 4596.mp4
+[2025-06-03 18:16:46] VERIFIED: 4597.mp4
+[2025-06-03 18:16:46] VERIFIED: 4598.mp4
+[2025-06-03 18:16:46] VERIFIED: 4599.mp4
+[2025-06-03 18:16:46] VERIFIED: 4600.mp4
+[2025-06-03 18:16:47] VERIFIED: 4601.mp4
+[2025-06-03 18:16:47] VERIFIED: 4602.mp4
+[2025-06-03 18:16:47] VERIFIED: 4603.mp4
+[2025-06-03 18:16:47] VERIFIED: 4604.mp4
+[2025-06-03 18:16:47] VERIFIED: 4605.mp4
+[2025-06-03 18:16:47] VERIFIED: 4606.mp4
+[2025-06-03 18:16:47] VERIFIED: 4607.mp4
+[2025-06-03 18:16:47] VERIFIED: 4608.mp4
+[2025-06-03 18:16:47] VERIFIED: 4609.mp4
+[2025-06-03 18:16:48] VERIFIED: 4610.mp4
+[2025-06-03 18:16:48] VERIFIED: 4611.mp4
+[2025-06-03 18:16:48] VERIFIED: 4612.mp4
+[2025-06-03 18:16:48] VERIFIED: 4613.mp4
+[2025-06-03 18:16:48] VERIFIED: 4614.mp4
+[2025-06-03 18:16:48] VERIFIED: 4615.mp4
+[2025-06-03 18:16:48] VERIFIED: 4616.mp4
+[2025-06-03 18:16:48] VERIFIED: 4617.mp4
+[2025-06-03 18:16:48] VERIFIED: 4618.mp4
+[2025-06-03 18:16:49] VERIFIED: 4619.mp4
+[2025-06-03 18:16:49] VERIFIED: 4620.mp4
+[2025-06-03 18:16:49] VERIFIED: 4621.mp4
+[2025-06-03 18:16:49] VERIFIED: 4622.mp4
+[2025-06-03 18:16:49] All migrated files verified successfully
+[2025-06-03 18:16:49] 
+--- Step 6: Final Migration Report ---
+[2025-06-03 18:16:49] Migration Statistics:
+[2025-06-03 18:16:49]   Total files found: 271
+[2025-06-03 18:16:49]   Files migrated: 258
+[2025-06-03 18:16:49]   Files skipped: 13
+[2025-06-03 18:16:49]   Files failed: 0
+[2025-06-03 18:16:49]   Total size: 3.8 GB
+[2025-06-03 18:16:49]   Migrated size: 3.44 GB
+[2025-06-03 18:16:49] 
+--- Testing Laravel Storage Access ---
+[2025-06-03 18:16:51] ✓ Laravel can access: ai-transcription-downloads/truefire-courses/1/7959.mp4
+[2025-06-03 18:16:51] ✓ Laravel can access: ai-transcription-downloads/truefire-courses/1/7961.mp4
+[2025-06-03 18:16:51] ✓ Laravel can access: ai-transcription-downloads/truefire-courses/1/7962.mp4
+[2025-06-03 18:16:51] ✓ Laravel can access: ai-transcription-downloads/truefire-courses/1/7963.mp4
+[2025-06-03 18:16:51] ✓ Laravel can access: ai-transcription-downloads/truefire-courses/1/7964.mp4
+[2025-06-03 18:16:51] Laravel Storage test: 5/5 files accessible
+[2025-06-03 18:16:51] 
+=== Migration completed at 2025-06-03 18:16:51 ===
+[2025-06-03 18:16:51] Final migration log saved: /var/www/migration-final-log-2025-06-03-18-16-51.json

@@ -1,0 +1,2440 @@
+{
+    "completed_at": "2025-06-03 18:16:51",
+    "stats": {
+        "total_files": 271,
+        "migrated_files": 258,
+        "skipped_files": 13,
+        "failed_files": 0,
+        "total_size_bytes": 4081778768,
+        "migrated_size_bytes": 3691259843
+    },
+    "files": [
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7959.mp4",
+            "relative_path": "1\/7959.mp4",
+            "file_size": 18276464,
+            "checksum": "4c4fe51692312cbaa47a375520fb0261",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7959.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7961.mp4",
+            "relative_path": "1\/7961.mp4",
+            "file_size": 3227598,
+            "checksum": "df49c1bc5557f18d5ed2f19a97cdf129",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7961.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7962.mp4",
+            "relative_path": "1\/7962.mp4",
+            "file_size": 8990620,
+            "checksum": "b2e159a345eb1b03a45604fb582aed1a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7962.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7963.mp4",
+            "relative_path": "1\/7963.mp4",
+            "file_size": 8272484,
+            "checksum": "68ef15a3cde68b50936ad81f9b013892",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7963.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7964.mp4",
+            "relative_path": "1\/7964.mp4",
+            "file_size": 5939216,
+            "checksum": "b8e2600c19a7849dd0e9ae609bc77dd8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7964.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7965.mp4",
+            "relative_path": "1\/7965.mp4",
+            "file_size": 4037621,
+            "checksum": "3c828e99ff865c2abdb32ce87c7756e0",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7965.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7966.mp4",
+            "relative_path": "1\/7966.mp4",
+            "file_size": 5989441,
+            "checksum": "236bacf528f15e2eb2827c67840799d1",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7966.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7967.mp4",
+            "relative_path": "1\/7967.mp4",
+            "file_size": 4178832,
+            "checksum": "3a6d99cfb35fb14f6e83a3dc23eb1916",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7967.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7968.mp4",
+            "relative_path": "1\/7968.mp4",
+            "file_size": 9267992,
+            "checksum": "82f072cfa189bc90efb970a44c48c014",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7968.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7969.mp4",
+            "relative_path": "1\/7969.mp4",
+            "file_size": 6072200,
+            "checksum": "25dabf2395553ff7d25f212295f3626e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7969.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7970.mp4",
+            "relative_path": "1\/7970.mp4",
+            "file_size": 12718434,
+            "checksum": "47bec3057b5f64fbc5c2bfe8db04b579",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7970.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7971.mp4",
+            "relative_path": "1\/7971.mp4",
+            "file_size": 8572739,
+            "checksum": "5ab825e936d4977d365b28c6c3244025",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7971.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7972.mp4",
+            "relative_path": "1\/7972.mp4",
+            "file_size": 11670652,
+            "checksum": "3fba25c4be5beb801af9d1d04f82b2c7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7972.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7973.mp4",
+            "relative_path": "1\/7973.mp4",
+            "file_size": 8741775,
+            "checksum": "db627ad8739649860264a621a88ec86c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7973.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7974.mp4",
+            "relative_path": "1\/7974.mp4",
+            "file_size": 66304145,
+            "checksum": "333d8d98d747bc738af596a4ea7c56b0",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7974.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7975.mp4",
+            "relative_path": "1\/7975.mp4",
+            "file_size": 1951337,
+            "checksum": "a8eed9e5164c9b7577488bd39705c22e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7975.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7976.mp4",
+            "relative_path": "1\/7976.mp4",
+            "file_size": 15104921,
+            "checksum": "b3a8daa472eca516e9e16bf78366c7f8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7976.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7977.mp4",
+            "relative_path": "1\/7977.mp4",
+            "file_size": 10549478,
+            "checksum": "9c2b9cc3b7c72209ea014e4f7dbf20fd",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7977.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7978.mp4",
+            "relative_path": "1\/7978.mp4",
+            "file_size": 9188425,
+            "checksum": "0defd6eafb145c84c9ab68b2826e4598",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7978.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7979.mp4",
+            "relative_path": "1\/7979.mp4",
+            "file_size": 12223758,
+            "checksum": "84e4a4b89c87e407576d7f65c5ff0596",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7979.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7980.mp4",
+            "relative_path": "1\/7980.mp4",
+            "file_size": 2801474,
+            "checksum": "ea7e95d7bb72ac3fd4c9d87b8d09209c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7980.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7981.mp4",
+            "relative_path": "1\/7981.mp4",
+            "file_size": 14490411,
+            "checksum": "5235a028adade2b3ad08f2b5be036a13",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7981.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7982.mp4",
+            "relative_path": "1\/7982.mp4",
+            "file_size": 15892118,
+            "checksum": "cc1970f244e99fd7b70c9a6fa7ded06b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7982.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7983.mp4",
+            "relative_path": "1\/7983.mp4",
+            "file_size": 9793300,
+            "checksum": "c509218342fb24a7d74a765e2a0b81eb",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7983.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7984.mp4",
+            "relative_path": "1\/7984.mp4",
+            "file_size": 10992991,
+            "checksum": "a0889ae4ea4cec31768e41344c052016",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7984.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7985.mp4",
+            "relative_path": "1\/7985.mp4",
+            "file_size": 33190985,
+            "checksum": "5a0bae01348f6a57dbbdb354e1459edd",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7985.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7986.mp4",
+            "relative_path": "1\/7986.mp4",
+            "file_size": 2504455,
+            "checksum": "c0905753467e9b80cfa174f3aa28f3e6",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7986.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7987.mp4",
+            "relative_path": "1\/7987.mp4",
+            "file_size": 7037660,
+            "checksum": "894d8834376ecbefca16c9ef9df2b20c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7987.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7988.mp4",
+            "relative_path": "1\/7988.mp4",
+            "file_size": 3989695,
+            "checksum": "566e6e8c12fd011370575cd130f51c44",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7988.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7989.mp4",
+            "relative_path": "1\/7989.mp4",
+            "file_size": 5805351,
+            "checksum": "e1c77ae57f274c2c0a022a471d7ca92f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7989.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7990.mp4",
+            "relative_path": "1\/7990.mp4",
+            "file_size": 1071181,
+            "checksum": "ed7b11ffcc7d56f0e476b600741488c5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7990.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7991.mp4",
+            "relative_path": "1\/7991.mp4",
+            "file_size": 6878993,
+            "checksum": "3ff0c3f1f8bab0c57eca61fc51d045c6",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7991.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7992.mp4",
+            "relative_path": "1\/7992.mp4",
+            "file_size": 7093353,
+            "checksum": "d2cee1874143da7793fd9f3f58dde7bf",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7992.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7993.mp4",
+            "relative_path": "1\/7993.mp4",
+            "file_size": 6529124,
+            "checksum": "7e4bbb4c59dfde175c415039d022b1fe",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7993.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7994.mp4",
+            "relative_path": "1\/7994.mp4",
+            "file_size": 1597384,
+            "checksum": "7bd5d66789bbef227bfdfb852822150b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7994.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7995.mp4",
+            "relative_path": "1\/7995.mp4",
+            "file_size": 10529462,
+            "checksum": "435139f56cd1bc4084b2d4c9c553e26c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7995.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7996.mp4",
+            "relative_path": "1\/7996.mp4",
+            "file_size": 4314217,
+            "checksum": "0145c0f518f62828fd30a36bf2130d24",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7996.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7997.mp4",
+            "relative_path": "1\/7997.mp4",
+            "file_size": 10389482,
+            "checksum": "b076f46749525803823138a202126ee4",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7997.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7998.mp4",
+            "relative_path": "1\/7998.mp4",
+            "file_size": 3409690,
+            "checksum": "90655098b45df3579917f1c2c0c38471",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7998.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/7999.mp4",
+            "relative_path": "1\/7999.mp4",
+            "file_size": 4786484,
+            "checksum": "40e031a107e5cc79f51f870722c0c37a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/7999.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8000.mp4",
+            "relative_path": "1\/8000.mp4",
+            "file_size": 6972642,
+            "checksum": "eb52dba690fb25e7df721350f7c57a87",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8000.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8001.mp4",
+            "relative_path": "1\/8001.mp4",
+            "file_size": 9443573,
+            "checksum": "d281ea0b98fee89a544f2ae98702940e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8001.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8002.mp4",
+            "relative_path": "1\/8002.mp4",
+            "file_size": 1791326,
+            "checksum": "dfe69aed3636cd7cd33464d855e1b410",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8002.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8003.mp4",
+            "relative_path": "1\/8003.mp4",
+            "file_size": 14602527,
+            "checksum": "14f63d117649725459b6a9a80484968c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8003.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8004.mp4",
+            "relative_path": "1\/8004.mp4",
+            "file_size": 11162318,
+            "checksum": "c972310a38d9112e1e8d9365fee5cc9c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8004.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8005.mp4",
+            "relative_path": "1\/8005.mp4",
+            "file_size": 10747730,
+            "checksum": "c9739867bda8c47049b1b59082dde595",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8005.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8006.mp4",
+            "relative_path": "1\/8006.mp4",
+            "file_size": 7346985,
+            "checksum": "24594f043983bb22cfde06cf8306ae1f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8006.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8007.mp4",
+            "relative_path": "1\/8007.mp4",
+            "file_size": 27866616,
+            "checksum": "c7fb29634fbb59ba85ded992d892df85",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8007.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8008.mp4",
+            "relative_path": "1\/8008.mp4",
+            "file_size": 1774335,
+            "checksum": "ebf97a8c529e4cfed4cd1824333cedf2",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8008.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8009.mp4",
+            "relative_path": "1\/8009.mp4",
+            "file_size": 8704087,
+            "checksum": "5ff5415bdf08a415af0c6f4c357faa83",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8009.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8010.mp4",
+            "relative_path": "1\/8010.mp4",
+            "file_size": 6983136,
+            "checksum": "66ce8796a712875d4f5098a7147de72c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8010.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8011.mp4",
+            "relative_path": "1\/8011.mp4",
+            "file_size": 10480375,
+            "checksum": "1f946b1b49d72f90ee9e5d6a61876321",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8011.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8012.mp4",
+            "relative_path": "1\/8012.mp4",
+            "file_size": 1938810,
+            "checksum": "b78e8da85f2f86b71a91157f18abf4bd",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8012.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8013.mp4",
+            "relative_path": "1\/8013.mp4",
+            "file_size": 8561851,
+            "checksum": "c66130d04ac51d524b7e9b58702119c5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8013.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8014.mp4",
+            "relative_path": "1\/8014.mp4",
+            "file_size": 6547453,
+            "checksum": "08201aa2f214a16314aeb1801e988e86",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8014.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8015.mp4",
+            "relative_path": "1\/8015.mp4",
+            "file_size": 5778866,
+            "checksum": "951586fc3b5e9ae7d4f40e085eebc309",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8015.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8016.mp4",
+            "relative_path": "1\/8016.mp4",
+            "file_size": 1751197,
+            "checksum": "6b863f5f1ece786c85afac0484ebb847",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8016.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8017.mp4",
+            "relative_path": "1\/8017.mp4",
+            "file_size": 9978053,
+            "checksum": "e5692c2ccd69fc00a83d9c5a38fc3ad8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8017.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8018.mp4",
+            "relative_path": "1\/8018.mp4",
+            "file_size": 5860924,
+            "checksum": "c893591fb3d9fa68d5c31a6a22e435c0",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8018.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8019.mp4",
+            "relative_path": "1\/8019.mp4",
+            "file_size": 16282090,
+            "checksum": "7ecb8f88f2d630431fb76c770f4e7853",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8019.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8020.mp4",
+            "relative_path": "1\/8020.mp4",
+            "file_size": 1410178,
+            "checksum": "086b27e3ec5271c4f713f8e3b034137a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8020.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8021.mp4",
+            "relative_path": "1\/8021.mp4",
+            "file_size": 8385756,
+            "checksum": "64bf5910e61ed7971a175dd47165eb1e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8021.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8022.mp4",
+            "relative_path": "1\/8022.mp4",
+            "file_size": 6765551,
+            "checksum": "8a2833b32642a11ad7a9d26076b1d09a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8022.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8023.mp4",
+            "relative_path": "1\/8023.mp4",
+            "file_size": 8114141,
+            "checksum": "0395fffcc01e80e159b754f65c911e75",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8023.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8024.mp4",
+            "relative_path": "1\/8024.mp4",
+            "file_size": 1855779,
+            "checksum": "bdb63bab62811caa2667ec371998a914",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8024.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8025.mp4",
+            "relative_path": "1\/8025.mp4",
+            "file_size": 10338350,
+            "checksum": "040ad22e4bddb2465a690bfce5efa193",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8025.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8026.mp4",
+            "relative_path": "1\/8026.mp4",
+            "file_size": 7169993,
+            "checksum": "cb7675a98e6001ab82570bbd73284d24",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8026.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8027.mp4",
+            "relative_path": "1\/8027.mp4",
+            "file_size": 7695519,
+            "checksum": "5c317f94f5a4d90d2592cea65c260fb7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8027.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8028.mp4",
+            "relative_path": "1\/8028.mp4",
+            "file_size": 1221844,
+            "checksum": "52152449effe5d973369557ea825ff40",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8028.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8029.mp4",
+            "relative_path": "1\/8029.mp4",
+            "file_size": 11071708,
+            "checksum": "3ff6bf83025c36ae38cfc380feea3b3e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8029.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8030.mp4",
+            "relative_path": "1\/8030.mp4",
+            "file_size": 12223318,
+            "checksum": "e8df9551c90ce34d0231b861dba724f8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8030.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8031.mp4",
+            "relative_path": "1\/8031.mp4",
+            "file_size": 8274287,
+            "checksum": "fd8ccebc4c3828a44d2f3aadb5c5e6c7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8031.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8032.mp4",
+            "relative_path": "1\/8032.mp4",
+            "file_size": 2472924,
+            "checksum": "6280cd2aaffb8b511bad4b51495d4c29",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8032.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8033.mp4",
+            "relative_path": "1\/8033.mp4",
+            "file_size": 6496743,
+            "checksum": "f6e419c0fa374872090f19ae73289794",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8033.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8034.mp4",
+            "relative_path": "1\/8034.mp4",
+            "file_size": 4658443,
+            "checksum": "dc13af2d5ddc5d0bf7a23b5267c21975",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8034.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8035.mp4",
+            "relative_path": "1\/8035.mp4",
+            "file_size": 9937183,
+            "checksum": "f8581727d7bb31a07abfb8784f4ae9c5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8035.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8036.mp4",
+            "relative_path": "1\/8036.mp4",
+            "file_size": 1963805,
+            "checksum": "6ccc8a7a0f1130539ccc8f8d29fe7837",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8036.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8037.mp4",
+            "relative_path": "1\/8037.mp4",
+            "file_size": 11279636,
+            "checksum": "f5ed8394879e68d37525babb86f5c348",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8037.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8038.mp4",
+            "relative_path": "1\/8038.mp4",
+            "file_size": 18532096,
+            "checksum": "8acafb838fc5bdf2f700c754ae1f71fd",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8038.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8039.mp4",
+            "relative_path": "1\/8039.mp4",
+            "file_size": 14949306,
+            "checksum": "ba9e5b8dc8a4eec27cd3e0c62636cc92",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8039.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8040.mp4",
+            "relative_path": "1\/8040.mp4",
+            "file_size": 4812840,
+            "checksum": "957f1b3631eb9803ef2717c5e00e2ee7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8040.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8041.mp4",
+            "relative_path": "1\/8041.mp4",
+            "file_size": 28733910,
+            "checksum": "671e905a5ad19fd56990feb924e4a5ff",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8041.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8042.mp4",
+            "relative_path": "1\/8042.mp4",
+            "file_size": 7741603,
+            "checksum": "f4d021035970e4532f9f52f9d7f83300",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8042.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8043.mp4",
+            "relative_path": "1\/8043.mp4",
+            "file_size": 23883633,
+            "checksum": "3d63f03bfebe11965c5cf61aa9c24f2f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8043.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8044.mp4",
+            "relative_path": "1\/8044.mp4",
+            "file_size": 6187864,
+            "checksum": "3b654a511f59f467fc42eb2219d1116b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8044.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8045.mp4",
+            "relative_path": "1\/8045.mp4",
+            "file_size": 35339330,
+            "checksum": "7b2815ded5f2f297ccefb0104ddb6415",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8045.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/1\/8046.mp4",
+            "relative_path": "1\/8046.mp4",
+            "file_size": 4207210,
+            "checksum": "9220c4cc7d0098e4aa2980d84ee760b0",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/1\/8046.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2860.mp4",
+            "relative_path": "3\/2860.mp4",
+            "file_size": 5326271,
+            "checksum": "001d244a9509e000cd699eac0807f244",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2860.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2862.mp4",
+            "relative_path": "3\/2862.mp4",
+            "file_size": 9136176,
+            "checksum": "6ecc68bf5365dc663091e7ca7f440b9c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2862.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2863.mp4",
+            "relative_path": "3\/2863.mp4",
+            "file_size": 13472010,
+            "checksum": "dc3fb6bfa6fab5c47a72efb595759320",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2863.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2864.mp4",
+            "relative_path": "3\/2864.mp4",
+            "file_size": 23986028,
+            "checksum": "555db168e2abedd0ff219637b08e16f3",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2864.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2865.mp4",
+            "relative_path": "3\/2865.mp4",
+            "file_size": 17473839,
+            "checksum": "2b6c621f8d28882ccb444a6dd1afedfc",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2865.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2866.mp4",
+            "relative_path": "3\/2866.mp4",
+            "file_size": 16446366,
+            "checksum": "628e5bc4a23682c468059abd7cfb74bf",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2866.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2867.mp4",
+            "relative_path": "3\/2867.mp4",
+            "file_size": 19092871,
+            "checksum": "4403de9941b500ca785bdb816ae40437",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2867.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2868.mp4",
+            "relative_path": "3\/2868.mp4",
+            "file_size": 16807695,
+            "checksum": "b0cdf7c9e8b95f9e69da62ddee75f7a9",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2868.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2869.mp4",
+            "relative_path": "3\/2869.mp4",
+            "file_size": 25317077,
+            "checksum": "2935dcda0753b352a79f5ba6fe2b4501",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2869.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2870.mp4",
+            "relative_path": "3\/2870.mp4",
+            "file_size": 17217834,
+            "checksum": "d737f3c9a444ca88de98d8062b74ba27",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2870.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2871.mp4",
+            "relative_path": "3\/2871.mp4",
+            "file_size": 16444553,
+            "checksum": "d89b5e33409e24ad085d20c862769e24",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2871.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2872.mp4",
+            "relative_path": "3\/2872.mp4",
+            "file_size": 23303976,
+            "checksum": "df51f0c2e2c316a740bc756b9b6da60b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2872.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2873.mp4",
+            "relative_path": "3\/2873.mp4",
+            "file_size": 27755543,
+            "checksum": "1eb7c40d461ecf292b73d9c155158c3b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2873.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2874.mp4",
+            "relative_path": "3\/2874.mp4",
+            "file_size": 15545810,
+            "checksum": "d8406f6715551989df86e3e3c806dd69",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2874.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2875.mp4",
+            "relative_path": "3\/2875.mp4",
+            "file_size": 17147113,
+            "checksum": "79c4c1be0cd3219114e6ea7072553a59",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2875.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2876.mp4",
+            "relative_path": "3\/2876.mp4",
+            "file_size": 17447618,
+            "checksum": "37a4921724ff59b083b023e9a81e84b8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2876.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2877.mp4",
+            "relative_path": "3\/2877.mp4",
+            "file_size": 13389975,
+            "checksum": "0a9ec6199746df4e7435fde61e775788",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2877.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2878.mp4",
+            "relative_path": "3\/2878.mp4",
+            "file_size": 14132301,
+            "checksum": "df765a86864aa97c5dcaaa057b383a2f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2878.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2879.mp4",
+            "relative_path": "3\/2879.mp4",
+            "file_size": 20617318,
+            "checksum": "963359903ce7f3f58d84ee8d9f898da4",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2879.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2880.mp4",
+            "relative_path": "3\/2880.mp4",
+            "file_size": 14611666,
+            "checksum": "2cacf58f93577492b878aa78e21bc16d",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2880.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2881.mp4",
+            "relative_path": "3\/2881.mp4",
+            "file_size": 16066325,
+            "checksum": "03672f1cb2cfebbedf9d884a1ef07ccb",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2881.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2882.mp4",
+            "relative_path": "3\/2882.mp4",
+            "file_size": 9203071,
+            "checksum": "ddeec7c66adfc0fd9dea8c6cf3627643",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2882.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2883.mp4",
+            "relative_path": "3\/2883.mp4",
+            "file_size": 20512328,
+            "checksum": "3270797bd0fa78a588a355f6d0188b48",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2883.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2884.mp4",
+            "relative_path": "3\/2884.mp4",
+            "file_size": 11474426,
+            "checksum": "a03bc9f604a490e74ace8e3d9577d2ee",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2884.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2885.mp4",
+            "relative_path": "3\/2885.mp4",
+            "file_size": 25386162,
+            "checksum": "8de988bd791ea51060c139c9a47936c8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2885.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2886.mp4",
+            "relative_path": "3\/2886.mp4",
+            "file_size": 13243317,
+            "checksum": "b195bbb8e04e22b5427fe5e4c0caf85b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2886.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2887.mp4",
+            "relative_path": "3\/2887.mp4",
+            "file_size": 23998100,
+            "checksum": "65321c929c8f2762db3b4a73563438a5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2887.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2888.mp4",
+            "relative_path": "3\/2888.mp4",
+            "file_size": 22203197,
+            "checksum": "c12ad6c349cf3e6efacdebada939c245",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2888.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2889.mp4",
+            "relative_path": "3\/2889.mp4",
+            "file_size": 20247531,
+            "checksum": "c11a47546e65ea7783d23ed1313981b6",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2889.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2890.mp4",
+            "relative_path": "3\/2890.mp4",
+            "file_size": 14999380,
+            "checksum": "b847c80b43152bc1b0a5ccb1a4cad921",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2890.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2891.mp4",
+            "relative_path": "3\/2891.mp4",
+            "file_size": 20594264,
+            "checksum": "ac78a7ab802dd8c99c2dfddb17ae2d13",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2891.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/3\/2892.mp4",
+            "relative_path": "3\/2892.mp4",
+            "file_size": 3170150,
+            "checksum": "174334eec5b681dd64f3f457447588fc",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/3\/2892.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8476.mp4",
+            "relative_path": "4\/8476.mp4",
+            "file_size": 29768883,
+            "checksum": "ac30cd90582615f913452935dea690c7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8476.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8478.mp4",
+            "relative_path": "4\/8478.mp4",
+            "file_size": 19829616,
+            "checksum": "1b470670dc2a77ec863c12e16be5ab2b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8478.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8479.mp4",
+            "relative_path": "4\/8479.mp4",
+            "file_size": 18832892,
+            "checksum": "350f8412ecd115d4e2de0253549f2ac8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8479.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8480.mp4",
+            "relative_path": "4\/8480.mp4",
+            "file_size": 35340447,
+            "checksum": "6cd1ee6e6ad43c22a1fca7368d3002f9",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8480.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8481.mp4",
+            "relative_path": "4\/8481.mp4",
+            "file_size": 31357412,
+            "checksum": "43a8cb6eb495a6bc2abaf771569e36d0",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8481.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8482.mp4",
+            "relative_path": "4\/8482.mp4",
+            "file_size": 9349704,
+            "checksum": "b04f433080c160fba802896fc7c922eb",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8482.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8483.mp4",
+            "relative_path": "4\/8483.mp4",
+            "file_size": 34147311,
+            "checksum": "82b561d5e95d9b9ce209dfa08ac151e4",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8483.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8484.mp4",
+            "relative_path": "4\/8484.mp4",
+            "file_size": 31328068,
+            "checksum": "276f8478e94392e285dd47cad4218a4f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8484.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8485.mp4",
+            "relative_path": "4\/8485.mp4",
+            "file_size": 43885375,
+            "checksum": "35dd5cedc397f2486fa072937d4840b2",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8485.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8486.mp4",
+            "relative_path": "4\/8486.mp4",
+            "file_size": 20067221,
+            "checksum": "b3f205f2974c2ab005eac404a5af5dc6",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8486.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8487.mp4",
+            "relative_path": "4\/8487.mp4",
+            "file_size": 23128287,
+            "checksum": "eb571497a8a6d4b1604662f9cae11f5b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8487.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8488.mp4",
+            "relative_path": "4\/8488.mp4",
+            "file_size": 6033518,
+            "checksum": "f5fb8de8cd29bc7aadb35d4fe89e7c8b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8488.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8489.mp4",
+            "relative_path": "4\/8489.mp4",
+            "file_size": 87450191,
+            "checksum": "1be18f44d1c4ce7b883148786e27b139",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8489.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8490.mp4",
+            "relative_path": "4\/8490.mp4",
+            "file_size": 38499446,
+            "checksum": "7ebdc6e63c76fb5bf16b9e2b7bda8c7b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8490.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8491.mp4",
+            "relative_path": "4\/8491.mp4",
+            "file_size": 25975704,
+            "checksum": "a2976c42ab2ce106e16afb51908912a7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8491.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8492.mp4",
+            "relative_path": "4\/8492.mp4",
+            "file_size": 19203526,
+            "checksum": "c4eef058942105f8f720bacbe5180b1a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8492.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8493.mp4",
+            "relative_path": "4\/8493.mp4",
+            "file_size": 77035652,
+            "checksum": "7a0667b606b35227898800dd39b4e6c0",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8493.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8494.mp4",
+            "relative_path": "4\/8494.mp4",
+            "file_size": 31692935,
+            "checksum": "7eaa0bd6423fb10a353920ad6a668ee7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8494.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8495.mp4",
+            "relative_path": "4\/8495.mp4",
+            "file_size": 10156176,
+            "checksum": "0258d16c8fc8225447322b45cec2c4aa",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8495.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8496.mp4",
+            "relative_path": "4\/8496.mp4",
+            "file_size": 32349688,
+            "checksum": "b004ba198cc76dd2f123c56f4ec4302a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8496.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8497.mp4",
+            "relative_path": "4\/8497.mp4",
+            "file_size": 54420711,
+            "checksum": "bc67d30c2525e8d9133e6b25e871dfd0",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8497.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8498.mp4",
+            "relative_path": "4\/8498.mp4",
+            "file_size": 82669937,
+            "checksum": "bf09a3d8641817f99a559af7e94da995",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8498.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8499.mp4",
+            "relative_path": "4\/8499.mp4",
+            "file_size": 15083981,
+            "checksum": "6ca18717e02127c21f4a024c8950c4a2",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8499.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8500.mp4",
+            "relative_path": "4\/8500.mp4",
+            "file_size": 49323079,
+            "checksum": "badf0ec698b8619c14de116f2e387fc4",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8500.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8501.mp4",
+            "relative_path": "4\/8501.mp4",
+            "file_size": 16944171,
+            "checksum": "4220c9b0ebb25aac9fa2ed0d472470b1",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8501.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8502.mp4",
+            "relative_path": "4\/8502.mp4",
+            "file_size": 24174073,
+            "checksum": "5f00bdc85bc132592e239227a719d0ee",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8502.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8503.mp4",
+            "relative_path": "4\/8503.mp4",
+            "file_size": 9859112,
+            "checksum": "526f958d240117b3604e7fc55b051772",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8503.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8504.mp4",
+            "relative_path": "4\/8504.mp4",
+            "file_size": 20235841,
+            "checksum": "d18a049d06d7a251f0a7e207888d62e2",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8504.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8505.mp4",
+            "relative_path": "4\/8505.mp4",
+            "file_size": 14476204,
+            "checksum": "98febc1d71de27a8762c514b7038b9ab",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8505.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8506.mp4",
+            "relative_path": "4\/8506.mp4",
+            "file_size": 7819277,
+            "checksum": "3fa629e94164ff797e3d4c3382ad4eea",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8506.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8507.mp4",
+            "relative_path": "4\/8507.mp4",
+            "file_size": 22383095,
+            "checksum": "1244852e1836e89771079aad6e02b19a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8507.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8508.mp4",
+            "relative_path": "4\/8508.mp4",
+            "file_size": 6871651,
+            "checksum": "0eba3ea1186e9ac97a3306987609564e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8508.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8509.mp4",
+            "relative_path": "4\/8509.mp4",
+            "file_size": 17159067,
+            "checksum": "8c9942a36fa2eaab2bfff9ee2a6a85cb",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8509.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8510.mp4",
+            "relative_path": "4\/8510.mp4",
+            "file_size": 28549713,
+            "checksum": "cae54be49004e222d32934d7898f77f9",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8510.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/4\/8511.mp4",
+            "relative_path": "4\/8511.mp4",
+            "file_size": 3074444,
+            "checksum": "4734e3cce495f3d4d8d36843df425227",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/4\/8511.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4510.mp4",
+            "relative_path": "5\/4510.mp4",
+            "file_size": 11427753,
+            "checksum": "06ec4cc2cdf65e4e63833c533ecb1792",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4510.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4512.mp4",
+            "relative_path": "5\/4512.mp4",
+            "file_size": 19818666,
+            "checksum": "cfa562213b7a265b7c149b5f2711914c",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4512.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4513.mp4",
+            "relative_path": "5\/4513.mp4",
+            "file_size": 22357279,
+            "checksum": "6ac0f40547e6e62f9cce581edeeea749",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4513.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4514.mp4",
+            "relative_path": "5\/4514.mp4",
+            "file_size": 13996698,
+            "checksum": "3ac850c0feb4a32f3a8c45c739ef35fc",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4514.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4515.mp4",
+            "relative_path": "5\/4515.mp4",
+            "file_size": 14070027,
+            "checksum": "9c57db81ceeb73a37b1f5d52a2761052",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4515.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4516.mp4",
+            "relative_path": "5\/4516.mp4",
+            "file_size": 26853412,
+            "checksum": "64d1a07e076c343e5dc7f58e5c542fba",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4516.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4517.mp4",
+            "relative_path": "5\/4517.mp4",
+            "file_size": 19553543,
+            "checksum": "a4854674688088eeba008ecda3d0e086",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4517.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4518.mp4",
+            "relative_path": "5\/4518.mp4",
+            "file_size": 19163357,
+            "checksum": "5e5022069f2bc8dc743f9881bbd1fadb",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4518.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4519.mp4",
+            "relative_path": "5\/4519.mp4",
+            "file_size": 23039022,
+            "checksum": "977ddaf7ec47cdd024d4f65da427273d",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4519.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4520.mp4",
+            "relative_path": "5\/4520.mp4",
+            "file_size": 21071898,
+            "checksum": "2a0f9bfe7f4e56be86eb0f165cfcfab5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4520.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4521.mp4",
+            "relative_path": "5\/4521.mp4",
+            "file_size": 19079987,
+            "checksum": "ffcb77698ad417df5cdd3e5f15fa0490",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4521.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4522.mp4",
+            "relative_path": "5\/4522.mp4",
+            "file_size": 20972500,
+            "checksum": "7e76baf34337610b9f8a0b3901133e7b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4522.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4523.mp4",
+            "relative_path": "5\/4523.mp4",
+            "file_size": 16624441,
+            "checksum": "4b687d85af528762a0ef0329195eacca",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4523.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4524.mp4",
+            "relative_path": "5\/4524.mp4",
+            "file_size": 11029662,
+            "checksum": "066672a5cf8e733e9c2c3efca9963c39",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4524.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4525.mp4",
+            "relative_path": "5\/4525.mp4",
+            "file_size": 11470368,
+            "checksum": "a7924ed39f74e6b4fcfc4f091a5d91e8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4525.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4526.mp4",
+            "relative_path": "5\/4526.mp4",
+            "file_size": 13411336,
+            "checksum": "f67b36492db7de07467a155a2071c058",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4526.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4527.mp4",
+            "relative_path": "5\/4527.mp4",
+            "file_size": 15618689,
+            "checksum": "364bd092cfb0855de96b93fb0126a33e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4527.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4528.mp4",
+            "relative_path": "5\/4528.mp4",
+            "file_size": 12838516,
+            "checksum": "06e1c293ebac3ccf3c3e6ceaa6be5577",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4528.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4529.mp4",
+            "relative_path": "5\/4529.mp4",
+            "file_size": 13405796,
+            "checksum": "847fecc6dd1368aaacd519eb8129c451",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4529.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4530.mp4",
+            "relative_path": "5\/4530.mp4",
+            "file_size": 13874778,
+            "checksum": "b1f446c861f4cd832a59597ec492cdea",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4530.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4531.mp4",
+            "relative_path": "5\/4531.mp4",
+            "file_size": 18815584,
+            "checksum": "d5ce3f75dcf21d9531ae91c250cc3f43",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4531.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4532.mp4",
+            "relative_path": "5\/4532.mp4",
+            "file_size": 16750608,
+            "checksum": "74386342afc9c2e98cbf35e2621d3cde",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4532.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4533.mp4",
+            "relative_path": "5\/4533.mp4",
+            "file_size": 10744272,
+            "checksum": "83af50580a2a533892a24cda830fcb9d",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4533.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4534.mp4",
+            "relative_path": "5\/4534.mp4",
+            "file_size": 12169554,
+            "checksum": "3defdfbbbd6ed25ee7bc1703fddec10a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4534.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4535.mp4",
+            "relative_path": "5\/4535.mp4",
+            "file_size": 9280988,
+            "checksum": "747818ed77aab5c16165c7f23c6a2fe3",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4535.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4536.mp4",
+            "relative_path": "5\/4536.mp4",
+            "file_size": 10176025,
+            "checksum": "3ad8f0b3faf3018e90b32e0975e671e8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4536.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4537.mp4",
+            "relative_path": "5\/4537.mp4",
+            "file_size": 10677427,
+            "checksum": "6a932bc04094c3cbaf11d056cfdd3720",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4537.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4538.mp4",
+            "relative_path": "5\/4538.mp4",
+            "file_size": 17594457,
+            "checksum": "b06c957edc308ed30648fe4e8066a95f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4538.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4539.mp4",
+            "relative_path": "5\/4539.mp4",
+            "file_size": 16392272,
+            "checksum": "8e32d24f160d3221a2127bb041ab5e10",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4539.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4540.mp4",
+            "relative_path": "5\/4540.mp4",
+            "file_size": 9427575,
+            "checksum": "36a260c83524d21b4d6f8619323adb83",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4540.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4541.mp4",
+            "relative_path": "5\/4541.mp4",
+            "file_size": 16863420,
+            "checksum": "144d0ef45723d1de59e8dafa5e881ab3",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4541.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4542.mp4",
+            "relative_path": "5\/4542.mp4",
+            "file_size": 23317810,
+            "checksum": "367fc408dc894af69f1cf965011e7dfd",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4542.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4543.mp4",
+            "relative_path": "5\/4543.mp4",
+            "file_size": 11958683,
+            "checksum": "20f3f8059f04665d25441c4310031d17",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4543.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4544.mp4",
+            "relative_path": "5\/4544.mp4",
+            "file_size": 14931289,
+            "checksum": "c2d3cffc162d79f2a8843a0fea085f2d",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4544.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4545.mp4",
+            "relative_path": "5\/4545.mp4",
+            "file_size": 22851894,
+            "checksum": "7cfeae71a867b64f2adb411d7acf2927",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4545.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4546.mp4",
+            "relative_path": "5\/4546.mp4",
+            "file_size": 12349353,
+            "checksum": "5e0c8d79b5eb89cd0667795a83cd4799",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4546.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4547.mp4",
+            "relative_path": "5\/4547.mp4",
+            "file_size": 17711288,
+            "checksum": "1c1833c4f278c8e131fbb7b6f106c3f2",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4547.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4548.mp4",
+            "relative_path": "5\/4548.mp4",
+            "file_size": 12026161,
+            "checksum": "5a79bf961e7125a2b42a116f794a18f5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4548.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4549.mp4",
+            "relative_path": "5\/4549.mp4",
+            "file_size": 8863584,
+            "checksum": "d235cfac402c4acbe29fb2fca2531f04",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4549.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4550.mp4",
+            "relative_path": "5\/4550.mp4",
+            "file_size": 9434283,
+            "checksum": "3645451a433e86a582ce168e742f8745",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4550.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4551.mp4",
+            "relative_path": "5\/4551.mp4",
+            "file_size": 23558006,
+            "checksum": "0dcca8ec4306ceae5eb06de2defe8c80",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4551.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4552.mp4",
+            "relative_path": "5\/4552.mp4",
+            "file_size": 8523782,
+            "checksum": "0d7da33ae3ce22a11d90e39063af8e44",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4552.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4553.mp4",
+            "relative_path": "5\/4553.mp4",
+            "file_size": 16198309,
+            "checksum": "2e56e4c27115e1450350a4951dbe8217",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4553.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4554.mp4",
+            "relative_path": "5\/4554.mp4",
+            "file_size": 11014856,
+            "checksum": "715f283cab929fedb4b03dcc7f889b0a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4554.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4555.mp4",
+            "relative_path": "5\/4555.mp4",
+            "file_size": 14786713,
+            "checksum": "2a13f087727721cd8a0d96af26b0f0e7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4555.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4556.mp4",
+            "relative_path": "5\/4556.mp4",
+            "file_size": 12605228,
+            "checksum": "3fb2fe4023451eb455bd181a7659fa54",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4556.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4557.mp4",
+            "relative_path": "5\/4557.mp4",
+            "file_size": 13795420,
+            "checksum": "76a35cd6ce3c8bb6a3dda3525f5699bd",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4557.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4558.mp4",
+            "relative_path": "5\/4558.mp4",
+            "file_size": 8893658,
+            "checksum": "5d54b0ee757d10fa60aa7774fcff1494",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4558.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4559.mp4",
+            "relative_path": "5\/4559.mp4",
+            "file_size": 13813996,
+            "checksum": "d064ff6bc863a878367cb7412ee2a3c6",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4559.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4560.mp4",
+            "relative_path": "5\/4560.mp4",
+            "file_size": 11261467,
+            "checksum": "b4be939cd71f2e948106f8ceed572cf5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4560.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4561.mp4",
+            "relative_path": "5\/4561.mp4",
+            "file_size": 19485829,
+            "checksum": "ef0a0dbc6e5b12a160e03b433418bc42",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4561.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/5\/4562.mp4",
+            "relative_path": "5\/4562.mp4",
+            "file_size": 2513933,
+            "checksum": "a600d9dcf2271b392a726afb68c8373f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/5\/4562.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4570.mp4",
+            "relative_path": "6\/4570.mp4",
+            "file_size": 12794342,
+            "checksum": "b64c644806c6dbb2fc41fff275c1c18e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4570.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4572.mp4",
+            "relative_path": "6\/4572.mp4",
+            "file_size": 10960359,
+            "checksum": "ba631b43313bb2a31c68d334513ba853",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4572.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4573.mp4",
+            "relative_path": "6\/4573.mp4",
+            "file_size": 10456092,
+            "checksum": "50d974b0d93e2b0abc9e59c8681b9cd5",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4573.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4574.mp4",
+            "relative_path": "6\/4574.mp4",
+            "file_size": 9638341,
+            "checksum": "c6f139cf9a4a9f7b9dc02b8553b4ef98",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4574.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4575.mp4",
+            "relative_path": "6\/4575.mp4",
+            "file_size": 10902276,
+            "checksum": "b78e4820a744a317ea9cfa7d2c531a49",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4575.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4576.mp4",
+            "relative_path": "6\/4576.mp4",
+            "file_size": 9758951,
+            "checksum": "98b37b8e3d278e56cc91d34fb1dfdecc",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4576.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4577.mp4",
+            "relative_path": "6\/4577.mp4",
+            "file_size": 10134832,
+            "checksum": "f0f633d7b6b5b2dd1b5d99f1917c6976",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4577.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4578.mp4",
+            "relative_path": "6\/4578.mp4",
+            "file_size": 9566989,
+            "checksum": "364fd221f987a65bef2a612d709bcb59",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4578.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4579.mp4",
+            "relative_path": "6\/4579.mp4",
+            "file_size": 10070339,
+            "checksum": "291714aa3102435ef1a38c3482c10cd9",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4579.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4580.mp4",
+            "relative_path": "6\/4580.mp4",
+            "file_size": 9045381,
+            "checksum": "9cb381fdb6ff0c2abf2b0d2fde94254b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4580.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4581.mp4",
+            "relative_path": "6\/4581.mp4",
+            "file_size": 12670068,
+            "checksum": "0160a211c3d91f7528336951eaba824d",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4581.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4582.mp4",
+            "relative_path": "6\/4582.mp4",
+            "file_size": 12755256,
+            "checksum": "ff16c532bd113e125452c8ff49786588",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4582.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4583.mp4",
+            "relative_path": "6\/4583.mp4",
+            "file_size": 13618557,
+            "checksum": "f114a0bf0d6ccf78ca5119aed1ffc407",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4583.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4584.mp4",
+            "relative_path": "6\/4584.mp4",
+            "file_size": 11754052,
+            "checksum": "418560720f2a64726cbe31685cf8fadb",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4584.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4585.mp4",
+            "relative_path": "6\/4585.mp4",
+            "file_size": 12958149,
+            "checksum": "71c1c25787d6842ef0aa057a8265af72",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4585.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4586.mp4",
+            "relative_path": "6\/4586.mp4",
+            "file_size": 11402161,
+            "checksum": "0943174b2c2ba83fc72202fb48318859",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4586.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4587.mp4",
+            "relative_path": "6\/4587.mp4",
+            "file_size": 11439956,
+            "checksum": "a244069e09ef90ce84f992e652fa5719",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4587.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4588.mp4",
+            "relative_path": "6\/4588.mp4",
+            "file_size": 11112435,
+            "checksum": "34eedbdddbdc022a96e3459bb5b686fc",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4588.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4589.mp4",
+            "relative_path": "6\/4589.mp4",
+            "file_size": 11034094,
+            "checksum": "f1edca6eb3b46804847c892b21db8e8a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4589.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4590.mp4",
+            "relative_path": "6\/4590.mp4",
+            "file_size": 12506172,
+            "checksum": "360831986200cd20967598dbf9dd7c1b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4590.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4591.mp4",
+            "relative_path": "6\/4591.mp4",
+            "file_size": 12302499,
+            "checksum": "63ff5bf6af4230ae9fc274baf0e17a74",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4591.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4592.mp4",
+            "relative_path": "6\/4592.mp4",
+            "file_size": 11068777,
+            "checksum": "cc8711b8b5915730e79d05e93735c3ad",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4592.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4593.mp4",
+            "relative_path": "6\/4593.mp4",
+            "file_size": 10897189,
+            "checksum": "1b50cfe33420da41bf06d3b32f3eb10b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4593.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4594.mp4",
+            "relative_path": "6\/4594.mp4",
+            "file_size": 7547262,
+            "checksum": "e4573b69ee9b4c35fce4cbd4c4e615f3",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4594.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4595.mp4",
+            "relative_path": "6\/4595.mp4",
+            "file_size": 8639853,
+            "checksum": "2cf32ed55843aeb542f22dfa6e388f33",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4595.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4596.mp4",
+            "relative_path": "6\/4596.mp4",
+            "file_size": 10842209,
+            "checksum": "e6f40ccdaefc45dee0008b3d2743c470",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4596.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4597.mp4",
+            "relative_path": "6\/4597.mp4",
+            "file_size": 7075419,
+            "checksum": "dfdd6c08da8e825bb86f9dd24b7e3c4e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4597.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4598.mp4",
+            "relative_path": "6\/4598.mp4",
+            "file_size": 9803677,
+            "checksum": "a09ab910c07013d331d1f3fb4a2e1344",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4598.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4599.mp4",
+            "relative_path": "6\/4599.mp4",
+            "file_size": 9212531,
+            "checksum": "923ea0d9ce6c58713dd06608edf044ee",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4599.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4600.mp4",
+            "relative_path": "6\/4600.mp4",
+            "file_size": 7783689,
+            "checksum": "3ca3bd7f6b5aa85384a64dab76be197b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4600.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4601.mp4",
+            "relative_path": "6\/4601.mp4",
+            "file_size": 9358013,
+            "checksum": "55f2064b71db0ec1d114dbd509c55c3a",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4601.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4602.mp4",
+            "relative_path": "6\/4602.mp4",
+            "file_size": 9146305,
+            "checksum": "3ccc5b33593b33a3015688ca360bf268",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4602.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4603.mp4",
+            "relative_path": "6\/4603.mp4",
+            "file_size": 7615199,
+            "checksum": "d3885e6418306022f4956bf61917c61b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4603.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4604.mp4",
+            "relative_path": "6\/4604.mp4",
+            "file_size": 12964346,
+            "checksum": "6f3fe424716e0d19c36ea19f9f78501f",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4604.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4605.mp4",
+            "relative_path": "6\/4605.mp4",
+            "file_size": 10334246,
+            "checksum": "515f3a4647476f8f35668788fd9a8dd6",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4605.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4606.mp4",
+            "relative_path": "6\/4606.mp4",
+            "file_size": 9256698,
+            "checksum": "32a643af165dbed4adf8270053c6102b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4606.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4607.mp4",
+            "relative_path": "6\/4607.mp4",
+            "file_size": 10803716,
+            "checksum": "84014064b2bb1ac1d63bb11803eacfc8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4607.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4608.mp4",
+            "relative_path": "6\/4608.mp4",
+            "file_size": 7415335,
+            "checksum": "3c185d05c5a95de6645c38a302071eb6",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4608.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4609.mp4",
+            "relative_path": "6\/4609.mp4",
+            "file_size": 7215843,
+            "checksum": "647776f12ad80d185b69a6ad3f1a068e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4609.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4610.mp4",
+            "relative_path": "6\/4610.mp4",
+            "file_size": 12429416,
+            "checksum": "b182678c7c6979c5823d3bcfb61120d8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4610.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4611.mp4",
+            "relative_path": "6\/4611.mp4",
+            "file_size": 9687070,
+            "checksum": "72895faeaf3c60712afb3854675ba1c8",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4611.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4612.mp4",
+            "relative_path": "6\/4612.mp4",
+            "file_size": 11318770,
+            "checksum": "da202398516427e6572acce5f0f90405",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4612.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4613.mp4",
+            "relative_path": "6\/4613.mp4",
+            "file_size": 9910527,
+            "checksum": "3198340e4ff291f48d7b98a3ed7d7414",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4613.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4614.mp4",
+            "relative_path": "6\/4614.mp4",
+            "file_size": 8370990,
+            "checksum": "a6e572ed0836b8345fa9748b5ed3965b",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4614.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4615.mp4",
+            "relative_path": "6\/4615.mp4",
+            "file_size": 8690638,
+            "checksum": "2fe24000101a86d041b8204f75f1967e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4615.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4616.mp4",
+            "relative_path": "6\/4616.mp4",
+            "file_size": 10922101,
+            "checksum": "dce34fc185207e4a153f639df37d511e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4616.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4617.mp4",
+            "relative_path": "6\/4617.mp4",
+            "file_size": 9964310,
+            "checksum": "07d6ee8349468676c5b59e91ac737b0e",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4617.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4618.mp4",
+            "relative_path": "6\/4618.mp4",
+            "file_size": 10430793,
+            "checksum": "3de0f025d5df46979b4653a357414816",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4618.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4619.mp4",
+            "relative_path": "6\/4619.mp4",
+            "file_size": 11428539,
+            "checksum": "73cd858b0ee02b38c91f67ce97573da1",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4619.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4620.mp4",
+            "relative_path": "6\/4620.mp4",
+            "file_size": 12192895,
+            "checksum": "30c8b0210bf635ecb3aa1b4908af0dd7",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4620.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4621.mp4",
+            "relative_path": "6\/4621.mp4",
+            "file_size": 12467481,
+            "checksum": "c7b8bc6bed7cb945fbef05763f46cfea",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4621.mp4"
+        },
+        {
+            "source_type": "current",
+            "source_path": "\/var\/www\/storage\/app\/private\/truefire-courses\/6\/4622.mp4",
+            "relative_path": "6\/4622.mp4",
+            "file_size": 2198768,
+            "checksum": "d9d793aaa7586f49aafaba4e733a11fe",
+            "status": "migrated",
+            "target_path": "\/mnt\/d_drive\/ai-transcription-downloads\/truefire-courses\/6\/4622.mp4"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8476.mp4",
+            "relative_path": "segment-8476.mp4",
+            "file_size": 29768883,
+            "checksum": "ac30cd90582615f913452935dea690c7",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8478.mp4",
+            "relative_path": "segment-8478.mp4",
+            "file_size": 19829616,
+            "checksum": "1b470670dc2a77ec863c12e16be5ab2b",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8479.mp4",
+            "relative_path": "segment-8479.mp4",
+            "file_size": 18832892,
+            "checksum": "350f8412ecd115d4e2de0253549f2ac8",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8480.mp4",
+            "relative_path": "segment-8480.mp4",
+            "file_size": 35340447,
+            "checksum": "6cd1ee6e6ad43c22a1fca7368d3002f9",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8481.mp4",
+            "relative_path": "segment-8481.mp4",
+            "file_size": 31357412,
+            "checksum": "43a8cb6eb495a6bc2abaf771569e36d0",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8482.mp4",
+            "relative_path": "segment-8482.mp4",
+            "file_size": 9349704,
+            "checksum": "b04f433080c160fba802896fc7c922eb",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8483.mp4",
+            "relative_path": "segment-8483.mp4",
+            "file_size": 34147311,
+            "checksum": "82b561d5e95d9b9ce209dfa08ac151e4",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8484.mp4",
+            "relative_path": "segment-8484.mp4",
+            "file_size": 31328068,
+            "checksum": "276f8478e94392e285dd47cad4218a4f",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8485.mp4",
+            "relative_path": "segment-8485.mp4",
+            "file_size": 43885375,
+            "checksum": "35dd5cedc397f2486fa072937d4840b2",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8486.mp4",
+            "relative_path": "segment-8486.mp4",
+            "file_size": 20067221,
+            "checksum": "b3f205f2974c2ab005eac404a5af5dc6",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8487.mp4",
+            "relative_path": "segment-8487.mp4",
+            "file_size": 23128287,
+            "checksum": "eb571497a8a6d4b1604662f9cae11f5b",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8488.mp4",
+            "relative_path": "segment-8488.mp4",
+            "file_size": 6033518,
+            "checksum": "f5fb8de8cd29bc7aadb35d4fe89e7c8b",
+            "status": "skipped"
+        },
+        {
+            "source_type": "legacy",
+            "source_path": "\/var\/www\/storage\/app\/private\/var\/www\/storage\/downloads\/segment-8489.mp4",
+            "relative_path": "segment-8489.mp4",
+            "file_size": 87450191,
+            "checksum": "1be18f44d1c4ce7b883148786e27b139",
+            "status": "skipped"
+        }
+    ],
+    "errors": []
+}

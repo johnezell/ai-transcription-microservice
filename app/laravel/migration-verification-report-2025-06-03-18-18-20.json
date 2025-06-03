@@ -1,0 +1,31 @@
+{
+    "timestamp": "2025-06-03 18:18:20",
+    "test_results": {
+        "d_drive_accessible": true,
+        "total_files_found": 258,
+        "course_1": 87,
+        "course_3": 32,
+        "course_4": 35,
+        "course_5": 52,
+        "course_6": 52,
+        "course_legacy": 0,
+        "structure_valid": true,
+        "file_operations_success_rate": 100
+    },
+    "cleanup_results": {
+        "current format": {
+            "files_removed": 258,
+            "size_freed": 3691259843
+        },
+        "legacy format": {
+            "files_removed": 13,
+            "size_freed": 390518925
+        },
+        "test files": {
+            "files_removed": 0,
+            "size_freed": 0
+        },
+        "cleanup_performed": true
+    },
+    "overall_status": "SUCCESS"
+}

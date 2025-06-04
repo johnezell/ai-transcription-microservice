@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'default' => env('FILESYSTEM_DISK', 'local'),
+    'default' => 'd_drive',
 
     /*
     |--------------------------------------------------------------------------
@@ -73,8 +73,8 @@ return [
             'driver' => 'local',
             'root' => env('D_DRIVE_PATH', '/mnt/d_drive'),
             'serve' => true,
-            'throw' => false,
-            'report' => false,
+            'throw' => true,
+            'report' => true,
         ],
 
     ],

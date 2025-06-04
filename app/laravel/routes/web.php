@@ -52,6 +52,16 @@ Route::post('/truefire-courses/clear-cache', [TruefireCourseController::class, '
     ->name('truefire-courses.clear-cache');
 Route::post('/truefire-courses/warm-cache', [TruefireCourseController::class, 'warmCache'])
     ->name('truefire-courses.warm-cache');
+
+// Bulk download routes for ALL courses
+Route::get('/truefire-courses/download-all-courses', [TruefireCourseController::class, 'downloadAllCourses'])
+    ->name('truefire-courses.download-all-courses');
+Route::get('/truefire-courses/bulk-download-status', [TruefireCourseController::class, 'bulkDownloadStatus'])
+    ->name('truefire-courses.bulk-download-status');
+Route::get('/truefire-courses/bulk-queue-status', [TruefireCourseController::class, 'bulkQueueStatus'])
+    ->name('truefire-courses.bulk-queue-status');
+Route::get('/truefire-courses/bulk-download-stats', [TruefireCourseController::class, 'bulkDownloadStats'])
+    ->name('truefire-courses.bulk-download-stats');
 Route::post('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'addVideo'])
     ->name('courses.videos.add');
 Route::delete('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'removeVideo'])

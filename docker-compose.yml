@@ -14,7 +14,7 @@ services:
       # Mount AWS credentials for profile-based authentication
       - ~/.aws:/mnt/aws_creds_mounted:ro
       # Mount D: drive for video downloads
-      - D:/ai-transcription-downloads:/mnt/d_drive
+      - D:/:/mnt/d_drive
     networks:
       - app-network
     environment:

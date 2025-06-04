@@ -183,5 +183,14 @@ class Segment extends Model
         // Create disk instance with tfstream bucket configuration
         return \Storage::build($s3Config);
     }
+
+    public function s3Path()
+    {
+        $path = str_replace('mp4:','', $this->video);
+        $path = explode('/', $path)[0];
+        $videoFile = @end(explode('/', $this->video)).'_med.mp4';
+        $s3Path = "{$path}/{$videoFile}";
+        return $s3Path;
+    }
     
 }

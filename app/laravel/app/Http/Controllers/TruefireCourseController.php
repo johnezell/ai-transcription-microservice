@@ -264,13 +264,12 @@ class TruefireCourseController extends Controller
                     Cache::put($queuedKey, $queuedSegments, 3600); // Store for 1 hour
                     
                     // Dispatch background job with V3 implementation (generates signed URL at execution time)
-                    
                     DownloadTruefireSegmentV3::dispatch($segment, $courseDir, $course->id, $segment->s3Path());
                     $stats['queued_downloads']++;
                     
                     Log::debug("Queued download job for segment", [
                         'segment_id' => $segment->id,
-                        's3_path' => $s3Path,
+                        's3_path' => $segment->s3Path(),
                         'note' => 'Signed URL will be generated fresh at execution time',
                         'queued_segments_count' => count($queuedSegments)
                     ]);

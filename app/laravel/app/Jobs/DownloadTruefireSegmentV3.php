@@ -107,11 +107,7 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
             $s3Client = new S3Client([
                 'version' => 'latest',
                 'region' => config('filesystems.disks.s3.region', 'us-east-1'),
-                'profile' => 'truefire', // Use the truefire AWS profile
-                'credentials' => [
-                    'key' => config('filesystems.disks.s3.key'),
-                    'secret' => config('filesystems.disks.s3.secret'),
-                ]
+                'profile' => 'truefire',
             ]);
             
             // S3 bucket and object key

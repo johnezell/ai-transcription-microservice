@@ -37,6 +37,10 @@ class TranscriptionLog extends Model
         'audio_duration_seconds',
         'progress_percentage',
         'music_term_count',
+        'is_test_extraction',
+        'test_quality_level',
+        'audio_quality_metrics',
+        'extraction_settings',
     ];
 
     /**
@@ -63,6 +67,9 @@ class TranscriptionLog extends Model
         'audio_duration_seconds' => 'float',
         'progress_percentage' => 'integer',
         'music_term_count' => 'integer',
+        'is_test_extraction' => 'boolean',
+        'audio_quality_metrics' => 'array',
+        'extraction_settings' => 'array',
     ];
     
     /**

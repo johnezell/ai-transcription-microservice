@@ -80,6 +80,14 @@ Route::delete('/courses/{course}/destroy-with-videos', [\App\Http\Controllers\Co
 Route::post('/truefire-courses/{truefireCourse}/download-segment/{segmentId}', [TruefireCourseController::class, 'downloadSegment'])
     ->name('truefire-courses.download-segment');
 
+// Audio extraction testing routes
+Route::post('/truefire-courses/{truefireCourse}/test-audio-extraction/{segmentId}', [TruefireCourseController::class, 'testAudioExtraction'])
+    ->name('truefire-courses.test-audio-extraction');
+Route::get('/truefire-courses/{truefireCourse}/audio-test-results/{segmentId}', [TruefireCourseController::class, 'getAudioTestResults'])
+    ->name('truefire-courses.audio-test-results');
+Route::get('/audio-test-history', [TruefireCourseController::class, 'getAudioTestHistory'])
+    ->name('audio-test-history');
+
 // Terminology Management (admin routes)
 Route::prefix('admin')->name('admin.')->group(function () {
     // Main terminology management page

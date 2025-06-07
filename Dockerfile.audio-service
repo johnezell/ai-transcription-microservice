@@ -27,5 +27,10 @@ ENV AUDIO_QUALITY_LEVEL=balanced
 ENV ENABLE_NORMALIZATION=true
 ENV FFMPEG_THREADS=4
 
+# Phase 3: Advanced Features Configuration
+ENV ENABLE_VAD=false
+ENV VAD_THRESHOLD=-60dB
+ENV PREMIUM_QUALITY_ENABLED=true
+
 # Command to run the service
 CMD ["python", "service.py"]

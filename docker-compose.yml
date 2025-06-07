@@ -50,6 +50,7 @@ services:
     volumes:
       - ./app/services/audio-extraction:/app
       - ./app/shared:/var/www/storage/app/public/s3:delegated
+      - D:/:/mnt/d_drive
     networks:
       - app-network
     environment:
@@ -67,6 +68,7 @@ services:
     volumes:
       - ./app/services/transcription:/app
       - ./app/shared:/var/www/storage/app/public/s3:delegated
+      - D:/:/mnt/d_drive
     depends_on:
       - laravel
       - audio-extraction-service

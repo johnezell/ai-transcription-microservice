@@ -215,6 +215,11 @@ def preprocess_for_whisper(input_path: str, output_path: str, quality_level: str
             "high": {
                 "filters": ["highpass=f=80", "lowpass=f=8000", "dynaudnorm=p=0.9:s=5:r=0.9", "afftdn=nf=-25"],
                 "threads": 6
+            },
+            "premium": {
+                "filters": ["highpass=f=80", "lowpass=f=8000", "dynaudnorm=p=0.9:s=5:r=0.9", "afftdn=nf=-25", "compand=0.3|0.3:1|1:-90/-60|-60/-40|-40/-30|-20/-20:6:0:-90:0.2"],
+                "threads": 8,
+                "use_vad": True
             }
         }
         
@@ -227,10 +232,24 @@ def preprocess_for_whisper(input_path: str, output_path: str, quality_level: str
         filter_chain = ",".join(config["filters"])
         thread_count = min(config["threads"], AUDIO_PROCESSING_CONFIG["max_threads"])
         
+        # Handle VAD preprocessing for premium quality
+        if quality_level == "premium" and AUDIO_PROCESSING_CONFIG["enable_vad"]:
+            logger.info("Applying VAD preprocessing for premium quality")
+            vad_temp_path = output_path + ".vad_temp.wav"
+            try:
+                # Apply VAD preprocessing first
+                apply_vad_preprocessing(input_path, vad_temp_path)
+                input_for_processing = vad_temp_path
+            except Exception as e:
+                logger.warning(f"VAD preprocessing failed, using original input: {str(e)}")
+                input_for_processing = input_path
+        else:
+            input_for_processing = input_path
+        
         # Build FFmpeg command with quality-specific settings
         command = [
             "ffmpeg", "-y", "-threads", str(thread_count),
-            "-i", str(input_path), "-vn",
+            "-i", str(input_for_processing), "-vn",
             "-af", filter_chain,
             "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
             "-sample_fmt", "s16", str(output_path)
@@ -238,6 +257,16 @@ def preprocess_for_whisper(input_path: str, output_path: str, quality_level: str
         
         logger.info(f"FFmpeg command (quality: {quality_level}, threads: {thread_count}): {' '.join(command)}")
         result = subprocess.run(command, capture_output=True, text=True)
+        
+        # Clean up VAD temp file if it was created
+        if quality_level == "premium" and AUDIO_PROCESSING_CONFIG["enable_vad"]:
+            vad_temp_path = output_path + ".vad_temp.wav"
+            if os.path.exists(vad_temp_path):
+                try:
+                    os.remove(vad_temp_path)
+                    logger.info("Cleaned up VAD temporary file")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up VAD temp file: {str(e)}")
         
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg preprocessing failed: {result.stderr}")
@@ -364,12 +393,55 @@ def update_job_status(job_id, status, response_data=None, error_message=None):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint."""
+    """Enhanced health check endpoint with Phase 3 information."""
     return jsonify({
         'status': 'healthy',
         'service': 'audio-extraction-service',
-        'timestamp': datetime.now().isoformat()
+        'version': 'Phase 3',
+        'timestamp': datetime.now().isoformat(),
+        'features': {
+            'quality_levels': ['fast', 'balanced', 'high', 'premium'],
+            'vad_enabled': AUDIO_PROCESSING_CONFIG["enable_vad"],
+            'normalization_enabled': AUDIO_PROCESSING_CONFIG["enable_normalization"],
+            'max_threads': AUDIO_PROCESSING_CONFIG["max_threads"],
+            'default_quality': AUDIO_PROCESSING_CONFIG["default_quality"]
+        },
+        'capabilities': {
+            'voice_activity_detection': True,
+            'premium_quality_processing': True,
+            'advanced_noise_reduction': True,
+            'dynamic_audio_normalization': True,
+            'processing_metrics': True
+        }
     })
+
+@app.route('/metrics', methods=['GET'])
+def metrics_endpoint():
+    """Processing metrics endpoint for Phase 3."""
+    try:
+        metrics = calculate_processing_metrics()
+        
+        return jsonify({
+            'success': True,
+            'service': 'audio-extraction-service',
+            'timestamp': datetime.now().isoformat(),
+            'metrics': metrics,
+            'configuration': {
+                'quality_levels': ['fast', 'balanced', 'high', 'premium'],
+                'vad_enabled': AUDIO_PROCESSING_CONFIG["enable_vad"],
+                'normalization_enabled': AUDIO_PROCESSING_CONFIG["enable_normalization"],
+                'max_threads': AUDIO_PROCESSING_CONFIG["max_threads"],
+                'default_quality': AUDIO_PROCESSING_CONFIG["default_quality"]
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving metrics: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 @app.route('/connectivity-test', methods=['GET'])
 def connectivity_test():

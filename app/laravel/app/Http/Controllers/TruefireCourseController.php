@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\TruefireCourse;
 use App\Models\SegmentDownload;
+use App\Models\TranscriptionLog;
 use App\Jobs\DownloadTruefireSegmentV3;
+use App\Jobs\AudioExtractionTestJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
@@ -1553,6 +1555,329 @@ class TruefireCourseController extends Controller
                     'skipped' => 0
                 ],
                 'active_courses_count' => 0,
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Test audio extraction for a specific segment
+     */
+    public function testAudioExtraction(TruefireCourse $truefireCourse, $segmentId, Request $request)
+    {
+        try {
+            // Validate request parameters
+            $validated = $request->validate([
+                'quality_level' => 'sometimes|string|in:fast,balanced,high,premium',
+                'extraction_settings' => 'sometimes|array',
+                'extraction_settings.sample_rate' => 'sometimes|integer|min:8000|max:48000',
+                'extraction_settings.bit_rate' => 'sometimes|string|in:64k,128k,192k,256k,320k',
+                'extraction_settings.channels' => 'sometimes|integer|in:1,2',
+                'extraction_settings.format' => 'sometimes|string|in:mp3,wav,flac'
+            ]);
+
+            // Load the course with segments to find the requested segment
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
+
+            // Find the specific segment
+            $segment = null;
+            foreach ($course->channels as $channel) {
+                $foundSegment = $channel->segments->where('id', $segmentId)->first();
+                if ($foundSegment) {
+                    $segment = $foundSegment;
+                    break;
+                }
+            }
+
+            if (!$segment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Segment {$segmentId} not found in this course or does not have a valid video field."
+                ], 404);
+            }
+
+            // Check if segment video file exists locally
+            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $videoFilename = "{$segment->id}.mp4";
+            $videoFilePath = "{$courseDir}/{$videoFilename}";
+            $disk = config('filesystems.default');
+            
+            if (!Storage::disk($disk)->exists($videoFilePath)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Video file for segment {$segmentId} not found. Please download the video first.",
+                    'required_file' => $videoFilePath
+                ], 404);
+            }
+
+            // Set default quality level and extraction settings
+            $qualityLevel = $validated['quality_level'] ?? 'balanced';
+            $extractionSettings = $validated['extraction_settings'] ?? [
+                'sample_rate' => 44100,
+                'bit_rate' => '192k',
+                'channels' => 2,
+                'format' => 'wav'
+            ];
+
+            // Create transcription log entry for test
+            $transcriptionLog = TranscriptionLog::create([
+                'file_path' => $videoFilePath,
+                'file_name' => $videoFilename,
+                'file_size' => Storage::disk($disk)->size($videoFilePath),
+                'status' => 'queued',
+                'is_test_extraction' => true,
+                'test_quality_level' => $qualityLevel,
+                'extraction_settings' => $extractionSettings,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Dispatch audio extraction test job
+            AudioExtractionTestJob::dispatch(
+                $transcriptionLog,
+                $segment,
+                $qualityLevel,
+                $extractionSettings
+            );
+
+            Log::info('Audio extraction test job queued', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'transcription_log_id' => $transcriptionLog->id,
+                'quality_level' => $qualityLevel,
+                'extraction_settings' => $extractionSettings,
+                'video_file_path' => $videoFilePath
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Audio extraction test queued for segment {$segmentId}",
+                'test_id' => $transcriptionLog->id,
+                'segment' => [
+                    'id' => $segment->id,
+                    'title' => $segment->title ?? "Segment #{$segment->id}",
+                    'video_file' => $videoFilename
+                ],
+                'test_parameters' => [
+                    'quality_level' => $qualityLevel,
+                    'extraction_settings' => $extractionSettings
+                ],
+                'background_processing' => true
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error queuing audio extraction test', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while queuing the audio extraction test.',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get audio test results for a specific segment
+     */
+    public function getAudioTestResults(TruefireCourse $truefireCourse, $segmentId, Request $request)
+    {
+        try {
+            // Get test ID from request if provided
+            $testId = $request->get('test_id');
+
+            // Build query for transcription logs
+            $query = TranscriptionLog::where('is_test_extraction', true);
+
+            if ($testId) {
+                // Get specific test result
+                $query->where('id', $testId);
+            } else {
+                // Get all test results for this segment
+                $query->where('file_name', "{$segmentId}.mp4");
+            }
+
+            $testResults = $query->orderBy('created_at', 'desc')->get();
+
+            if ($testResults->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $testId
+                        ? "Test result with ID {$testId} not found."
+                        : "No audio extraction test results found for segment {$segmentId}."
+                ], 404);
+            }
+
+            // Format results
+            $formattedResults = $testResults->map(function ($log) {
+                return [
+                    'test_id' => $log->id,
+                    'status' => $log->status,
+                    'quality_level' => $log->test_quality_level,
+                    'extraction_settings' => $log->extraction_settings,
+                    'audio_quality_metrics' => $log->audio_quality_metrics,
+                    'file_info' => [
+                        'original_file' => $log->file_name,
+                        'file_size' => $log->file_size,
+                        'extracted_audio_path' => $log->extracted_audio_path,
+                        'extracted_audio_size' => $log->extracted_audio_size
+                    ],
+                    'processing_time' => $log->processing_time_seconds,
+                    'error_message' => $log->error_message,
+                    'created_at' => $log->created_at,
+                    'updated_at' => $log->updated_at,
+                    'completed_at' => $log->completed_at
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'test_count' => $testResults->count(),
+                'results' => $testId ? $formattedResults->first() : $formattedResults
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting audio test results', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'test_id' => $request->get('test_id'),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrieving audio test results',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get audio test history across all courses and segments
+     */
+    public function getAudioTestHistory(Request $request)
+    {
+        try {
+            // Validate request parameters
+            $validated = $request->validate([
+                'per_page' => 'sometimes|integer|min:1|max:100',
+                'status' => 'sometimes|string|in:queued,processing,completed,failed',
+                'quality_level' => 'sometimes|string|in:fast,balanced,high,premium',
+                'course_id' => 'sometimes|integer|exists:truefire_courses,id'
+            ]);
+
+            $perPage = $validated['per_page'] ?? 15;
+
+            // Build query
+            $query = TranscriptionLog::where('is_test_extraction', true);
+
+            // Apply filters
+            if (isset($validated['status'])) {
+                $query->where('status', $validated['status']);
+            }
+
+            if (isset($validated['quality_level'])) {
+                $query->where('test_quality_level', $validated['quality_level']);
+            }
+
+            if (isset($validated['course_id'])) {
+                $courseDir = "truefire-courses/{$validated['course_id']}";
+                $query->where('file_path', 'like', "%{$courseDir}%");
+            }
+
+            // Get paginated results
+            $testHistory = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            // Format results with additional metadata
+            $formattedResults = $testHistory->getCollection()->map(function ($log) {
+                // Extract course and segment info from file path
+                $courseId = null;
+                $segmentId = null;
+                
+                if (preg_match('/truefire-courses\/(\d+)\/(\d+)\.mp4/', $log->file_path, $matches)) {
+                    $courseId = (int) $matches[1];
+                    $segmentId = (int) $matches[2];
+                }
+
+                return [
+                    'test_id' => $log->id,
+                    'course_id' => $courseId,
+                    'segment_id' => $segmentId,
+                    'status' => $log->status,
+                    'quality_level' => $log->test_quality_level,
+                    'extraction_settings' => $log->extraction_settings,
+                    'audio_quality_metrics' => $log->audio_quality_metrics,
+                    'file_info' => [
+                        'original_file' => $log->file_name,
+                        'file_size' => $log->file_size,
+                        'extracted_audio_path' => $log->extracted_audio_path,
+                        'extracted_audio_size' => $log->extracted_audio_size
+                    ],
+                    'processing_time' => $log->processing_time_seconds,
+                    'error_message' => $log->error_message,
+                    'created_at' => $log->created_at,
+                    'updated_at' => $log->updated_at,
+                    'completed_at' => $log->completed_at
+                ];
+            });
+
+            // Replace the collection in pagination result
+            $testHistory->setCollection($formattedResults);
+
+            // Get summary statistics
+            $summaryStats = [
+                'total_tests' => TranscriptionLog::where('is_test_extraction', true)->count(),
+                'status_breakdown' => TranscriptionLog::where('is_test_extraction', true)
+                    ->selectRaw('status, COUNT(*) as count')
+                    ->groupBy('status')
+                    ->pluck('count', 'status')
+                    ->toArray(),
+                'quality_level_breakdown' => TranscriptionLog::where('is_test_extraction', true)
+                    ->selectRaw('test_quality_level, COUNT(*) as count')
+                    ->groupBy('test_quality_level')
+                    ->pluck('count', 'test_quality_level')
+                    ->toArray(),
+                'average_processing_time' => TranscriptionLog::where('is_test_extraction', true)
+                    ->where('status', 'completed')
+                    ->avg('processing_time_seconds')
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $testHistory,
+                'summary_stats' => $summaryStats,
+                'filters_applied' => array_intersect_key($validated, array_flip(['status', 'quality_level', 'course_id']))
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error getting audio test history', [
+                'error' => $e->getMessage(),
+                'filters' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrieving audio test history',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }

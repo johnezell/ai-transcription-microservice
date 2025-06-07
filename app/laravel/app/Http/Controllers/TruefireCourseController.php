@@ -2,16 +2,23 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\LocalTruefireCourse;
 use App\Models\TruefireCourse;
+use App\Models\CourseAudioPreset;
 use App\Models\SegmentDownload;
 use App\Models\TranscriptionLog;
+use App\Models\AudioTestBatch;
 use App\Jobs\DownloadTruefireSegmentV3;
 use App\Jobs\AudioExtractionTestJob;
+use App\Jobs\BatchAudioExtractionJob;
+use App\Http\Requests\CreateBatchTestRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Bus;
 use Inertia\Inertia;
 use GuzzleHttp\Client as GuzzleClient;
 use App\Http\Controllers\Controller;
@@ -35,8 +42,7 @@ class TruefireCourseController extends Controller
             $cacheKey,
             300,
             function () use ($search, $perPage, $request) {
-                $query = TruefireCourse::withCount('segments')
-                    ->withSum('segments', 'runtime');
+                $query = LocalTruefireCourse::query();
                 
                 // Apply search filter if search term is provided
                 if (!empty($search)) {
@@ -45,6 +51,14 @@ class TruefireCourseController extends Controller
                           ->orWhere('title', 'like', '%' . $search . '%');
                     });
                 }
+                
+                // Load relationships and counts for local models
+                $query->withCount([
+                    'channels',
+                    'segments' => function ($query) {
+                        $query->withVideo(); // Only count segments with valid video fields
+                    }
+                ]);
                 
                 $courses = $query->paginate($perPage);
                 
@@ -66,7 +80,7 @@ class TruefireCourseController extends Controller
     /**
      * Display the specified TrueFire course.
      */
-    public function show(TruefireCourse $truefireCourse)
+    public function show(LocalTruefireCourse $truefireCourse)
     {
         // Cache the course data for 2 minutes (updated for S3)
         $cacheKey = 'truefire_course_s3_show_' . $truefireCourse->id;
@@ -1566,12 +1580,16 @@ class TruefireCourseController extends Controller
     public function testAudioExtraction(TruefireCourse $truefireCourse, $segmentId, Request $request)
     {
         try {
-            // Validate request parameters
+            // Validate the request with support for both single and multi-quality
             $validated = $request->validate([
                 'quality_level' => 'sometimes|string|in:fast,balanced,high,premium',
+                'quality_levels' => 'sometimes|array|min:1',
+                'quality_levels.*' => 'string|in:fast,balanced,high,premium',
+                'is_multi_quality' => 'sometimes|boolean',
+                'enable_quality_analysis' => 'sometimes|boolean',
                 'extraction_settings' => 'sometimes|array',
-                'extraction_settings.sample_rate' => 'sometimes|integer|min:8000|max:48000',
-                'extraction_settings.bit_rate' => 'sometimes|string|in:64k,128k,192k,256k,320k',
+                'extraction_settings.sample_rate' => 'sometimes|integer|in:22050,44100,48000',
+                'extraction_settings.bit_rate' => 'sometimes|string|in:128k,192k,256k,320k',
                 'extraction_settings.channels' => 'sometimes|integer|in:1,2',
                 'extraction_settings.format' => 'sometimes|string|in:mp3,wav,flac'
             ]);
@@ -1612,8 +1630,20 @@ class TruefireCourseController extends Controller
                 ], 404);
             }
 
-            // Set default quality level and extraction settings
-            $qualityLevel = $validated['quality_level'] ?? 'balanced';
+            // Determine quality levels to test
+            $qualityLevels = [];
+            $isMultiQuality = $validated['is_multi_quality'] ?? false;
+            
+            if ($isMultiQuality && isset($validated['quality_levels'])) {
+                $qualityLevels = array_unique($validated['quality_levels']);
+            } elseif (isset($validated['quality_level'])) {
+                $qualityLevels = [$validated['quality_level']];
+            } else {
+                // Default to balanced quality
+                $qualityLevels = ['balanced'];
+            }
+
+            // Set default extraction settings
             $extractionSettings = $validated['extraction_settings'] ?? [
                 'sample_rate' => 44100,
                 'bit_rate' => '192k',
@@ -1621,50 +1651,96 @@ class TruefireCourseController extends Controller
                 'format' => 'wav'
             ];
 
-            // Create transcription log entry for test
-            $transcriptionLog = TranscriptionLog::create([
-                'file_path' => $videoFilePath,
-                'file_name' => $videoFilename,
-                'file_size' => Storage::disk($disk)->size($videoFilePath),
-                'status' => 'queued',
-                'is_test_extraction' => true,
-                'test_quality_level' => $qualityLevel,
-                'extraction_settings' => $extractionSettings,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
+            // Add quality analysis setting
+            $enableQualityAnalysis = $validated['enable_quality_analysis'] ?? false;
 
-            // Dispatch audio extraction test job
-            AudioExtractionTestJob::dispatch(
-                $transcriptionLog,
-                $segment,
-                $qualityLevel,
-                $extractionSettings
-            );
+            // Dispatch jobs for each quality level
+            $dispatchedJobs = [];
+            $baseJobId = 'audio_extract_test_' . $truefireCourse->id . '_' . $segmentId . '_' . time();
 
-            Log::info('Audio extraction test job queued', [
+            foreach ($qualityLevels as $index => $qualityLevel) {
+                // Create a unique job ID for each quality level
+                $audioExtractionJobId = $baseJobId . '_' . $qualityLevel . '_' . uniqid();
+
+                Log::info('TruefireCourseController dispatching AudioExtractionTestJob', [
+                    'course_id' => $truefireCourse->id,
+                    'segment_id' => $segmentId,
+                    'video_file_path' => $videoFilePath,
+                    'video_filename' => $videoFilename,
+                    'quality_level' => $qualityLevel,
+                    'extraction_settings' => $extractionSettings,
+                    'job_id' => $audioExtractionJobId,
+                    'is_multi_quality' => $isMultiQuality,
+                    'quality_index' => $index + 1,
+                    'total_qualities' => count($qualityLevels),
+                    'workflow_step' => 'controller_job_dispatch'
+                ]);
+
+                // Dispatch audio extraction test job with file paths (no Video model needed)
+                AudioExtractionTestJob::dispatch(
+                    $videoFilePath,
+                    $videoFilename,
+                    $qualityLevel,
+                    array_merge($extractionSettings, [
+                        'is_multi_quality' => $isMultiQuality,
+                        'quality_index' => $index + 1,
+                        'total_qualities' => count($qualityLevels),
+                        'multi_quality_group_id' => $baseJobId,
+                        'enable_quality_analysis' => $enableQualityAnalysis
+                    ]),
+                    $segmentId,
+                    $truefireCourse->id
+                );
+
+                $dispatchedJobs[] = [
+                    'job_id' => $audioExtractionJobId,
+                    'quality_level' => $qualityLevel,
+                    'index' => $index + 1
+                ];
+
+                Log::info('Audio extraction test job queued successfully', [
+                    'course_id' => $truefireCourse->id,
+                    'segment_id' => $segmentId,
+                    'quality_level' => $qualityLevel,
+                    'extraction_settings' => $extractionSettings,
+                    'video_file_path' => $videoFilePath,
+                    'job_id' => $audioExtractionJobId,
+                    'workflow_step' => 'controller_job_queued_success'
+                ]);
+            }
+
+            Log::info('All audio extraction test jobs dispatched', [
                 'course_id' => $truefireCourse->id,
                 'segment_id' => $segmentId,
-                'transcription_log_id' => $transcriptionLog->id,
-                'quality_level' => $qualityLevel,
-                'extraction_settings' => $extractionSettings,
-                'video_file_path' => $videoFilePath
+                'total_jobs' => count($dispatchedJobs),
+                'quality_levels' => $qualityLevels,
+                'is_multi_quality' => $isMultiQuality,
+                'workflow_step' => 'all_jobs_dispatched'
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => "Audio extraction test queued for segment {$segmentId}",
-                'test_id' => $transcriptionLog->id,
+                'message' => $isMultiQuality 
+                    ? "Multi-quality audio extraction tests queued for segment {$segmentId} (" . count($qualityLevels) . " quality levels)"
+                    : "Audio extraction test queued for segment {$segmentId}",
+                'jobs' => $dispatchedJobs,
                 'segment' => [
                     'id' => $segment->id,
                     'title' => $segment->title ?? "Segment #{$segment->id}",
                     'video_file' => $videoFilename
                 ],
                 'test_parameters' => [
-                    'quality_level' => $qualityLevel,
-                    'extraction_settings' => $extractionSettings
+                    'quality_levels' => $qualityLevels,
+                    'is_multi_quality' => $isMultiQuality,
+                    'extraction_settings' => $extractionSettings,
+                    'total_jobs' => count($dispatchedJobs)
                 ],
-                'background_processing' => true
+                'background_processing' => true,
+                'workflow_info' => [
+                    'next_step' => 'Jobs will be processed by queue worker',
+                    'expected_logs' => 'Check Laravel logs for workflow_step progress',
+                    'multi_quality_group_id' => $baseJobId
+                ]
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -1695,18 +1771,34 @@ class TruefireCourseController extends Controller
     public function getAudioTestResults(TruefireCourse $truefireCourse, $segmentId, Request $request)
     {
         try {
-            // Get test ID from request if provided
+            // Get test ID and quality level from request if provided
             $testId = $request->get('test_id');
+            $qualityLevel = $request->get('quality_level');
+            $multiQualityGroupId = $request->get('multi_quality_group_id');
 
             // Build query for transcription logs
             $query = TranscriptionLog::where('is_test_extraction', true);
 
             if ($testId) {
-                // Get specific test result
-                $query->where('id', $testId);
+                // Get specific test result by job_id (which might contain the test_id)
+                $query->where(function($q) use ($testId) {
+                    $q->where('id', $testId)
+                      ->orWhere('job_id', 'like', "%{$testId}%");
+                });
             } else {
-                // Get all test results for this segment
-                $query->where('file_name', "{$segmentId}.mp4");
+                // Get test results for this segment - search by file path pattern
+                $courseDir = "truefire-courses/{$truefireCourse->id}";
+                $query->where('file_path', 'like', "%{$courseDir}/{$segmentId}.mp4%");
+                
+                // Filter by quality level if specified
+                if ($qualityLevel) {
+                    $query->where('test_quality_level', $qualityLevel);
+                }
+
+                // Filter by multi-quality group if specified
+                if ($multiQualityGroupId) {
+                    $query->where('job_id', 'like', "%{$multiQualityGroupId}%");
+                }
             }
 
             $testResults = $query->orderBy('created_at', 'desc')->get();
@@ -1716,11 +1808,63 @@ class TruefireCourseController extends Controller
                     'success' => false,
                     'message' => $testId
                         ? "Test result with ID {$testId} not found."
-                        : "No audio extraction test results found for segment {$segmentId}."
+                        : "No audio extraction test results found for segment {$segmentId}" .
+                          ($qualityLevel ? " with {$qualityLevel} quality." : "."),
+                    'status' => 'not_found'
                 ], 404);
             }
 
-            // Format results
+            // Get the most recent test result for progress tracking
+            $latestTest = $testResults->first();
+
+            // Calculate progress percentage based on status and timing
+            $progressPercentage = 0;
+            $statusMessage = 'Initializing...';
+
+            switch ($latestTest->status) {
+                case 'queued':
+                    $progressPercentage = 5;
+                    $statusMessage = 'Test queued for processing...';
+                    break;
+                case 'processing':
+                    // Calculate progress based on timing if available
+                    if ($latestTest->audio_extraction_started_at) {
+                        $startTime = $latestTest->audio_extraction_started_at;
+                        $now = now();
+                        $elapsedSeconds = $now->diffInSeconds($startTime);
+                        
+                        // Estimate progress based on quality level and elapsed time
+                        $estimatedDuration = [
+                            'fast' => 30,
+                            'balanced' => 60,
+                            'high' => 120,
+                            'premium' => 300
+                        ];
+                        
+                        $expectedDuration = $estimatedDuration[$latestTest->test_quality_level] ?? 60;
+                        $calculatedProgress = min(95, 10 + (($elapsedSeconds / $expectedDuration) * 85));
+                        $progressPercentage = max(10, $calculatedProgress);
+                        
+                        $statusMessage = "Processing {$latestTest->test_quality_level} quality extraction... ({$elapsedSeconds}s elapsed)";
+                    } else {
+                        $progressPercentage = 10;
+                        $statusMessage = 'Starting audio extraction...';
+                    }
+                    break;
+                case 'completed':
+                    $progressPercentage = 100;
+                    $statusMessage = 'Audio extraction completed successfully!';
+                    break;
+                case 'failed':
+                    $progressPercentage = 0;
+                    $statusMessage = $latestTest->error_message ?: 'Audio extraction failed';
+                    break;
+                default:
+                    $progressPercentage = 0;
+                    $statusMessage = 'Unknown status';
+            }
+
+            // Format results with enhanced progress information
             $formattedResults = $testResults->map(function ($log) {
                 return [
                     'test_id' => $log->id,
@@ -1734,34 +1878,59 @@ class TruefireCourseController extends Controller
                         'extracted_audio_path' => $log->extracted_audio_path,
                         'extracted_audio_size' => $log->extracted_audio_size
                     ],
-                    'processing_time' => $log->processing_time_seconds,
+                    'processing_time' => $log->total_processing_duration_seconds,
+                    'audio_extraction_duration' => $log->audio_extraction_duration_seconds,
                     'error_message' => $log->error_message,
+                    'started_at' => $log->started_at,
+                    'audio_extraction_started_at' => $log->audio_extraction_started_at,
+                    'audio_extraction_completed_at' => $log->audio_extraction_completed_at,
+                    'completed_at' => $log->completed_at,
                     'created_at' => $log->created_at,
-                    'updated_at' => $log->updated_at,
-                    'completed_at' => $log->completed_at
+                    'updated_at' => $log->updated_at
                 ];
             });
 
-            return response()->json([
+            $response = [
                 'success' => true,
                 'course_id' => $truefireCourse->id,
                 'segment_id' => $segmentId,
                 'test_count' => $testResults->count(),
-                'results' => $testId ? $formattedResults->first() : $formattedResults
-            ]);
+                'status' => $latestTest->status,
+                'progress_percentage' => round($progressPercentage, 1),
+                'status_message' => $statusMessage,
+                'quality_level' => $latestTest->test_quality_level,
+                'results' => $testId ? $formattedResults->first() : $formattedResults->first(), // Return latest result for progress tracking
+                'all_results' => $testId ? null : $formattedResults // Include all results if not requesting specific test
+            ];
+
+            // Add timing information for active tests
+            if (in_array($latestTest->status, ['queued', 'processing'])) {
+                $response['timing'] = [
+                    'queued_at' => $latestTest->created_at,
+                    'started_at' => $latestTest->started_at,
+                    'audio_extraction_started_at' => $latestTest->audio_extraction_started_at,
+                    'elapsed_seconds' => $latestTest->started_at ? now()->diffInSeconds($latestTest->started_at) : 0
+                ];
+            }
+
+            return response()->json($response);
 
         } catch (\Exception $e) {
             Log::error('Error getting audio test results', [
                 'course_id' => $truefireCourse->id,
                 'segment_id' => $segmentId,
                 'test_id' => $request->get('test_id'),
+                'quality_level' => $request->get('quality_level'),
                 'error' => $e->getMessage()
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Error retrieving audio test results',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+                'status' => 'error',
+                'progress_percentage' => 0,
+                'status_message' => 'Failed to retrieve test status'
             ], 500);
         }
     }
@@ -1881,5 +2050,861 @@ class TruefireCourseController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
+    }
+
+    /**
+     * Create a batch audio extraction test
+     */
+    public function createBatchTest(TruefireCourse $truefireCourse, CreateBatchTestRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+
+            // Load course with segments to validate segment access
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
+
+            // Collect all segments from channels
+            $allSegments = collect();
+            foreach ($course->channels as $channel) {
+                $allSegments = $allSegments->merge($channel->segments);
+            }
+
+            // Validate that all requested segments exist and belong to this course
+            $availableSegmentIds = $allSegments->pluck('id')->toArray();
+            $invalidSegments = array_diff($validated['segment_ids'], $availableSegmentIds);
+
+            if (!empty($invalidSegments)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Some segments do not belong to this course or do not have valid video fields.',
+                    'invalid_segments' => $invalidSegments
+                ], 422);
+            }
+
+            // Check if video files exist for the segments
+            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $disk = config('filesystems.default');
+            $missingFiles = [];
+
+            foreach ($validated['segment_ids'] as $segmentId) {
+                $videoFilePath = "{$courseDir}/{$segmentId}.mp4";
+                if (!Storage::disk($disk)->exists($videoFilePath)) {
+                    $missingFiles[] = $segmentId;
+                }
+            }
+
+            if (!empty($missingFiles)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Some video files are missing. Please download them first.',
+                    'missing_segments' => $missingFiles,
+                    'required_action' => 'Download missing video files before running batch test'
+                ], 422);
+            }
+
+            // Create the batch
+            $batch = AudioTestBatch::create($validated);
+
+            // Estimate processing duration
+            $batch->estimateDuration();
+
+            Log::info('Audio test batch created for TrueFire course', [
+                'batch_id' => $batch->id,
+                'course_id' => $truefireCourse->id,
+                'user_id' => Auth::id(),
+                'total_segments' => $batch->total_segments,
+                'quality_level' => $batch->quality_level
+            ]);
+
+            // Dispatch the batch processing job
+            BatchAudioExtractionJob::dispatch($batch);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Batch audio extraction test created and processing started',
+                'data' => [
+                    'id' => $batch->id,
+                    'name' => $batch->name,
+                    'status' => $batch->status,
+                    'total_segments' => $batch->total_segments,
+                    'quality_level' => $batch->quality_level,
+                    'estimated_duration' => $batch->estimated_duration,
+                    'concurrent_jobs' => $batch->concurrent_jobs,
+                    'created_at' => $batch->created_at,
+                ],
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to create batch audio extraction test', [
+                'course_id' => $truefireCourse->id,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage(),
+                'request_data' => $request->validated()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create batch test',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get batch test status
+     */
+    public function getBatchTestStatus(TruefireCourse $truefireCourse, $batchId)
+    {
+        try {
+            $batch = AudioTestBatch::where('id', $batchId)
+                ->where('truefire_course_id', $truefireCourse->id)
+                ->where('user_id', Auth::id())
+                ->with(['transcriptionLogs'])
+                ->first();
+
+            if (!$batch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch test not found or access denied'
+                ], 404);
+            }
+
+            // Get detailed progress information
+            $logs = $batch->transcriptionLogs;
+            $progressDetails = [
+                'queued' => $logs->where('status', 'queued')->count(),
+                'processing' => $logs->where('status', 'processing')->count(),
+                'completed' => $logs->where('status', 'completed')->count(),
+                'failed' => $logs->where('status', 'failed')->count(),
+            ];
+
+            // Get Laravel batch information if available
+            $laravelBatchInfo = null;
+            if ($batch->batch_job_id) {
+                try {
+                    $laravelBatch = Bus::findBatch($batch->batch_job_id);
+                    if ($laravelBatch) {
+                        $laravelBatchInfo = [
+                            'id' => $laravelBatch->id,
+                            'name' => $laravelBatch->name,
+                            'total_jobs' => $laravelBatch->totalJobs,
+                            'processed_jobs' => $laravelBatch->processedJobs(),
+                            'pending_jobs' => $laravelBatch->pendingJobs,
+                            'failed_jobs' => $laravelBatch->failedJobs,
+                            'cancelled' => $laravelBatch->cancelled(),
+                            'finished' => $laravelBatch->finished(),
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to retrieve Laravel batch info', [
+                        'batch_id' => $batch->id,
+                        'laravel_batch_id' => $batch->batch_job_id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $batch->id,
+                    'name' => $batch->name,
+                    'status' => $batch->status,
+                    'quality_level' => $batch->quality_level,
+                    'total_segments' => $batch->total_segments,
+                    'completed_segments' => $batch->completed_segments,
+                    'failed_segments' => $batch->failed_segments,
+                    'progress_percentage' => $batch->progress_percentage,
+                    'remaining_segments' => $batch->remaining_segments,
+                    'concurrent_jobs' => $batch->concurrent_jobs,
+                    'estimated_duration' => $batch->estimated_duration,
+                    'actual_duration' => $batch->actual_duration,
+                    'estimated_time_remaining' => $batch->estimated_time_remaining,
+                    'started_at' => $batch->started_at,
+                    'completed_at' => $batch->completed_at,
+                    'created_at' => $batch->created_at,
+                    'progress_details' => $progressDetails,
+                    'laravel_batch' => $laravelBatchInfo,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting batch test status', [
+                'course_id' => $truefireCourse->id,
+                'batch_id' => $batchId,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrieving batch test status',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get batch test results
+     */
+    public function getBatchTestResults(TruefireCourse $truefireCourse, $batchId)
+    {
+        try {
+            $batch = AudioTestBatch::where('id', $batchId)
+                ->where('truefire_course_id', $truefireCourse->id)
+                ->where('user_id', Auth::id())
+                ->with(['transcriptionLogs.video'])
+                ->first();
+
+            if (!$batch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch test not found or access denied'
+                ], 404);
+            }
+
+            // Format results
+            $results = $batch->transcriptionLogs->map(function ($log) {
+                return [
+                    'id' => $log->id,
+                    'segment_id' => $this->extractSegmentIdFromPath($log->file_path),
+                    'status' => $log->status,
+                    'batch_position' => $log->batch_position,
+                    'quality_level' => $log->test_quality_level,
+                    'extraction_settings' => $log->extraction_settings,
+                    'audio_quality_metrics' => $log->audio_quality_metrics,
+                    'processing_time_seconds' => $log->total_processing_duration_seconds,
+                    'audio_file_size' => $log->audio_file_size,
+                    'audio_duration_seconds' => $log->audio_duration_seconds,
+                    'error_message' => $log->error_message,
+                    'started_at' => $log->started_at,
+                    'completed_at' => $log->completed_at,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'batch_info' => [
+                        'id' => $batch->id,
+                        'name' => $batch->name,
+                        'status' => $batch->status,
+                        'quality_level' => $batch->quality_level,
+                        'total_segments' => $batch->total_segments,
+                        'completed_segments' => $batch->completed_segments,
+                        'failed_segments' => $batch->failed_segments,
+                        'progress_percentage' => $batch->progress_percentage,
+                        'actual_duration' => $batch->actual_duration,
+                        'started_at' => $batch->started_at,
+                        'completed_at' => $batch->completed_at,
+                    ],
+                    'results' => $results,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting batch test results', [
+                'course_id' => $truefireCourse->id,
+                'batch_id' => $batchId,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrieving batch test results',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Cancel batch test
+     */
+    public function cancelBatchTest(TruefireCourse $truefireCourse, $batchId)
+    {
+        try {
+            $batch = AudioTestBatch::where('id', $batchId)
+                ->where('truefire_course_id', $truefireCourse->id)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if (!$batch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch test not found or access denied'
+                ], 404);
+            }
+
+            if (!$batch->isProcessing()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch is not currently processing'
+                ], 422);
+            }
+
+            // Cancel Laravel batch if it exists
+            if ($batch->batch_job_id) {
+                $laravelBatch = Bus::findBatch($batch->batch_job_id);
+                if ($laravelBatch && !$laravelBatch->cancelled()) {
+                    $laravelBatch->cancel();
+                }
+            }
+
+            // Mark batch as cancelled
+            $batch->markAsCancelled();
+
+            Log::info('Batch audio extraction test cancelled', [
+                'batch_id' => $batch->id,
+                'course_id' => $truefireCourse->id,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Batch test cancelled successfully',
+                'data' => [
+                    'id' => $batch->id,
+                    'status' => $batch->status,
+                    'completed_at' => $batch->completed_at,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error cancelling batch test', [
+                'course_id' => $truefireCourse->id,
+                'batch_id' => $batchId,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error cancelling batch test',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Retry batch test
+     */
+    public function retryBatchTest(TruefireCourse $truefireCourse, $batchId)
+    {
+        try {
+            $batch = AudioTestBatch::where('id', $batchId)
+                ->where('truefire_course_id', $truefireCourse->id)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if (!$batch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch test not found or access denied'
+                ], 404);
+            }
+
+            if ($batch->isProcessing()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch is currently processing'
+                ], 422);
+            }
+
+            // Reset batch status and counters
+            $batch->update([
+                'status' => 'pending',
+                'completed_segments' => 0,
+                'failed_segments' => 0,
+                'started_at' => null,
+                'completed_at' => null,
+                'actual_duration' => null,
+                'batch_job_id' => null,
+            ]);
+
+            // Reset associated transcription logs
+            $batch->transcriptionLogs()->update([
+                'status' => 'queued',
+                'started_at' => now(),
+                'completed_at' => null,
+                'error_message' => null,
+                'audio_extraction_started_at' => null,
+                'audio_extraction_completed_at' => null,
+                'audio_extraction_duration_seconds' => null,
+                'total_processing_duration_seconds' => null,
+                'progress_percentage' => 0,
+            ]);
+
+            // Dispatch new batch processing job
+            BatchAudioExtractionJob::dispatch($batch);
+
+            Log::info('Batch audio extraction test retried', [
+                'batch_id' => $batch->id,
+                'course_id' => $truefireCourse->id,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Batch test retry started successfully',
+                'data' => [
+                    'id' => $batch->id,
+                    'status' => $batch->status,
+                    'total_segments' => $batch->total_segments,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error retrying batch test', [
+                'course_id' => $truefireCourse->id,
+                'batch_id' => $batchId,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrying batch test',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete batch test
+     */
+    public function deleteBatchTest(TruefireCourse $truefireCourse, $batchId)
+    {
+        try {
+            $batch = AudioTestBatch::where('id', $batchId)
+                ->where('truefire_course_id', $truefireCourse->id)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if (!$batch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch test not found or access denied'
+                ], 404);
+            }
+
+            if ($batch->isProcessing()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete batch while processing. Cancel it first.'
+                ], 422);
+            }
+
+            // Cancel Laravel batch if it exists
+            if ($batch->batch_job_id) {
+                try {
+                    $laravelBatch = Bus::findBatch($batch->batch_job_id);
+                    if ($laravelBatch && !$laravelBatch->cancelled()) {
+                        $laravelBatch->cancel();
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to cancel Laravel batch during deletion', [
+                        'batch_id' => $batch->id,
+                        'laravel_batch_id' => $batch->batch_job_id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            // Delete the batch (transcription logs will be set to null due to foreign key constraint)
+            $batch->delete();
+
+            Log::info('Batch audio extraction test deleted', [
+                'batch_id' => $batchId,
+                'course_id' => $truefireCourse->id,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Batch test deleted successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error deleting batch test', [
+                'course_id' => $truefireCourse->id,
+                'batch_id' => $batchId,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting batch test',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Extract segment ID from file path
+     */
+    private function extractSegmentIdFromPath($filePath)
+    {
+        if (preg_match('/\/(\d+)\.mp4$/', $filePath, $matches)) {
+            return (int) $matches[1];
+        }
+        return null;
+    }
+
+    /**
+     * Set audio extraction preset for a course
+     */
+    public function setAudioPreset(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'preset' => 'required|string|in:fast,balanced,high,premium',
+                'settings' => 'sometimes|array'
+            ]);
+
+            $oldPreset = $truefireCourse->getAudioExtractionPreset();
+            $settings = $validated['settings'] ?? [];
+            
+            // Use the pivot table approach
+            CourseAudioPreset::updateForCourse(
+                $truefireCourse->id,
+                $validated['preset'],
+                $settings
+            );
+
+            Log::info('Audio extraction preset updated for course', [
+                'course_id' => $truefireCourse->id,
+                'old_preset' => $oldPreset,
+                'new_preset' => $validated['preset'],
+                'settings' => $settings,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Audio extraction preset updated to {$validated['preset']}",
+                'data' => [
+                    'course_id' => $truefireCourse->id,
+                    'preset' => $validated['preset'],
+                    'previous_preset' => $oldPreset,
+                    'settings' => $settings
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error setting audio extraction preset', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error setting audio extraction preset',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get current audio extraction preset for a course
+     */
+    public function getAudioPreset(LocalTruefireCourse $truefireCourse)
+    {
+        try {
+            // Use the pivot table approach
+            $preset = CourseAudioPreset::getPresetForCourse($truefireCourse->id);
+            $settings = CourseAudioPreset::getSettingsForCourse($truefireCourse->id);
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'course_id' => $truefireCourse->id,
+                    'preset' => $preset,
+                    'settings' => $settings,
+                    'available_presets' => CourseAudioPreset::getAvailablePresets()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting audio extraction preset', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error getting audio extraction preset',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Process all videos in a course for transcription workflow
+     */
+    public function processAllVideos(TruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'for_transcription' => 'sometimes|boolean',
+                'settings' => 'sometimes|array',
+                'settings.sample_rate' => 'sometimes|integer|in:16000,22050,44100,48000',
+                'settings.bit_rate' => 'sometimes|string|in:128k,192k,256k,320k',
+                'settings.channels' => 'sometimes|integer|in:1,2'
+            ]);
+
+            $forTranscription = $validated['for_transcription'] ?? true;
+            $settings = $validated['settings'] ?? [];
+
+            // Load course with segments to validate
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
+
+            // Collect all segments from channels
+            $allSegments = collect();
+            foreach ($course->channels as $channel) {
+                $allSegments = $allSegments->merge($channel->segments);
+            }
+
+            if ($allSegments->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No segments with valid video fields found for this course.',
+                    'course_id' => $truefireCourse->id
+                ], 404);
+            }
+
+            // Check if video files exist for the segments
+            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $disk = config('filesystems.default');
+            $missingFiles = [];
+            $availableSegments = 0;
+
+            foreach ($allSegments as $segment) {
+                $videoFilePath = "{$courseDir}/{$segment->id}.mp4";
+                if (Storage::disk($disk)->exists($videoFilePath)) {
+                    $availableSegments++;
+                } else {
+                    $missingFiles[] = $segment->id;
+                }
+            }
+
+            if ($availableSegments === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No video files found for this course. Please download videos first.',
+                    'missing_segments' => $missingFiles,
+                    'total_segments' => $allSegments->count(),
+                    'available_segments' => $availableSegments
+                ], 422);
+            }
+
+            // Dispatch the course processing job
+            \App\Jobs\ProcessCourseAudioExtractionJob::dispatch(
+                $truefireCourse,
+                $forTranscription,
+                $settings
+            );
+
+            $jobId = 'course_audio_extract_' . $truefireCourse->id . '_' . time() . '_' . uniqid();
+
+            Log::info('Course audio extraction processing started', [
+                'course_id' => $truefireCourse->id,
+                'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                'preset' => $truefireCourse->getAudioExtractionPreset(),
+                'for_transcription' => $forTranscription,
+                'total_segments' => $allSegments->count(),
+                'available_segments' => $availableSegments,
+                'missing_segments' => count($missingFiles),
+                'job_id' => $jobId,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $forTranscription
+                    ? "Course audio extraction for transcription started with {$truefireCourse->getAudioExtractionPreset()} quality"
+                    : "Course audio extraction for testing started with {$truefireCourse->getAudioExtractionPreset()} quality",
+                'data' => [
+                    'course_id' => $truefireCourse->id,
+                    'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                    'preset' => $truefireCourse->getAudioExtractionPreset(),
+                    'for_transcription' => $forTranscription,
+                    'output_format' => $forTranscription ? 'mp3' : 'wav',
+                    'total_segments' => $allSegments->count(),
+                    'available_segments' => $availableSegments,
+                    'missing_segments' => count($missingFiles),
+                    'job_id' => $jobId,
+                    'processing_started_at' => now()->toISOString()
+                ],
+                'background_processing' => true,
+                'workflow_info' => [
+                    'next_step' => 'Individual audio extraction jobs will be queued for each segment',
+                    'expected_output' => $forTranscription
+                        ? 'MP3 files with simple naming for transcription workflow'
+                        : 'WAV files with quality suffix for testing',
+                    'monitoring' => 'Check TranscriptionLog for progress tracking'
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error starting course audio extraction processing', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error starting course audio extraction processing',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get course-level audio extraction progress
+     */
+    public function getCourseAudioExtractionProgress(TruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $jobId = $request->get('job_id');
+
+            // Build query for course-level transcription logs
+            $query = TranscriptionLog::where('extraction_settings->course_id', $truefireCourse->id)
+                ->where('extraction_settings->batch_processing', true);
+
+            if ($jobId) {
+                $query->where('job_id', 'like', "%{$jobId}%");
+            }
+
+            // Get master log (course-level tracking)
+            $masterLog = $query->where('file_name', 'like', "Course #{$truefireCourse->id}%")
+                ->orderBy('created_at', 'desc')
+                ->first();
+
+            // Get individual segment logs
+            $segmentLogs = TranscriptionLog::where('extraction_settings->course_id', $truefireCourse->id)
+                ->where('extraction_settings->course_batch_processing', true)
+                ->where('file_name', 'not like', "Course #{$truefireCourse->id}%")
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            if (!$masterLog && $segmentLogs->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No course audio extraction processing found',
+                    'course_id' => $truefireCourse->id
+                ], 404);
+            }
+
+            // Calculate progress statistics
+            $totalSegments = $segmentLogs->count();
+            $completedSegments = $segmentLogs->where('status', 'completed')->count();
+            $failedSegments = $segmentLogs->where('status', 'failed')->count();
+            $processingSegments = $segmentLogs->where('status', 'processing')->count();
+            $queuedSegments = $segmentLogs->where('status', 'queued')->count();
+
+            $progressPercentage = $totalSegments > 0 ? round(($completedSegments / $totalSegments) * 100, 1) : 0;
+
+            $response = [
+                'success' => true,
+                'course_id' => $truefireCourse->id,
+                'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                'preset' => $truefireCourse->getAudioExtractionPreset(),
+                'progress' => [
+                    'total_segments' => $totalSegments,
+                    'completed_segments' => $completedSegments,
+                    'failed_segments' => $failedSegments,
+                    'processing_segments' => $processingSegments,
+                    'queued_segments' => $queuedSegments,
+                    'progress_percentage' => $progressPercentage
+                ],
+                'status' => $this->determineCourseProcessingStatus($completedSegments, $failedSegments, $processingSegments, $queuedSegments, $totalSegments),
+                'segment_details' => $segmentLogs->map(function ($log) {
+                    return [
+                        'segment_id' => $this->extractSegmentIdFromPath($log->file_path),
+                        'status' => $log->status,
+                        'quality_level' => $log->test_quality_level,
+                        'processing_time' => $log->total_processing_duration_seconds,
+                        'error_message' => $log->error_message,
+                        'started_at' => $log->started_at,
+                        'completed_at' => $log->completed_at
+                    ];
+                })
+            ];
+
+            // Add master log information if available
+            if ($masterLog) {
+                $response['master_log'] = [
+                    'job_id' => $masterLog->job_id,
+                    'status' => $masterLog->status,
+                    'started_at' => $masterLog->started_at,
+                    'completed_at' => $masterLog->completed_at,
+                    'total_processing_time' => $masterLog->total_processing_duration_seconds,
+                    'settings' => $masterLog->extraction_settings
+                ];
+            }
+
+            return response()->json($response);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting course audio extraction progress', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error getting course audio extraction progress',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Determine the overall course processing status
+     */
+    private function determineCourseProcessingStatus(int $completed, int $failed, int $processing, int $queued, int $total): string
+    {
+        if ($total === 0) {
+            return 'no_segments';
+        }
+
+        if ($processing > 0 || $queued > 0) {
+            return 'processing';
+        }
+
+        if ($completed === $total) {
+            return 'completed';
+        }
+
+        if ($failed === $total) {
+            return 'failed';
+        }
+
+        if ($completed + $failed === $total) {
+            return $failed > 0 ? 'completed_with_errors' : 'completed';
+        }
+
+        return 'unknown';
     }
 }

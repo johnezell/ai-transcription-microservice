@@ -41,6 +41,8 @@ class TranscriptionLog extends Model
         'test_quality_level',
         'audio_quality_metrics',
         'extraction_settings',
+        'audio_test_batch_id',
+        'batch_position',
     ];
 
     /**
@@ -70,6 +72,7 @@ class TranscriptionLog extends Model
         'is_test_extraction' => 'boolean',
         'audio_quality_metrics' => 'array',
         'extraction_settings' => 'array',
+        'batch_position' => 'integer',
     ];
     
     /**
@@ -78,5 +81,67 @@ class TranscriptionLog extends Model
     public function video()
     {
         return $this->belongsTo(Video::class);
+    }
+
+    /**
+     * Get the audio test batch that this log belongs to.
+     */
+    public function audioTestBatch()
+    {
+        return $this->belongsTo(AudioTestBatch::class);
+    }
+
+    /**
+     * Scope to filter logs by batch.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int $batchId
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeForBatch($query, int $batchId)
+    {
+        return $query->where('audio_test_batch_id', $batchId);
+    }
+
+    /**
+     * Scope to filter test extraction logs.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeTestExtractions($query)
+    {
+        return $query->where('is_test_extraction', true);
+    }
+
+    /**
+     * Scope to filter batch test logs.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeBatchTests($query)
+    {
+        return $query->whereNotNull('audio_test_batch_id');
+    }
+
+    /**
+     * Check if this log is part of a batch test.
+     *
+     * @return bool
+     */
+    public function isBatchTest(): bool
+    {
+        return !is_null($this->audio_test_batch_id);
+    }
+
+    /**
+     * Get the processing time in seconds.
+     *
+     * @return float|null
+     */
+    public function getProcessingTimeAttribute(): ?float
+    {
+        return $this->total_processing_duration_seconds;
     }
 }

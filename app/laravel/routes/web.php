@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\TruefireCourseController;
+use App\Http\Controllers\BatchTestController;
 use App\Http\Controllers\EnhancementIdeaController;
 use App\Http\Controllers\DownloadMonitorController;
 use App\Http\Controllers\JobsController;
@@ -87,6 +88,68 @@ Route::get('/truefire-courses/{truefireCourse}/audio-test-results/{segmentId}', 
     ->name('truefire-courses.audio-test-results');
 Route::get('/audio-test-history', [TruefireCourseController::class, 'getAudioTestHistory'])
     ->name('audio-test-history');
+
+// Batch audio extraction testing routes
+Route::post('/truefire-courses/{truefireCourse}/create-batch-test', [TruefireCourseController::class, 'createBatchTest'])
+    ->name('truefire-courses.create-batch-test');
+Route::get('/truefire-courses/{truefireCourse}/batch-test/{batchId}/status', [TruefireCourseController::class, 'getBatchTestStatus'])
+    ->name('truefire-courses.batch-test-status');
+Route::get('/truefire-courses/{truefireCourse}/batch-test/{batchId}/results', [TruefireCourseController::class, 'getBatchTestResults'])
+    ->name('truefire-courses.batch-test-results');
+Route::post('/truefire-courses/{truefireCourse}/batch-test/{batchId}/cancel', [TruefireCourseController::class, 'cancelBatchTest'])
+    ->name('truefire-courses.cancel-batch-test');
+Route::post('/truefire-courses/{truefireCourse}/batch-test/{batchId}/retry', [TruefireCourseController::class, 'retryBatchTest'])
+    ->name('truefire-courses.retry-batch-test');
+Route::delete('/truefire-courses/{truefireCourse}/batch-test/{batchId}', [TruefireCourseController::class, 'deleteBatchTest'])
+    ->name('truefire-courses.delete-batch-test');
+
+// Course-level audio extraction preset and batch processing routes
+Route::put('/truefire-courses/{truefireCourse}/audio-preset', [TruefireCourseController::class, 'setAudioPreset'])
+    ->name('truefire-courses.set-audio-preset');
+Route::get('/truefire-courses/{truefireCourse}/audio-preset', [TruefireCourseController::class, 'getAudioPreset'])
+    ->name('truefire-courses.get-audio-preset');
+Route::post('/truefire-courses/{truefireCourse}/process-all-videos', [TruefireCourseController::class, 'processAllVideos'])
+    ->name('truefire-courses.process-all-videos');
+Route::get('/truefire-courses/{truefireCourse}/audio-extraction-progress', [TruefireCourseController::class, 'getCourseAudioExtractionProgress'])
+    ->name('truefire-courses.audio-extraction-progress');
+
+// Global batch management routes
+Route::get('/batch-tests', [BatchTestController::class, 'index'])
+    ->name('batch-tests.index');
+Route::post('/batch-tests', [BatchTestController::class, 'store'])
+    ->name('batch-tests.store');
+Route::get('/batch-tests/{batch}', [BatchTestController::class, 'show'])
+    ->name('batch-tests.show');
+Route::patch('/batch-tests/{batch}', [BatchTestController::class, 'update'])
+    ->name('batch-tests.update');
+Route::post('/batch-tests/{batch}/cancel', [BatchTestController::class, 'cancel'])
+    ->name('batch-tests.cancel');
+Route::post('/batch-tests/{batch}/retry', [BatchTestController::class, 'retry'])
+    ->name('batch-tests.retry');
+Route::delete('/batch-tests/{batch}', [BatchTestController::class, 'destroy'])
+    ->name('batch-tests.destroy');
+Route::post('/batch-tests/{batch}/export', [BatchTestController::class, 'export'])
+    ->name('batch-tests.export');
+Route::get('/batch-tests-statistics', [BatchTestController::class, 'statistics'])
+    ->name('batch-tests.statistics');
+
+// Audio Test Monitoring Routes
+Route::prefix('audio-test-monitoring')->name('audio-test-monitoring.')->group(function () {
+    Route::get('/system-metrics', [App\Http\Controllers\AudioTestMonitoringController::class, 'getSystemMetrics'])
+        ->name('system-metrics');
+    Route::get('/processing-stats', [App\Http\Controllers\AudioTestMonitoringController::class, 'getProcessingStats'])
+        ->name('processing-stats');
+    Route::get('/queue-status', [App\Http\Controllers\AudioTestMonitoringController::class, 'getQueueStatus'])
+        ->name('queue-status');
+    Route::get('/user-activity', [App\Http\Controllers\AudioTestMonitoringController::class, 'getUserActivity'])
+        ->name('user-activity');
+    Route::get('/performance-trends', [App\Http\Controllers\AudioTestMonitoringController::class, 'getPerformanceTrends'])
+        ->name('performance-trends');
+    Route::get('/resource-usage', [App\Http\Controllers\AudioTestMonitoringController::class, 'getResourceUsage'])
+        ->name('resource-usage');
+    Route::get('/alerts', [App\Http\Controllers\AudioTestMonitoringController::class, 'getAlerts'])
+        ->name('alerts');
+});
 
 // Terminology Management (admin routes)
 Route::prefix('admin')->name('admin.')->group(function () {

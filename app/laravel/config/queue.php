@@ -43,6 +43,24 @@ return [
             'after_commit' => false,
         ],
 
+        'batch' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => env('DB_QUEUE', 'batch'),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 300),
+            'after_commit' => false,
+        ],
+
+        'audio_tests' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => env('DB_QUEUE', 'audio_tests'),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 180),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),

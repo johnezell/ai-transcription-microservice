@@ -3,6 +3,11 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import axios from 'axios';
+import AudioExtractionTestPanel from '@/Components/AudioExtractionTestPanel.vue';
+import AudioTestResults from '@/Components/AudioTestResults.vue';
+import AudioTestHistory from '@/Components/AudioTestHistory.vue';
+import BatchTestManager from '@/Components/BatchTestManager.vue';
+import CoursePresetManager from '@/Components/CoursePresetManager.vue';
 
 const props = defineProps({
     course: Object,
@@ -28,6 +33,15 @@ const showConfirmDialog = ref(false);
 const showProgressDialog = ref(false);
 const showResultsDialog = ref(false);
 const notifications = ref([]); // For toast notifications
+
+// Audio testing state
+const showAudioTestPanel = ref(false);
+const showAudioTestResults = ref(false);
+const showAudioTestHistory = ref(false);
+const showBatchTestManager = ref(false);
+const showCoursePresetManager = ref(false);
+const selectedTestSegmentId = ref(null);
+const currentTestResults = ref(null);
 
 // Computed properties
 const totalSegments = computed(() => {
@@ -573,6 +587,130 @@ const formatFileSize = (bytes) => {
 const formatDate = (timestamp) => {
     return new Date(timestamp * 1000).toLocaleDateString() + ' ' + new Date(timestamp * 1000).toLocaleTimeString();
 };
+
+// Audio testing methods
+const openAudioTestPanel = () => {
+    showAudioTestPanel.value = true;
+};
+
+const closeAudioTestPanel = () => {
+    showAudioTestPanel.value = false;
+    selectedTestSegmentId.value = null;
+};
+
+const onTestStarted = (testData) => {
+    console.log('Audio test started:', testData);
+    showNotification(`Audio test started for segment ${testData.segmentId}`, 'info');
+};
+
+const onTestCompleted = (results) => {
+    console.log('Audio test completed:', results);
+    currentTestResults.value = results;
+    showAudioTestPanel.value = false;
+    showAudioTestResults.value = true;
+    showNotification(`Audio test completed with ${results.quality_score}/100 quality score`, 'success');
+};
+
+const onTestFailed = (error) => {
+    console.error('Audio test failed:', error);
+    showNotification('Audio test failed. Please try again.', 'error');
+};
+
+const openAudioTestResults = (segmentId) => {
+    selectedTestSegmentId.value = segmentId;
+    showAudioTestResults.value = true;
+};
+
+const closeAudioTestResults = () => {
+    showAudioTestResults.value = false;
+    selectedTestSegmentId.value = null;
+    currentTestResults.value = null;
+};
+
+const onRetryTest = (testData) => {
+    closeAudioTestResults();
+    selectedTestSegmentId.value = testData.segmentId;
+    showAudioTestPanel.value = true;
+};
+
+const onDownloadAudio = (downloadData) => {
+    // Create a temporary link to download the audio file
+    const link = document.createElement('a');
+    link.href = downloadData.url;
+    link.download = downloadData.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showNotification(`Downloading ${downloadData.filename}`, 'success');
+};
+
+const openAudioTestHistory = () => {
+    showAudioTestHistory.value = true;
+};
+
+const closeAudioTestHistory = () => {
+    showAudioTestHistory.value = false;
+};
+
+const onViewResults = (resultData) => {
+    selectedTestSegmentId.value = resultData.segmentId;
+    currentTestResults.value = null; // Will be loaded by the component
+    closeAudioTestHistory();
+    showAudioTestResults.value = true;
+};
+
+const openBatchTestManager = () => {
+    showBatchTestManager.value = true;
+};
+
+const closeBatchTestManager = () => {
+    showBatchTestManager.value = false;
+};
+
+const onBatchTestStarted = (batchData) => {
+    console.log('Batch test started:', batchData);
+    showNotification(`Batch test started for ${batchData.segmentIds.length} segments`, 'info');
+};
+
+const onBatchTestCompleted = (results) => {
+    console.log('Batch test completed:', results);
+    showNotification(`Batch test completed: ${results.successful_count} successful, ${results.failed_count} failed`, 'success');
+};
+
+const onBatchTestFailed = (error) => {
+    console.error('Batch test failed:', error);
+    showNotification('Batch test failed. Please check the logs.', 'error');
+};
+
+// Course preset manager methods
+const openCoursePresetManager = () => {
+    showCoursePresetManager.value = true;
+};
+
+const closeCoursePresetManager = () => {
+    showCoursePresetManager.value = false;
+};
+
+const onPresetUpdated = (presetData) => {
+    console.log('Course preset updated:', presetData);
+    showNotification(`Audio extraction preset updated to ${presetData.preset}`, 'success');
+};
+
+const onBatchStarted = (batchData) => {
+    console.log('Course batch processing started:', batchData);
+    showNotification(`Batch processing started for ${batchData.totalSegments} segments with ${batchData.preset} quality`, 'info');
+};
+
+const onBatchCompleted = (results) => {
+    console.log('Course batch processing completed:', results);
+    const duration = Math.round(results.duration / 1000 / 60);
+    showNotification(`Batch processing completed: ${results.completedSegments} segments processed in ${duration} minutes`, 'success');
+};
+
+const onBatchFailed = (error) => {
+    console.error('Course batch processing failed:', error);
+    showNotification('Course batch processing failed. Please check the logs.', 'error');
+};
 </script>
 
 <template>
@@ -767,6 +905,152 @@ const formatDate = (timestamp) => {
                     </div>
                 </div>
 
+                <!-- Audio Testing Panel -->
+                <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg mt-6">
+                    <div class="p-6 text-gray-900">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 class="text-lg font-medium text-gray-900">Audio Extraction Testing</h3>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Test and analyze audio extraction quality for course segments
+                                </p>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <button
+                                    @click="openAudioTestHistory"
+                                    class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                >
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    Test History
+                                </button>
+                                <button
+                                    @click="openBatchTestManager"
+                                    class="inline-flex items-center px-3 py-2 border border-purple-300 rounded-md text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                                >
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                                    </svg>
+                                    Batch Testing
+                                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                        Phase 3
+                                    </span>
+                                </button>
+                                <button
+                                    @click="openCoursePresetManager"
+                                    class="inline-flex items-center px-3 py-2 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                                >
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                    Course Presets
+                                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        Transcription
+                                    </span>
+                                </button>
+                                <button
+                                    @click="openAudioTestPanel"
+                                    class="inline-flex items-center px-4 py-2 bg-indigo-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-indigo-700 focus:bg-indigo-700 active:bg-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150"
+                                >
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                    </svg>
+                                    Start Audio Test
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Stats -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-blue-50 rounded-lg p-4">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0">
+                                        <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-blue-600">Available Segments</p>
+                                        <p class="text-lg font-semibold text-blue-900">{{ totalSegments }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-green-50 rounded-lg p-4">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0">
+                                        <svg class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-green-600">Tests Completed</p>
+                                        <p class="text-lg font-semibold text-green-900">-</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-yellow-50 rounded-lg p-4">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0">
+                                        <svg class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-yellow-600">Avg Quality Score</p>
+                                        <p class="text-lg font-semibold text-yellow-900">-</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-purple-50 rounded-lg p-4">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0">
+                                        <svg class="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-purple-600">Avg Processing Time</p>
+                                        <p class="text-lg font-semibold text-purple-900">-</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Getting Started Guide -->
+                        <div class="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-6">
+                            <h4 class="text-lg font-semibold text-indigo-900 mb-3">🚀 Getting Started with Audio Testing</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="flex items-start space-x-3">
+                                    <div class="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white text-sm font-bold">1</div>
+                                    <div>
+                                        <h5 class="font-medium text-indigo-900">Start Individual Test</h5>
+                                        <p class="text-sm text-indigo-700">Click "Start Audio Test" to test a single segment with custom quality settings.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start space-x-3">
+                                    <div class="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold">2</div>
+                                    <div>
+                                        <h5 class="font-medium text-purple-900">View Test History</h5>
+                                        <p class="text-sm text-purple-700">Browse previous test results and compare quality metrics across segments.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start space-x-3">
+                                    <div class="flex-shrink-0 w-8 h-8 bg-amber-600 rounded-full flex items-center justify-center text-white text-sm font-bold">3</div>
+                                    <div>
+                                        <h5 class="font-medium text-amber-900">Batch Testing (Phase 3)</h5>
+                                        <p class="text-sm text-amber-700">Test multiple segments simultaneously for efficient quality analysis.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Segments with Signed URLs Table -->
                 <div v-if="segmentsWithSignedUrls && segmentsWithSignedUrls.length > 0" class="overflow-hidden bg-white shadow-sm sm:rounded-lg mt-6">
                     <div class="p-6 text-gray-900">
@@ -804,6 +1088,9 @@ const formatDate = (timestamp) => {
                                             Download Status
                                         </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Audio Testing
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Actions
                                         </th>
                                     </tr>
@@ -838,6 +1125,31 @@ const formatDate = (timestamp) => {
                                                         {{ formatDate(segment.downloaded_at) }}
                                                     </div>
                                                 </div>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <div class="flex space-x-2">
+                                                <!-- Audio Test Button -->
+                                                <button
+                                                    @click="selectedTestSegmentId = segment.id; openAudioTestPanel()"
+                                                    class="inline-flex items-center px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs hover:bg-indigo-100 transition-all duration-200"
+                                                >
+                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                                    </svg>
+                                                    Test Audio
+                                                </button>
+                                                <!-- View Results Button (if results exist) -->
+                                                <button
+                                                    @click="openAudioTestResults(segment.id)"
+                                                    class="inline-flex items-center px-2 py-1 bg-green-50 text-green-700 rounded-md text-xs hover:bg-green-100 transition-all duration-200"
+                                                    title="View previous test results"
+                                                >
+                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                                    </svg>
+                                                    Results
+                                                </button>
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -1139,5 +1451,53 @@ const formatDate = (timestamp) => {
                 </div>
             </div>
         </div>
+
+        <!-- Audio Testing Components -->
+        <AudioExtractionTestPanel
+            :show="showAudioTestPanel"
+            :course-id="course.id"
+            :segments="segmentsWithSignedUrls || []"
+            @close="closeAudioTestPanel"
+            @test-started="onTestStarted"
+            @test-completed="onTestCompleted"
+            @test-failed="onTestFailed"
+        />
+
+        <AudioTestResults
+            :show="showAudioTestResults"
+            :course-id="course.id"
+            :segment-id="selectedTestSegmentId"
+            :test-results="currentTestResults"
+            @close="closeAudioTestResults"
+            @retry-test="onRetryTest"
+            @download-audio="onDownloadAudio"
+        />
+
+        <AudioTestHistory
+            :show="showAudioTestHistory"
+            @close="closeAudioTestHistory"
+            @view-results="onViewResults"
+            @retry-test="onRetryTest"
+        />
+
+        <BatchTestManager
+            :show="showBatchTestManager"
+            :course-id="course.id"
+            :segments="segmentsWithSignedUrls || []"
+            @close="closeBatchTestManager"
+            @batch-started="onBatchTestStarted"
+            @batch-completed="onBatchTestCompleted"
+            @batch-failed="onBatchTestFailed"
+        />
+
+        <CoursePresetManager
+            :show="showCoursePresetManager"
+            :course-id="course.id"
+            @close="closeCoursePresetManager"
+            @preset-updated="onPresetUpdated"
+            @batch-started="onBatchStarted"
+            @batch-completed="onBatchCompleted"
+            @batch-failed="onBatchFailed"
+        />
     </AuthenticatedLayout>
 </template>

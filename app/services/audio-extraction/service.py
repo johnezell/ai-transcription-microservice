@@ -9,6 +9,8 @@ from datetime import datetime
 import tempfile
 import uuid
 from typing import Dict, List, Optional, Union
+from speech_quality_analyzer import SpeechQualityAnalyzer, analyze_speech_quality, compare_audio_files
+from whisper_quality_analyzer import WhisperQualityAnalyzer, analyze_with_whisper_testing
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -480,16 +482,61 @@ def process_audio_extraction():
         }), 400
     
     job_id = data['job_id']
+    test_mode = data.get('test_mode', False)
+    video_path_param = data.get('video_path')
+    quality_level = data.get('quality_level', 'balanced')
+    segment_id = data.get('segment_id')
+    enable_quality_analysis = data.get('enable_quality_analysis', False)
     
-    logger.info(f"Processing job {job_id}")
+    logger.info(f"Processing job {job_id} (test_mode: {test_mode}, quality: {quality_level}, quality_analysis: {enable_quality_analysis})")
     
-    # Create job directory if it doesn't exist
-    job_dir = os.path.join(S3_JOBS_DIR, job_id)
-    os.makedirs(job_dir, exist_ok=True)
-    
-    # Standardized paths
-    video_path = os.path.join(job_dir, 'video.mp4')
-    audio_path = os.path.join(job_dir, 'audio.wav')
+    # Handle different path scenarios
+    if test_mode and video_path_param:
+        # For test mode, use the provided video path directly
+        # The video_path should be something like "truefire-courses/1/7959.mp4"
+        # We need to construct the full path to the d_drive location
+        d_drive_base = '/mnt/d_drive'  # This should match the Docker volume mount
+        video_path = os.path.join(d_drive_base, video_path_param)
+        
+        # Extract directory and filename for audio output
+        video_dir = os.path.dirname(video_path)
+        video_filename = os.path.basename(video_path)
+        
+        # Create audio filename with quality level and test settings to avoid overwriting
+        if segment_id:
+            base_name = str(segment_id)
+        else:
+            # Extract segment ID from video filename (e.g., "7959.mp4" -> "7959")
+            base_name = os.path.splitext(video_filename)[0]
+        
+        # Include quality level and test settings in filename for uniqueness
+        test_settings = data.get('test_settings', {})
+        settings_suffix = ""
+        
+        if test_settings:
+            # Create a short hash of test settings for filename
+            import hashlib
+            settings_str = json.dumps(test_settings, sort_keys=True)
+            settings_hash = hashlib.md5(settings_str.encode()).hexdigest()[:8]
+            settings_suffix = f"_s{settings_hash}"
+        
+        # Create unique filename: segmentId_qualityLevel_settingsHash.wav
+        audio_filename = f"{base_name}_{quality_level}{settings_suffix}.wav"
+        
+        audio_path = os.path.join(video_dir, audio_filename)
+        
+        logger.info(f"Test mode paths - Video: {video_path}, Audio: {audio_path}")
+        
+    else:
+        # Legacy mode - use the old S3 jobs directory structure
+        job_dir = os.path.join(S3_JOBS_DIR, job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        
+        # Standardized paths
+        video_path = os.path.join(job_dir, 'video.mp4')
+        audio_path = os.path.join(job_dir, 'audio.wav')
+        
+        logger.info(f"Legacy mode paths - Video: {video_path}, Audio: {audio_path}")
     
     # Basic directory structure check for debugging
     try:
@@ -519,8 +566,82 @@ def process_audio_extraction():
         # Update status to extracting_audio
         update_job_status(job_id, 'extracting_audio')
         
-        # Extract audio using ffmpeg
-        convert_to_wav(video_path, audio_path)
+        # Ensure the output directory exists (important for test mode)
+        audio_dir = os.path.dirname(audio_path)
+        if not os.path.exists(audio_dir):
+            logger.info(f"Creating audio output directory: {audio_dir}")
+            os.makedirs(audio_dir, exist_ok=True)
+        
+        # Handle quality analysis if enabled
+        if enable_quality_analysis and segment_id:
+            logger.info(f"Quality analysis enabled for segment {segment_id}")
+            
+            # Generate all quality levels
+            quality_levels = ['fast', 'balanced', 'high', 'premium']
+            quality_files = []
+            
+            # Extract audio with all quality levels
+            for ql in quality_levels:
+                ql_audio_path = f"{audio_path.replace('.wav', '')}_{ql}.wav"
+                try:
+                    convert_to_wav(video_path, ql_audio_path, ql)
+                    if os.path.exists(ql_audio_path):
+                        quality_files.append(ql_audio_path)
+                        logger.info(f"Generated {ql} quality: {ql_audio_path}")
+                except Exception as e:
+                    logger.error(f"Failed to generate {ql} quality: {str(e)}")
+            
+            if len(quality_files) > 1:
+                # Use quality analyzer to select best file
+                try:
+                    best_file = select_best_audio_quality(quality_files, use_whisper_testing=False)
+                    logger.info(f"Quality analysis selected: {best_file}")
+                    
+                    # Get detailed analysis for the best file
+                    analysis_result = analyze_speech_quality(best_file)
+                    
+                    # Copy best file to the standard segment filename
+                    final_audio_path = os.path.join(os.path.dirname(audio_path), f"{segment_id}.wav")
+                    import shutil
+                    shutil.copy2(best_file, final_audio_path)
+                    
+                    # Create analysis file with reasoning
+                    analysis_file_path = f"{final_audio_path}.analysis"
+                    analysis_data = {
+                        'selected_file': best_file,
+                        'selected_quality': os.path.basename(best_file).split('_')[-1].replace('.wav', ''),
+                        'selection_timestamp': datetime.now().isoformat(),
+                        'overall_score': analysis_result.get('overall_score', 0),
+                        'grade': analysis_result.get('grade', 'Unknown'),
+                        'reasoning': f"Selected {os.path.basename(best_file)} with score {analysis_result.get('overall_score', 0)}/100",
+                        'detailed_analysis': analysis_result,
+                        'all_files_generated': [os.path.basename(f) for f in quality_files],
+                        'quality_comparison': {
+                            'total_files_analyzed': len(quality_files),
+                            'selection_method': 'technical_analysis_weighted_scoring',
+                            'metrics_used': ['sample_rate', 'volume_level', 'dynamic_range', 'duration', 'bit_rate']
+                        }
+                    }
+                    
+                    # Write analysis file
+                    with open(analysis_file_path, 'w') as f:
+                        json.dump(analysis_data, f, indent=2)
+                    
+                    logger.info(f"Created analysis file: {analysis_file_path}")
+                    
+                    # Update audio_path to point to the final selected file
+                    audio_path = final_audio_path
+                    
+                except Exception as e:
+                    logger.error(f"Quality analysis failed: {str(e)}")
+                    # Fallback to original single quality extraction
+                    convert_to_wav(video_path, audio_path, quality_level)
+            else:
+                # Fallback to single quality if multi-quality failed
+                convert_to_wav(video_path, audio_path, quality_level)
+        else:
+            # Standard single quality extraction
+            convert_to_wav(video_path, audio_path, quality_level)
         
         # Get file size and other metadata
         audio_size = os.path.getsize(audio_path)
@@ -533,18 +654,40 @@ def process_audio_extraction():
             'audio_path': audio_path,
             'audio_size_bytes': audio_size,
             'duration_seconds': duration,
+            'test_mode': test_mode,
+            'quality_level': quality_level,
+            'segment_id': segment_id,
+            'enable_quality_analysis': enable_quality_analysis,
             'metadata': {
                 'service': 'audio-extraction-service',
                 'processed_by': 'FFmpeg audio extraction',
                 'format': 'WAV',
                 'sample_rate': '16000 Hz',
                 'channels': '1 (Mono)',
-                'codec': 'PCM 16-bit'
+                'codec': 'PCM 16-bit',
+                'quality_level': quality_level,
+                'test_mode': test_mode,
+                'quality_analysis_enabled': enable_quality_analysis
             }
         }
         
-        # Update job status in Laravel - Laravel will initiate transcription
-        update_job_status(job_id, 'processing', response_data)
+        # Add quality analysis info to response if it was used
+        if enable_quality_analysis and segment_id:
+            analysis_file_path = f"{audio_path}.analysis"
+            if os.path.exists(analysis_file_path):
+                response_data['quality_analysis'] = {
+                    'analysis_file': analysis_file_path,
+                    'analysis_available': True,
+                    'final_audio_file': audio_path
+                }
+        
+        # Update job status in Laravel
+        if test_mode:
+            # For test mode, mark as completed since we're only extracting audio
+            update_job_status(job_id, 'completed', response_data)
+        else:
+            # For regular mode, continue to transcription
+            update_job_status(job_id, 'processing', response_data)
         
         return jsonify({
             'success': True,
@@ -565,5 +708,257 @@ def process_audio_extraction():
             'message': f'Audio extraction failed: {str(e)}'
         }), 500
 
+
+def select_best_audio_quality(audio_files: List[str], use_whisper_testing: bool = False) -> str:
+    """
+    Select best audio file from multiple options for Whisper transcription.
+    
+    Args:
+        audio_files: List of paths to audio files
+        use_whisper_testing: Whether to include actual Whisper confidence testing
+        
+    Returns:
+        Path to the best audio file
+        
+    Raises:
+        ValueError: If no files provided or no files could be analyzed
+    """
+    logger.info(f"Selecting best audio quality from {len(audio_files)} files (Whisper testing: {use_whisper_testing})")
+    
+    if not audio_files:
+        raise ValueError("No audio files provided")
+        
+    if len(audio_files) == 1:
+        logger.info(f"Only one file provided, returning: {audio_files[0]}")
+        return audio_files[0]
+        
+    try:
+        if use_whisper_testing:
+            # Use comprehensive analysis with Whisper testing
+            analyzer = WhisperQualityAnalyzer()
+            result = analyzer.compare_with_whisper_testing(audio_files)
+        else:
+            # Use technical analysis only
+            result = compare_audio_files(audio_files)
+            
+        if not result['success']:
+            raise ValueError(f"Quality analysis failed: {result.get('error', 'Unknown error')}")
+            
+        best_file = result['best_file']
+        best_score = result['best_score']
+        
+        logger.info(f"Selected best audio file: {best_file} (score: {best_score:.2f}/100)")
+        return best_file
+        
+    except Exception as e:
+        logger.error(f"Error selecting best audio quality: {str(e)}")
+        # Fallback to first file if analysis fails
+        logger.warning(f"Falling back to first file: {audio_files[0]}")
+        return audio_files[0]
+
+
+def batch_quality_analysis(input_directory: str, quality_levels: List[str] = None) -> Dict:
+    """
+    Analyze multiple quality levels of same source audio.
+    
+    Args:
+        input_directory: Directory containing audio files
+        quality_levels: List of quality levels to filter by (optional)
+        
+    Returns:
+        Dictionary with batch analysis results
+    """
+    logger.info(f"Performing batch quality analysis on directory: {input_directory}")
+    
+    if not os.path.exists(input_directory):
+        return {
+            'success': False,
+            'error': f"Directory not found: {input_directory}",
+            'results': []
+        }
+        
+    # Find all WAV files in directory
+    audio_files = []
+    for filename in os.listdir(input_directory):
+        if filename.lower().endswith('.wav'):
+            full_path = os.path.join(input_directory, filename)
+            
+            # Filter by quality levels if specified
+            if quality_levels:
+                # Check if filename contains any of the specified quality levels
+                if not any(level in filename.lower() for level in quality_levels):
+                    continue
+                    
+            audio_files.append(full_path)
+            
+    if not audio_files:
+        return {
+            'success': False,
+            'error': f"No WAV files found in directory: {input_directory}",
+            'results': []
+        }
+        
+    logger.info(f"Found {len(audio_files)} audio files for batch analysis")
+    
+    try:
+        # Analyze each file individually
+        analyzer = SpeechQualityAnalyzer()
+        results = []
+        
+        for audio_file in audio_files:
+            analysis = analyzer.analyze_speech_quality(audio_file)
+            results.append(analysis)
+            
+        # Sort by score (highest first)
+        successful_results = [r for r in results if r['success']]
+        successful_results.sort(key=lambda x: x['overall_score'], reverse=True)
+        
+        # Calculate summary statistics
+        if successful_results:
+            scores = [r['overall_score'] for r in successful_results]
+            avg_score = sum(scores) / len(scores)
+            min_score = min(scores)
+            max_score = max(scores)
+        else:
+            avg_score = min_score = max_score = 0.0
+            
+        return {
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'directory': input_directory,
+            'files_found': len(audio_files),
+            'files_analyzed': len(successful_results),
+            'files_failed': len(audio_files) - len(successful_results),
+            'best_file': successful_results[0]['audio_path'] if successful_results else None,
+            'best_score': max_score,
+            'summary_stats': {
+                'avg_score': round(avg_score, 2),
+                'min_score': round(min_score, 2),
+                'max_score': round(max_score, 2),
+                'score_range': round(max_score - min_score, 2)
+            },
+            'results': results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in batch quality analysis: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e),
+            'results': []
+        }
+
+
+@app.route('/analyze-quality', methods=['POST'])
+def analyze_audio_quality_endpoint():
+    """API endpoint for audio quality analysis."""
+    try:
+        data = request.get_json()
+        
+        if not data or 'audio_path' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'audio_path is required'
+            }), 400
+            
+        audio_path = data['audio_path']
+        use_whisper_testing = data.get('use_whisper_testing', False)
+        
+        logger.info(f"API request for quality analysis: {audio_path} (Whisper: {use_whisper_testing})")
+        
+        if use_whisper_testing:
+            # Use comprehensive analysis with Whisper testing
+            result = analyze_with_whisper_testing(audio_path)
+        else:
+            # Use technical analysis only
+            result = analyze_speech_quality(audio_path)
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error in analyze-quality endpoint: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/select-best-audio', methods=['POST'])
+def select_best_audio_endpoint():
+    """API endpoint to select best audio from multiple files."""
+    try:
+        data = request.get_json()
+        
+        if not data or 'audio_files' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'audio_files list is required'
+            }), 400
+            
+        audio_files = data['audio_files']
+        use_whisper_testing = data.get('use_whisper_testing', False)
+        
+        if not isinstance(audio_files, list) or len(audio_files) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'audio_files must be a non-empty list'
+            }), 400
+            
+        logger.info(f"API request to select best audio from {len(audio_files)} files (Whisper: {use_whisper_testing})")
+        
+        # Select best file
+        best_file = select_best_audio_quality(audio_files, use_whisper_testing)
+        
+        # Get detailed analysis for the best file
+        if use_whisper_testing:
+            analysis = analyze_with_whisper_testing(best_file)
+        else:
+            analysis = analyze_speech_quality(best_file)
+            
+        return jsonify({
+            'success': True,
+            'best_file': best_file,
+            'total_files': len(audio_files),
+            'use_whisper_testing': use_whisper_testing,
+            'analysis': analysis,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in select-best-audio endpoint: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/batch-quality-analysis', methods=['POST'])
+def batch_quality_analysis_endpoint():
+    """API endpoint for batch quality analysis of a directory."""
+    try:
+        data = request.get_json()
+        
+        if not data or 'directory' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'directory path is required'
+            }), 400
+            
+        directory = data['directory']
+        quality_levels = data.get('quality_levels')
+        
+        logger.info(f"API request for batch quality analysis: {directory}")
+        
+        result = batch_quality_analysis(directory, quality_levels)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error in batch-quality-analysis endpoint: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True) 
+    app.run(host='0.0.0.0', port=5000, debug=True)

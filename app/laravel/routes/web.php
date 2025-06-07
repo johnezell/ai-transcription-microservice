@@ -39,21 +39,7 @@ Route::post('/videos/{video}/transcription', [VideoController::class, 'requestTr
 Route::resource('courses', \App\Http\Controllers\CourseController::class);
 
 // TrueFire Course management routes
-Route::resource('truefire-courses', TruefireCourseController::class)->only(['index', 'show']);
-Route::get('/truefire-courses/{truefireCourse}/download-all', [TruefireCourseController::class, 'downloadAll'])
-    ->name('truefire-courses.download-all');
-Route::get('/truefire-courses/{truefireCourse}/download-status', [TruefireCourseController::class, 'downloadStatus'])
-    ->name('truefire-courses.download-status');
-Route::get('/truefire-courses/{truefireCourse}/download-stats', [TruefireCourseController::class, 'downloadStats'])
-    ->name('truefire-courses.download-stats');
-Route::get('/truefire-courses/{truefireCourse}/queue-status', [TruefireCourseController::class, 'queueStatus'])
-    ->name('truefire-courses.queue-status');
-Route::post('/truefire-courses/clear-cache', [TruefireCourseController::class, 'clearAllCaches'])
-    ->name('truefire-courses.clear-cache');
-Route::post('/truefire-courses/warm-cache', [TruefireCourseController::class, 'warmCache'])
-    ->name('truefire-courses.warm-cache');
-
-// Bulk download routes for ALL courses
+// Bulk download routes for ALL courses - MUST come before resource routes
 Route::get('/truefire-courses/download-all-courses', [TruefireCourseController::class, 'downloadAllCourses'])
     ->name('truefire-courses.download-all-courses');
 Route::get('/truefire-courses/bulk-download-status', [TruefireCourseController::class, 'bulkDownloadStatus'])
@@ -62,6 +48,25 @@ Route::get('/truefire-courses/bulk-queue-status', [TruefireCourseController::cla
     ->name('truefire-courses.bulk-queue-status');
 Route::get('/truefire-courses/bulk-download-stats', [TruefireCourseController::class, 'bulkDownloadStats'])
     ->name('truefire-courses.bulk-download-stats');
+
+// Cache management routes - also need to be before resource routes
+Route::post('/truefire-courses/clear-cache', [TruefireCourseController::class, 'clearAllCaches'])
+    ->name('truefire-courses.clear-cache');
+Route::post('/truefire-courses/warm-cache', [TruefireCourseController::class, 'warmCache'])
+    ->name('truefire-courses.warm-cache');
+
+// Resource route - comes after specific routes to avoid conflicts
+Route::resource('truefire-courses', TruefireCourseController::class)->only(['index', 'show']);
+
+// Individual course download routes - these use {truefireCourse} parameter
+Route::get('/truefire-courses/{truefireCourse}/download-all', [TruefireCourseController::class, 'downloadAll'])
+    ->name('truefire-courses.download-all');
+Route::get('/truefire-courses/{truefireCourse}/download-status', [TruefireCourseController::class, 'downloadStatus'])
+    ->name('truefire-courses.download-status');
+Route::get('/truefire-courses/{truefireCourse}/download-stats', [TruefireCourseController::class, 'downloadStats'])
+    ->name('truefire-courses.download-stats');
+Route::get('/truefire-courses/{truefireCourse}/queue-status', [TruefireCourseController::class, 'queueStatus'])
+    ->name('truefire-courses.queue-status');
 Route::post('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'addVideo'])
     ->name('courses.videos.add');
 Route::delete('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'removeVideo'])

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -10,8 +11,9 @@ use Illuminate\Support\Facades\Cache;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Aws\S3\S3Client;
+use App\Models\SegmentDownload;
 
-class DownloadTruefireSegmentV3 implements ShouldQueue
+class DownloadTruefireSegmentV3 implements ShouldQueue, ShouldBeUnique
 {
     use Queueable;
 
@@ -19,6 +21,7 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
     public $tries = 5; // More retry attempts
     public $maxExceptions = 3; // Allow some exceptions before failing
     public $backoff = [30, 60, 120, 300, 600]; // Exponential backoff in seconds
+    public $uniqueFor = 3600; // 1 hour uniqueness duration
 
     private $segment;
     private $courseDir;
@@ -42,14 +45,38 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
     }
 
     /**
+     * The unique ID of the job.
+     * This prevents duplicate jobs for the same segment.
+     *
+     * @return string
+     */
+    public function uniqueId(): string
+    {
+        return "download_segment_{$this->segment->id}";
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(): void
     {
+        // Check if segment is already being processed or completed in database
+        if (SegmentDownload::isAlreadyProcessed($this->segment->id)) {
+            Log::info("Segment {$this->segment->id} is already processed or being processed, skipping");
+            return;
+        }
+
+        // Create or update database record to mark as processing
+        $downloadRecord = SegmentDownload::createOrUpdate(
+            $this->segment->id,
+            $this->courseId,
+            SegmentDownload::STATUS_PROCESSING
+        );
+
         // Rate limiting: max 10 concurrent downloads
         $this->enforceRateLimit();
         
-        // Mark segment as processing
+        // Mark segment as processing in cache (legacy support)
         $this->updateQueueStatus('processing');
         
         try {
@@ -64,6 +91,9 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
                 Log::info("File already exists and is valid, skipping: {$filePath}");
                 $this->updateDownloadStats('skipped');
                 $this->updateQueueStatus('completed');
+                
+                // Mark as completed in database
+                $downloadRecord->markAsCompleted();
                 return;
             }
             
@@ -78,15 +108,18 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
                 Log::info("Successfully downloaded and verified segment {$this->segment->id}: {$filename}");
                 $this->updateDownloadStats('success');
                 $this->updateQueueStatus('completed');
+                
+                // Mark as completed in database
+                $downloadRecord->markAsCompleted();
             } else {
                 throw new \Exception("Downloaded file failed verification");
             }
             
         } catch (RequestException $e) {
-            $this->handleDownloadError($e, 'cURL error');
+            $this->handleDownloadError($e, 'cURL error', $downloadRecord);
             
         } catch (\Exception $e) {
-            $this->handleDownloadError($e, 'Download failed');
+            $this->handleDownloadError($e, 'Download failed', $downloadRecord);
         } finally {
             // Always clean up processing status and release rate limit
             $this->updateQueueStatus('completed');
@@ -305,7 +338,7 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
     /**
      * Handle download errors with detailed logging
      */
-    private function handleDownloadError(\Throwable $e, string $context): void
+    private function handleDownloadError(\Throwable $e, string $context, SegmentDownload $downloadRecord = null): void
     {
         $error = "{$context} for segment {$this->segment->id}: " . $e->getMessage();
         Log::error($error, [
@@ -316,6 +349,12 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
         ]);
         
         $this->updateDownloadStats('failed');
+        
+        // Mark as failed in database if this is the final attempt
+        if ($downloadRecord && $this->attempts() >= $this->tries) {
+            $downloadRecord->markAsFailed($error);
+        }
+        
         throw new \Exception($error);
     }
 
@@ -373,6 +412,12 @@ class DownloadTruefireSegmentV3 implements ShouldQueue
         
         $this->updateDownloadStats('failed');
         $this->releaseRateLimit();
+        
+        // Mark as failed in database
+        $downloadRecord = SegmentDownload::where('segment_id', $this->segment->id)->first();
+        if ($downloadRecord) {
+            $downloadRecord->markAsFailed($exception->getMessage());
+        }
     }
 
     /**

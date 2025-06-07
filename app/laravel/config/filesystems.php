@@ -73,8 +73,8 @@ return [
             'driver' => 'local',
             'root' => env('D_DRIVE_PATH', '/mnt/d_drive'),
             'serve' => true,
-            'throw' => true,
-            'report' => true,
+            'throw' => false,
+            'report' => false,
         ],
 
     ],

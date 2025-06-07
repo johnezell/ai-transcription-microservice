@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TruefireCourse;
+use App\Models\SegmentDownload;
 use App\Jobs\DownloadTruefireSegmentV3;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -217,6 +218,16 @@ class TruefireCourseController extends Controller
 
             // Dispatch jobs for each segment
             foreach ($segments as $segment) {
+                // Check database status first to prevent duplicate jobs
+                if (SegmentDownload::isAlreadyProcessed($segment->id)) {
+                    $stats['already_downloaded']++;
+                    Log::debug("Segment already processed or being processed in database, skipping job", [
+                        'segment_id' => $segment->id,
+                        'course_id' => $truefireCourse->id
+                    ]);
+                    continue;
+                }
+
                 // Check for both new format (segmentId.mp4) and legacy format (segment-segmentId.mp4)
                 $newFilename = "{$segment->id}.mp4";
                 $legacyFilename = "segment-{$segment->id}.mp4";
@@ -248,6 +259,13 @@ class TruefireCourseController extends Controller
                         'segment_id' => $segment->id,
                         'file_path' => $existingFilePath
                     ]);
+                    
+                    // Mark as completed in database if not already tracked
+                    SegmentDownload::createOrUpdate(
+                        $segment->id,
+                        $truefireCourse->id,
+                        SegmentDownload::STATUS_COMPLETED
+                    );
                     continue;
                 }
                 
@@ -256,7 +274,14 @@ class TruefireCourseController extends Controller
                 $filePath = $newFilePath;
 
                 try {
-                    // Track this segment as queued
+                    // Create database entry to mark as queued
+                    SegmentDownload::createOrUpdate(
+                        $segment->id,
+                        $truefireCourse->id,
+                        SegmentDownload::STATUS_QUEUED
+                    );
+
+                    // Track this segment as queued (legacy cache support)
                     $queuedKey = "queued_segments_{$truefireCourse->id}";
                     $queuedSegments = Cache::get($queuedKey, []);
                     $queuedSegments[] = $segment->id;
@@ -271,7 +296,8 @@ class TruefireCourseController extends Controller
                         'segment_id' => $segment->id,
                         's3_path' => $segment->s3Path(),
                         'note' => 'Signed URL will be generated fresh at execution time',
-                        'queued_segments_count' => count($queuedSegments)
+                        'queued_segments_count' => count($queuedSegments),
+                        'database_tracked' => true
                     ]);
                     
                 } catch (\Exception $e) {
@@ -942,7 +968,34 @@ class TruefireCourseController extends Controller
             ]);
             
             try {
-                // Track this segment as queued
+                // Check database status first to prevent duplicate jobs
+                if (SegmentDownload::isAlreadyProcessed($segment->id)) {
+                    Log::info("Segment already processed or being processed in database, skipping job", [
+                        'segment_id' => $segment->id,
+                        'course_id' => $truefireCourse->id
+                    ]);
+                    
+                    return response()->json([
+                        'success' => true,
+                        'message' => "Segment {$segment->id} is already processed or being processed.",
+                        'segment' => [
+                            'id' => $segment->id,
+                            'title' => $segment->title ?? "Segment #{$segment->id}",
+                            'filename' => $filename,
+                            'already_processed' => true
+                        ],
+                        'background_processing' => false
+                    ]);
+                }
+
+                // Create database entry to mark as queued
+                SegmentDownload::createOrUpdate(
+                    $segment->id,
+                    $truefireCourse->id,
+                    SegmentDownload::STATUS_QUEUED
+                );
+
+                // Track this segment as queued (legacy cache support)
                 $queuedKey = "queued_segments_{$truefireCourse->id}";
                 $queuedSegments = Cache::get($queuedKey, []);
                 $queuedSegments[] = $segment->id;
@@ -958,7 +1011,8 @@ class TruefireCourseController extends Controller
                 Log::info("Queued download job for individual segment", [
                     'segment_id' => $segment->id,
                     'course_id' => $truefireCourse->id,
-                    'note' => 'Signed URL will be generated fresh at execution time'
+                    'note' => 'Signed URL will be generated fresh at execution time',
+                    'database_tracked' => true
                 ]);
                 
                 // Clear caches related to this course
@@ -1109,6 +1163,16 @@ class TruefireCourseController extends Controller
 
                 // Dispatch jobs for each segment in this course
                 foreach ($allSegments as $segment) {
+                    // Check database status first to prevent duplicate jobs
+                    if (SegmentDownload::isAlreadyProcessed($segment->id)) {
+                        $courseSegmentsSkipped++;
+                        Log::debug("Segment already processed or being processed in database, skipping job", [
+                            'course_id' => $course->id,
+                            'segment_id' => $segment->id
+                        ]);
+                        continue;
+                    }
+
                     // Check for both new format (segmentId.mp4) and legacy format (segment-segmentId.mp4)
                     $newFilename = "{$segment->id}.mp4";
                     $legacyFilename = "segment-{$segment->id}.mp4";
@@ -1128,27 +1192,31 @@ class TruefireCourseController extends Controller
                             'segment_id' => $segment->id,
                             'file_path' => $existingFilePath
                         ]);
+                        
+                        // Mark as completed in database if not already tracked
+                        SegmentDownload::createOrUpdate(
+                            $segment->id,
+                            $course->id,
+                            SegmentDownload::STATUS_COMPLETED
+                        );
                         continue;
                     }
 
                     try {
-                        // Track this segment as queued for the course
+                        // Create database entry to mark as queued
+                        SegmentDownload::createOrUpdate(
+                            $segment->id,
+                            $course->id,
+                            SegmentDownload::STATUS_QUEUED
+                        );
+
+                        // Track this segment as queued for the course (legacy cache support)
                         $queuedKey = "queued_segments_{$course->id}";
                         $queuedSegments = Cache::get($queuedKey, []);
                         $queuedSegments[] = $segment->id;
                         Cache::put($queuedKey, $queuedSegments, 3600); // Store for 1 hour
                         
                         // Dispatch background job with V3 implementation (generates signed URL at execution time)
-                        
-                        DownloadTruefireSegmentV3::dispatch($segment, $courseDir, $course->id, $segment->s3Path());
-                        $courseSegmentsQueued++;
-                        
-                    } catch (\Exception $e) {
-                        Log::error('Failed to queue download job for segment', [
-                            'course_id' => $course->id,
-                            'segment_id' => $segment->id,
-                            'error' => $e->getMessage()
-                        ]);
                         DownloadTruefireSegmentV3::dispatch($segment, $courseDir, $course->id, $segment->s3Path());
                         $courseSegmentsQueued++;
                         
@@ -1156,7 +1224,8 @@ class TruefireCourseController extends Controller
                             'course_id' => $course->id,
                             'segment_id' => $segment->id,
                             'note' => 'Signed URL will be generated fresh at execution time',
-                            'queued_segments_count' => count($queuedSegments)
+                            'queued_segments_count' => count($queuedSegments),
+                            'database_tracked' => true
                         ]);
                         
                     } catch (\Exception $e) {

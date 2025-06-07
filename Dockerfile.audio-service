@@ -22,5 +22,10 @@ ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=service.py
 ENV FLASK_ENV=development
 
+# Phase 2: Audio Processing Configuration
+ENV AUDIO_QUALITY_LEVEL=balanced
+ENV ENABLE_NORMALIZATION=true
+ENV FFMPEG_THREADS=4
+
 # Command to run the service
-CMD ["python", "service.py"] 
+CMD ["python", "service.py"]

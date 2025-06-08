@@ -138,21 +138,62 @@ const loadCurrentPreset = async () => {
 
 const loadCourseInfo = async () => {
     try {
-        // Use course data from props if available
+        // First try to use course data from props if available
         if (props.course && Object.keys(props.course).length > 0) {
-            courseInfo.value = {
-                total_segments: props.course.segments_count || 0,
-                title: props.course.name || props.course.title || `Course #${props.courseId}`
-            };
-        } else {
-            // Fallback to default values
-            courseInfo.value = {
-                total_segments: 0,
-                title: `Course #${props.courseId}`
-            };
+            let totalSegments = 0;
+            
+            // Use segments_count if available
+            if (props.course.segments_count > 0) {
+                totalSegments = props.course.segments_count;
+            }
+            // Otherwise calculate from channels if available
+            else if (props.course.channels && Array.isArray(props.course.channels)) {
+                totalSegments = props.course.channels.reduce((total, channel) => {
+                    return total + (channel.segments ? channel.segments.length : 0);
+                }, 0);
+            }
+            
+            // If we have a valid segment count from props, use it
+            if (totalSegments > 0) {
+                courseInfo.value = {
+                    total_segments: totalSegments,
+                    title: props.course.name || props.course.title || `Course #${props.courseId}`
+                };
+                console.log(`Using props data: ${totalSegments} segments for "${courseInfo.value.title}"`);
+                return;
+            }
         }
+        
+        // Fallback: Fetch course info from API if props are incomplete or have no segments
+        console.log('Course props incomplete or no segments found, fetching from API...');
+        const response = await axios.get(`/truefire-courses/${props.courseId}`);
+        const courseData = response.data.course || response.data;
+        
+        // Calculate total segments from API response
+        let totalSegments = 0;
+        if (courseData.channels && Array.isArray(courseData.channels)) {
+            totalSegments = courseData.channels.reduce((total, channel) => {
+                return total + (channel.segments ? channel.segments.length : 0);
+            }, 0);
+        }
+        
+        // Use segments_count if available, otherwise use calculated total
+        totalSegments = courseData.segments_count || totalSegments || 0;
+        
+        courseInfo.value = {
+            total_segments: totalSegments,
+            title: courseData.name || courseData.title || `Course #${props.courseId}`
+        };
+        
+        console.log(`Loaded from API: ${totalSegments} segments for "${courseInfo.value.title}"`);
+        
     } catch (error) {
         console.error('Failed to load course info:', error);
+        // Fallback to props data even if incomplete
+        courseInfo.value = {
+            total_segments: props.course?.segments_count || 0,
+            title: props.course?.name || props.course?.title || `Course #${props.courseId}`
+        };
     }
 };
 
@@ -200,7 +241,7 @@ const startBatchProcessing = async () => {
     
     try {
         const response = await axios.post(`/truefire-courses/${props.courseId}/process-all-videos`, {
-            for_transcription: true // This creates MP3 files for transcription
+            for_transcription: true // This creates WAV files for transcription (Whisper compatible)
         });
         
         if (response.data.success) {
@@ -237,12 +278,32 @@ const monitorBatchProgress = async () => {
     const poll = async () => {
         try {
             const response = await axios.get(`/truefire-courses/${props.courseId}/audio-extraction-progress`);
-            const progress = response.data.data;
+            
+            // Check if response structure is valid
+            if (!response.data || !response.data.success) {
+                console.warn('Invalid response structure from audio extraction progress endpoint:', response.data);
+                return;
+            }
+            
+            // Fix: Access progress data from the correct location in response
+            const progress = response.data.progress;
+            
+            if (!progress) {
+                console.warn('No progress data found in response:', response.data);
+                return;
+            }
             
             batchProgress.value.progress = Math.round((progress.completed_segments / progress.total_segments) * 100);
             batchProgress.value.completedSegments = progress.completed_segments;
             batchProgress.value.failedSegments = progress.failed_segments || 0;
             batchProgress.value.message = `Processing: ${progress.completed_segments}/${progress.total_segments} segments completed`;
+            
+            console.log('Batch progress update:', {
+                completed: progress.completed_segments,
+                total: progress.total_segments,
+                percentage: batchProgress.value.progress,
+                status: response.data.status
+            });
             
             // Check if completed
             if (progress.completed_segments >= progress.total_segments) {
@@ -250,6 +311,7 @@ const monitorBatchProgress = async () => {
                 batchProgress.value.endTime = new Date();
                 batchProgress.value.message = `Batch processing completed successfully!`;
                 
+                console.log('Batch processing completed, closing modal');
                 showNotification('Batch processing completed successfully!', 'success');
                 emit('batch-completed', {
                     courseId: props.courseId,
@@ -319,7 +381,12 @@ const removeNotification = (id) => {
 };
 
 const closePanel = () => {
+    // Allow closing if not processing OR if completed
     if (!isProcessing.value && batchProgress.value.status !== 'running') {
+        emit('close');
+    } else if (batchProgress.value.status === 'completed') {
+        // Force close if completed but somehow still marked as running
+        console.log('Forcing modal close due to completed status');
         emit('close');
     }
 };
@@ -557,7 +624,7 @@ watch(() => props.show, (newValue) => {
                                 <div>
                                     <h4 class="text-sm font-medium text-gray-900">Batch Processing</h4>
                                     <p class="text-sm text-gray-600 mt-1">
-                                        Process all course videos for transcription (MP3 output)
+                                        Process all course videos for transcription (WAV output)
                                     </p>
                                 </div>
                                 <div class="text-right text-sm text-gray-500">
@@ -579,7 +646,7 @@ watch(() => props.show, (newValue) => {
                                         <ul class="text-xs text-blue-700 mt-2 space-y-1">
                                             <li>• Processes all {{ courseInfo?.total_segments || 0 }} video segments in the course</li>
                                             <li>• Uses the selected preset ({{ presetConfigurations[selectedPreset]?.label }}) for consistent quality</li>
-                                            <li>• Generates MP3 files optimized for transcription services</li>
+                                            <li>• Generates WAV files optimized for transcription services</li>
                                             <li>• Runs in background queue system for reliable processing</li>
                                             <li>• Real-time progress monitoring and status updates</li>
                                         </ul>
@@ -608,7 +675,7 @@ watch(() => props.show, (newValue) => {
                                         <h6 class="text-sm font-medium text-green-900">Transcription Workflow</h6>
                                     </div>
                                     <p class="text-xs text-green-700">
-                                        Batch processing of entire course with MP3 output optimized for transcription services.
+                                        Batch processing of entire course with WAV output optimized for transcription services.
                                     </p>
                                 </div>
                             </div>

@@ -84,8 +84,10 @@ Route::get('/videos/{id}/status', function($id) {
         $progressPercentage = 0;
     } elseif ($video->status === 'processing') {
         $progressPercentage = 25; // Audio extraction in progress
+    } elseif ($video->status === 'audio_extracted') {
+        $progressPercentage = 40; // Audio extraction complete, waiting for approval
     } elseif ($video->status === 'transcribing') {
-        $progressPercentage = 50; // Transcription in progress
+        $progressPercentage = 60; // Transcription in progress
     } elseif ($video->status === 'transcribed') {
         $progressPercentage = 75; // Transcription complete, waiting for terminology
     } elseif ($video->status === 'processing_music_terms') {
@@ -206,6 +208,84 @@ Route::get('/videos/{id}', function($id) {
             'is_processing' => $video->is_processing,
         ]
     ]);
+});
+
+// Approve audio extraction for transcription
+Route::post('/videos/{id}/approve-audio-extraction', function($id, Request $request) {
+    try {
+        $video = Video::findOrFail($id);
+        
+        // Validate that the video is in the correct state for approval
+        if ($video->status !== 'audio_extracted') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Video is not in audio_extracted status. Current status: ' . $video->status
+            ], 400);
+        }
+        
+        // Validate that audio file exists
+        if (empty($video->audio_path)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No audio file found for this video'
+            ], 400);
+        }
+        
+        // Validate request data
+        $validated = $request->validate([
+            'approved_by' => 'required|string|max:255',
+            'notes' => 'nullable|string|max:1000'
+        ]);
+        
+        // Update the video with approval information
+        $video->update([
+            'audio_extraction_approved' => true,
+            'audio_extraction_approved_at' => now(),
+            'audio_extraction_approved_by' => $validated['approved_by'],
+            'audio_extraction_notes' => $validated['notes'] ?? null,
+            'status' => 'processing'
+        ]);
+        
+        // Dispatch the job to process the approved audio extraction
+        \App\Jobs\ProcessApprovedAudioExtractionJob::dispatch($video);
+        
+        Log::info('Audio extraction approved and transcription job dispatched', [
+            'video_id' => $video->id,
+            'approved_by' => $validated['approved_by'],
+            'notes' => $validated['notes'] ?? null,
+            'audio_path' => $video->audio_path
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Audio extraction approved and transcription process started',
+            'video' => [
+                'id' => $video->id,
+                'status' => $video->status,
+                'audio_extraction_approved' => $video->audio_extraction_approved,
+                'audio_extraction_approved_at' => $video->audio_extraction_approved_at,
+                'audio_extraction_approved_by' => $video->audio_extraction_approved_by,
+                'audio_extraction_notes' => $video->audio_extraction_notes
+            ]
+        ]);
+        
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        Log::error('Error approving audio extraction', [
+            'video_id' => $id,
+            'error' => $e->getMessage()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Error approving audio extraction: ' . $e->getMessage()
+        ], 500);
+    }
 });
 
 // New endpoints for accessing data directly from the database
@@ -444,3 +524,8 @@ Route::prefix('cloudfront')->group(function() {
     Route::post('/sign-multiple-urls', [CloudFrontController::class, 'signMultipleUrls'])->name('api.cloudfront.sign-multiple-urls');
     Route::get('/validate-config', [CloudFrontController::class, 'validateConfiguration'])->name('api.cloudfront.validate-config');
 });
+
+// Transcription preset management endpoints
+Route::get('/courses/{truefireCourse}/transcription-preset', [\App\Http\Controllers\TruefireCourseController::class, 'getTranscriptionPreset'])->name('api.courses.transcription-preset.show');
+Route::put('/courses/{truefireCourse}/transcription-preset', [\App\Http\Controllers\TruefireCourseController::class, 'updateTranscriptionPreset'])->name('api.courses.transcription-preset.update');
+Route::get('/transcription-presets', [\App\Http\Controllers\TruefireCourseController::class, 'getTranscriptionPresetOptions'])->name('api.transcription-presets.index');

@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 
 # Import existing service functions
-from ai_roo_audio_quality_validation import get_audio_stats, get_audio_volume_stats
+from audio_quality_utils import get_audio_stats, get_audio_volume_stats
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

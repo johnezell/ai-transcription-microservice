@@ -35,6 +35,8 @@ Route::get('/dashboard', function () {
 Route::resource('videos', VideoController::class);
 Route::post('/videos/{video}/transcription', [VideoController::class, 'requestTranscription'])
     ->name('videos.transcription.request');
+Route::post('/videos/{video}/approve-audio-extraction', [VideoController::class, 'approveAudioExtraction'])
+    ->name('videos.audio-extraction.approve');
 
 // Course management routes
 Route::resource('courses', \App\Http\Controllers\CourseController::class);

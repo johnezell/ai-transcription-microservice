@@ -40,6 +40,7 @@ const selectAll = ref(false);
 
 // Batch execution state
 const isBatchRunning = ref(false);
+const currentBatchId = ref(null);
 const batchProgress = ref({
     status: 'idle', // idle, running, completed, failed, paused
     totalSegments: 0,
@@ -155,16 +156,27 @@ const startBatchTest = async () => {
     try {
         // Start the batch test
         const response = await axios.post(
-            `/truefire-courses/${props.courseId}/batch-test-audio-extraction`,
+            `/truefire-courses/${props.courseId}/create-batch-test`,
             {
+                name: `Batch Test - ${new Date().toLocaleString()}`,
+                description: `Batch audio extraction test for ${selectedSegments.value.size} segments`,
                 segment_ids: Array.from(selectedSegments.value),
                 quality_level: selectedQuality.value,
-                batch_configuration: batchConfiguration.value
+                extraction_settings: {
+                    sample_rate: batchConfiguration.value.sampleRate,
+                    bit_rate: `${batchConfiguration.value.bitRate}k`,
+                    channels: batchConfiguration.value.channels,
+                    format: batchConfiguration.value.format
+                },
+                concurrent_jobs: batchConfiguration.value.maxConcurrent,
+                truefire_course_id: props.courseId,
+                user_id: 1 // This should come from auth context
             }
         );
 
-        // Poll for progress
-        await pollBatchProgress(response.data.batch_id);
+        // Store batch ID for cancellation and poll for progress
+        currentBatchId.value = response.data.data.id;
+        await pollBatchProgress(response.data.data.id);
 
     } catch (error) {
         console.error('Failed to start batch audio extraction test:', error);
@@ -190,18 +202,17 @@ const pollBatchProgress = async (batchId) => {
     const poll = async () => {
         try {
             const response = await axios.get(
-                `/truefire-courses/${props.courseId}/batch-test-progress/${batchId}`
+                `/truefire-courses/${props.courseId}/batch-test/${batchId}/status`
             );
 
-            const result = response.data;
+            const result = response.data.data;
             
             // Update progress
             batchProgress.value = {
                 ...batchProgress.value,
-                completedSegments: result.completed_count || 0,
-                failedSegments: result.failed_count || 0,
-                skippedSegments: result.skipped_count || 0,
-                currentlyProcessing: result.currently_processing || [],
+                completedSegments: result.completed_segments || 0,
+                failedSegments: result.failed_segments || 0,
+                currentlyProcessing: result.progress_details?.processing || [],
                 results: result.results || [],
                 errors: result.errors || []
             };
@@ -274,7 +285,10 @@ const cancelBatch = async () => {
     }
     
     try {
-        await axios.post(`/truefire-courses/${props.courseId}/cancel-batch-test`);
+        // We need the batch ID to cancel, so we'll store it when starting the batch
+        if (currentBatchId.value) {
+            await axios.post(`/truefire-courses/${props.courseId}/batch-test/${currentBatchId.value}/cancel`);
+        }
         batchProgress.value.status = 'cancelled';
         isBatchRunning.value = false;
     } catch (error) {
@@ -296,6 +310,7 @@ const resetBatch = () => {
         errors: []
     };
     isBatchRunning.value = false;
+    currentBatchId.value = null;
 };
 
 const closePanel = () => {
@@ -357,7 +372,7 @@ watch(() => selectedSegments.value.size, (newSize) => {
                                     Batch Audio Testing
                                 </h3>
                                 <p class="text-sm text-orange-100">
-                                    Test multiple segments simultaneously - Phase 3 Preview
+                                    Test multiple segments simultaneously
                                 </p>
                             </div>
                         </div>
@@ -375,15 +390,15 @@ watch(() => selectedSegments.value.size, (newSize) => {
 
                 <!-- Content -->
                 <div class="px-6 py-6 space-y-6">
-                    <!-- Phase 3 Notice -->
-                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <!-- Success Notice -->
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
                         <div class="flex items-center space-x-3">
-                            <svg class="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                             </svg>
                             <div>
-                                <h4 class="text-sm font-medium text-amber-900">Phase 3 Preview</h4>
-                                <p class="text-sm text-amber-700">This batch testing interface is a preview for Phase 3. Backend implementation required for full functionality.</p>
+                                <h4 class="text-sm font-medium text-green-900">Batch Testing Ready</h4>
+                                <p class="text-sm text-green-700">Full batch testing functionality is available. Select segments and configure your batch test below.</p>
                             </div>
                         </div>
                     </div>

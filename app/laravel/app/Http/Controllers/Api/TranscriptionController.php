@@ -27,26 +27,41 @@ class TranscriptionController extends Controller
         $request->validate([
             'filename' => 'required|string',
             'type' => 'required|in:audio,video',
+            'video_id' => 'sometimes|integer|exists:videos,id',
+            'truefire_course_id' => 'sometimes|integer|exists:local_truefire_courses,id',
+            'transcription_preset' => 'sometimes|string|in:fast,balanced,high,premium'
         ]);
 
         // Generate a unique job ID
         $jobId = (string) Str::uuid();
+
+        // Determine transcription preset to use
+        $transcriptionPreset = $this->determineTranscriptionPreset($request);
 
         // Create a transcription log entry
         $log = TranscriptionLog::create([
             'job_id' => $jobId,
             'status' => 'pending',
             'request_data' => $request->all(),
+            'preset_used' => $transcriptionPreset,
         ]);
 
-        // Dispatch the job to the queue
-        ProcessTranscriptionJob::dispatch($log);
+        // Dispatch the job to the queue with preset
+        ProcessTranscriptionJob::dispatch($log, $transcriptionPreset);
 
-        // Return response with job ID
+        Log::info('Transcription job dispatched with preset', [
+            'job_id' => $jobId,
+            'preset' => $transcriptionPreset,
+            'video_id' => $request->get('video_id'),
+            'truefire_course_id' => $request->get('truefire_course_id')
+        ]);
+
+        // Return response with job ID and preset information
         return response()->json([
             'success' => true,
             'message' => 'Transcription job dispatched successfully',
             'job_id' => $jobId,
+            'transcription_preset' => $transcriptionPreset,
         ], 202);
     }
 
@@ -213,13 +228,16 @@ class TranscriptionController extends Controller
                         $videoData['audio_size'] = $responseData['audio_size_bytes'] ?? null;
                         $videoData['audio_duration'] = $responseData['duration_seconds'] ?? null;
                         
+                        // Set status to indicate audio extraction is complete but awaiting approval
+                        $videoData['status'] = 'audio_extracted';
+                        
                         // Find or create transcription log
                         if (!$log) {
                             $log = TranscriptionLog::firstOrCreate(
                                 ['video_id' => $video->id],
                                 [
                                     'job_id' => $video->id,
-                                    'status' => 'processing',
+                                    'status' => 'audio_extracted',
                                     'started_at' => $now,
                                 ]
                             );
@@ -227,10 +245,11 @@ class TranscriptionController extends Controller
                         
                         // Update timing information for audio extraction
                         $log->update([
+                            'status' => 'audio_extracted',
                             'audio_extraction_completed_at' => $now,
                             'audio_file_size' => $responseData['audio_size_bytes'] ?? null,
                             'audio_duration_seconds' => $responseData['duration_seconds'] ?? null,
-                            'progress_percentage' => 50, // Audio extraction complete, now 50% done
+                            'progress_percentage' => 40, // Audio extraction complete, waiting for approval
                         ]);
                         
                         // Calculate audio extraction duration if we have the start time
@@ -241,8 +260,15 @@ class TranscriptionController extends Controller
                             ]);
                         }
                         
-                        // Audio extraction is complete, trigger transcription service
-                        $this->triggerTranscription($video->id);
+                        // Log that audio extraction is complete and waiting for approval
+                        Log::info('Audio extraction completed, waiting for manual approval', [
+                            'video_id' => $video->id,
+                            'audio_path' => $responseData['audio_path'],
+                            'audio_duration' => $responseData['duration_seconds'] ?? null,
+                            'audio_size' => $responseData['audio_size_bytes'] ?? null
+                        ]);
+                        
+                        // DO NOT automatically trigger transcription - wait for manual approval
                     }
                     
                     // Transcription completed
@@ -615,5 +641,56 @@ class TranscriptionController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Determine which transcription preset to use for the job
+     */
+    protected function determineTranscriptionPreset(Request $request): string
+    {
+        // If preset was explicitly provided in request, use it
+        if ($request->has('transcription_preset')) {
+            Log::info('Using explicitly provided transcription preset', [
+                'preset' => $request->get('transcription_preset')
+            ]);
+            return $request->get('transcription_preset');
+        }
+
+        // Try to get preset from video's course
+        if ($request->has('video_id')) {
+            $video = Video::find($request->get('video_id'));
+            if ($video && $video->course_id) {
+                $coursePreset = \App\Models\CourseTranscriptionPreset::getPresetForCourse($video->course_id);
+                if ($coursePreset) {
+                    Log::info('Using course transcription preset from video', [
+                        'video_id' => $video->id,
+                        'course_id' => $video->course_id,
+                        'preset' => $coursePreset
+                    ]);
+                    return $coursePreset;
+                }
+            }
+        }
+
+        // Try to get preset from TrueFire course
+        if ($request->has('truefire_course_id')) {
+            $courseId = $request->get('truefire_course_id');
+            $coursePreset = \App\Models\CourseTranscriptionPreset::getPresetForCourse($courseId);
+            if ($coursePreset) {
+                Log::info('Using TrueFire course transcription preset', [
+                    'truefire_course_id' => $courseId,
+                    'preset' => $coursePreset
+                ]);
+                return $coursePreset;
+            }
+        }
+
+        // Fall back to default preset
+        $defaultPreset = config('transcription_presets.default_preset', 'balanced');
+        Log::info('Using default transcription preset', [
+            'preset' => $defaultPreset
+        ]);
+        
+        return $defaultPreset;
     }
 }

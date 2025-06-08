@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Extraction Approval Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 80px;
+            resize: vertical;
+        }
+        button {
+            background-color: #007cba;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #005a8b;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .video-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .audio-player {
+            width: 100%;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Audio Extraction Approval Demo</h1>
+        <p>This demo shows how to approve audio extractions for transcription processing.</p>
+        
+        <div class="form-group">
+            <label for="videoId">Video ID:</label>
+            <input type="text" id="videoId" placeholder="Enter video ID to check status">
+            <button onclick="checkVideoStatus()">Check Video Status</button>
+        </div>
+        
+        <div id="videoInfo" class="video-info" style="display: none;">
+            <h3>Video Information</h3>
+            <div id="videoDetails"></div>
+        </div>
+        
+        <div id="audioSection" style="display: none;">
+            <h3>Audio Preview</h3>
+            <audio id="audioPlayer" class="audio-player" controls>
+                Your browser does not support the audio element.
+            </audio>
+            
+            <h3>Approve Audio Extraction</h3>
+            <div class="form-group">
+                <label for="approvedBy">Approved By:</label>
+                <input type="text" id="approvedBy" placeholder="Your name or ID" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="notes">Notes (optional):</label>
+                <textarea id="notes" placeholder="Add any notes about the audio quality..."></textarea>
+            </div>
+            
+            <button onclick="approveAudioExtraction()" id="approveBtn">Approve Audio & Start Transcription</button>
+            <button onclick="rejectAudioExtraction()" id="rejectBtn" style="background-color: #dc3545;">Reject Audio</button>
+        </div>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        async function checkVideoStatus() {
+            const videoId = document.getElementById('videoId').value;
+            if (!videoId) {
+                showStatus('Please enter a video ID', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/videos/${videoId}/status`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayVideoInfo(data.video, data.status);
+                    
+                    if (data.status === 'audio_extracted' && data.video.has_audio) {
+                        showAudioSection(data.video);
+                    } else {
+                        hideAudioSection();
+                        if (data.status === 'audio_extracted') {
+                            showStatus('Audio extraction completed but no audio file found', 'error');
+                        } else {
+                            showStatus(`Video status: ${data.status}. Audio extraction approval only available for videos with status 'audio_extracted'.`, 'error');
+                        }
+                    }
+                } else {
+                    showStatus(`Error: ${data.message}`, 'error');
+                    hideVideoInfo();
+                }
+            } catch (error) {
+                showStatus(`Network error: ${error.message}`, 'error');
+                hideVideoInfo();
+            }
+        }
+        
+        function displayVideoInfo(video, status) {
+            const videoInfo = document.getElementById('videoInfo');
+            const videoDetails = document.getElementById('videoDetails');
+            
+            videoDetails.innerHTML = `
+                <p><strong>Filename:</strong> ${video.original_filename}</p>
+                <p><strong>Status:</strong> ${status}</p>
+                <p><strong>Has Audio:</strong> ${video.has_audio ? 'Yes' : 'No'}</p>
+                <p><strong>Has Transcript:</strong> ${video.has_transcript ? 'Yes' : 'No'}</p>
+                <p><strong>Audio Approved:</strong> ${video.audio_extraction_approved ? 'Yes' : 'No'}</p>
+                ${video.audio_extraction_approved_by ? `<p><strong>Approved By:</strong> ${video.audio_extraction_approved_by}</p>` : ''}
+                ${video.audio_extraction_approved_at ? `<p><strong>Approved At:</strong> ${new Date(video.audio_extraction_approved_at).toLocaleString()}</p>` : ''}
+                ${video.audio_extraction_notes ? `<p><strong>Notes:</strong> ${video.audio_extraction_notes}</p>` : ''}
+                <p><strong>Created:</strong> ${new Date(video.created_at).toLocaleString()}</p>
+            `;
+            
+            videoInfo.style.display = 'block';
+        }
+        
+        function showAudioSection(video) {
+            const audioSection = document.getElementById('audioSection');
+            const audioPlayer = document.getElementById('audioPlayer');
+            
+            if (video.audio_url) {
+                audioPlayer.src = video.audio_url;
+                audioSection.style.display = 'block';
+                showStatus('Audio extraction ready for approval. Please listen to the audio quality and approve if satisfactory.', 'success');
+            } else {
+                hideAudioSection();
+                showStatus('Audio file not accessible', 'error');
+            }
+        }
+        
+        function hideAudioSection() {
+            document.getElementById('audioSection').style.display = 'none';
+        }
+        
+        function hideVideoInfo() {
+            document.getElementById('videoInfo').style.display = 'none';
+            hideAudioSection();
+        }
+        
+        async function approveAudioExtraction() {
+            const videoId = document.getElementById('videoId').value;
+            const approvedBy = document.getElementById('approvedBy').value;
+            const notes = document.getElementById('notes').value;
+            
+            if (!approvedBy) {
+                showStatus('Please enter who is approving this audio', 'error');
+                return;
+            }
+            
+            const approveBtn = document.getElementById('approveBtn');
+            approveBtn.disabled = true;
+            approveBtn.textContent = 'Approving...';
+            
+            try {
+                const response = await fetch(`/api/videos/${videoId}/approve-audio-extraction`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        approved_by: approvedBy,
+                        notes: notes
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus(`Audio extraction approved! Transcription process started. ${data.message}`, 'success');
+                    hideAudioSection();
+                    // Refresh video status
+                    setTimeout(checkVideoStatus, 1000);
+                } else {
+                    showStatus(`Error: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`Network error: ${error.message}`, 'error');
+            } finally {
+                approveBtn.disabled = false;
+                approveBtn.textContent = 'Approve Audio & Start Transcription';
+            }
+        }
+        
+        function rejectAudioExtraction() {
+            showStatus('Audio rejection functionality not implemented in this demo. You would need to create a separate endpoint for handling rejections.', 'error');
+        }
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+        }
+    </script>
+</body>
+</html> 

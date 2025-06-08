@@ -123,4 +123,16 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | TrueFire S3 Settings
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for TrueFire S3 integration and signed URL generation.
+    | Set to false to disable S3 signed URL generation when assets are localized.
+    |
+    */
+
+    'truefire_s3_enabled' => env('TRUEFIRE_S3_ENABLED', false),
+
 ];

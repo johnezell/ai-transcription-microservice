@@ -81,9 +81,10 @@ class AudioExtractionTestJob implements ShouldQueue
      * @param  array  $testSettings
      * @param  int|null  $segmentId
      * @param  int|null  $courseId
+     * @param  string|null  $jobId
      * @return void
      */
-    public function __construct(string $videoFilePath, string $videoFilename, string $qualityLevel = 'balanced', array $testSettings = [], ?int $segmentId = null, ?int $courseId = null)
+    public function __construct(string $videoFilePath, string $videoFilename, string $qualityLevel = 'balanced', array $testSettings = [], ?int $segmentId = null, ?int $courseId = null, ?string $jobId = null)
     {
         $this->videoFilePath = $videoFilePath;
         $this->videoFilename = $videoFilename;
@@ -92,6 +93,14 @@ class AudioExtractionTestJob implements ShouldQueue
         $this->segmentId = $segmentId;
         $this->courseId = $courseId;
         
+        // Store the job ID passed from controller, or generate one if not provided
+        if ($jobId) {
+            $this->testSettings['controller_job_id'] = $jobId;
+        }
+        
+        // Set the queue for audio test jobs
+        $this->onQueue('audio_tests');
+        
         Log::info('AudioExtractionTestJob created', [
             'video_file_path' => $this->videoFilePath,
             'video_filename' => $this->videoFilename,
@@ -99,6 +108,7 @@ class AudioExtractionTestJob implements ShouldQueue
             'segment_id' => $this->segmentId,
             'course_id' => $this->courseId,
             'test_settings' => $this->testSettings,
+            'job_id' => $jobId,
             'workflow_step' => 'job_creation'
         ]);
     }
@@ -133,8 +143,8 @@ class AudioExtractionTestJob implements ShouldQueue
         ]);
 
         try {
-            // Determine the correct disk based on file path
-            $disk = str_starts_with($this->videoFilePath, 'truefire-courses/') ? 'd_drive' : 'public';
+            // For TrueFire courses, always use d_drive disk
+            $disk = 'd_drive';
             
             // Make sure the video file exists
             if (!Storage::disk($disk)->exists($this->videoFilePath)) {
@@ -145,6 +155,7 @@ class AudioExtractionTestJob implements ShouldQueue
                     'quality_level' => $this->qualityLevel,
                     'segment_id' => $this->segmentId,
                     'course_id' => $this->courseId,
+                    'full_path_attempted' => Storage::disk($disk)->path($this->videoFilePath),
                     'workflow_step' => 'file_not_found_error'
                 ]);
                 
@@ -159,8 +170,17 @@ class AudioExtractionTestJob implements ShouldQueue
                 'workflow_step' => 'file_validation_success'
             ]);
             
-            // Create or find transcription log for tracking
-            $jobId = 'audio_extract_test_' . ($this->courseId ?? 'unknown') . '_' . ($this->segmentId ?? 'unknown') . '_' . time() . '_' . uniqid();
+            // Use job ID from controller if available, otherwise generate one
+            if (isset($this->testSettings['controller_job_id'])) {
+                $jobId = $this->testSettings['controller_job_id'];
+                Log::info('Using job ID from controller', ['job_id' => $jobId]);
+            } else {
+                // Fallback: Create job ID that matches what the controller expects
+                $timestamp = time();
+                $uniqueId = uniqid();
+                $jobId = 'audio_extract_test_' . ($this->courseId ?? 'unknown') . '_' . ($this->segmentId ?? 'unknown') . '_' . $timestamp . '_' . $this->qualityLevel . '_' . $uniqueId;
+                Log::info('Generated fallback job ID', ['job_id' => $jobId]);
+            }
             
             $log = $this->batchTranscriptionLog ?? TranscriptionLog::create([
                 'job_id' => $jobId,

@@ -490,9 +490,9 @@ def process_audio_extraction():
     
     logger.info(f"Processing job {job_id} (test_mode: {test_mode}, quality: {quality_level}, quality_analysis: {enable_quality_analysis})")
     
-    # Handle different path scenarios
-    if test_mode and video_path_param:
-        # For test mode, use the provided video path directly
+    # Handle path construction - always use D drive paths now
+    if video_path_param:
+        # Use the provided video path directly
         # The video_path should be something like "truefire-courses/1/7959.mp4"
         # We need to construct the full path to the d_drive location
         d_drive_base = '/mnt/d_drive'  # This should match the Docker volume mount
@@ -502,33 +502,40 @@ def process_audio_extraction():
         video_dir = os.path.dirname(video_path)
         video_filename = os.path.basename(video_path)
         
-        # Create audio filename with quality level and test settings to avoid overwriting
+        # Determine segment ID for audio filename
         if segment_id:
             base_name = str(segment_id)
         else:
             # Extract segment ID from video filename (e.g., "7959.mp4" -> "7959")
             base_name = os.path.splitext(video_filename)[0]
         
-        # Include quality level and test settings in filename for uniqueness
-        test_settings = data.get('test_settings', {})
-        settings_suffix = ""
-        
-        if test_settings:
-            # Create a short hash of test settings for filename
-            import hashlib
-            settings_str = json.dumps(test_settings, sort_keys=True)
-            settings_hash = hashlib.md5(settings_str.encode()).hexdigest()[:8]
-            settings_suffix = f"_s{settings_hash}"
-        
-        # Create unique filename: segmentId_qualityLevel_settingsHash.wav
-        audio_filename = f"{base_name}_{quality_level}{settings_suffix}.wav"
+        # Create audio filename based on mode and settings
+        if test_mode:
+            # For test mode, include quality level and test settings to avoid overwriting
+            test_settings = data.get('test_settings', {})
+            settings_suffix = ""
+            
+            if test_settings:
+                # Create a short hash of test settings for filename
+                import hashlib
+                settings_str = json.dumps(test_settings)
+                settings_hash = hashlib.md5(settings_str.encode()).hexdigest()[:8]
+                settings_suffix = f"_s{settings_hash}"
+            
+            # Create unique filename: segmentId_qualityLevel_settingsHash.wav
+            audio_filename = f"{base_name}_{quality_level}{settings_suffix}.wav"
+        else:
+            # For regular mode, use simple segment ID filename
+            audio_filename = f"{base_name}.wav"
         
         audio_path = os.path.join(video_dir, audio_filename)
         
-        logger.info(f"Test mode paths - Video: {video_path}, Audio: {audio_path}")
+        logger.info(f"D drive paths - Video: {video_path}, Audio: {audio_path}")
         
     else:
-        # Legacy mode - use the old S3 jobs directory structure
+        # Fallback to legacy mode only if no video_path_param provided
+        # This should rarely happen with the updated Laravel backend
+        logger.warning("No video_path_param provided, falling back to legacy S3 structure")
         job_dir = os.path.join(S3_JOBS_DIR, job_id)
         os.makedirs(job_dir, exist_ok=True)
         
@@ -536,19 +543,30 @@ def process_audio_extraction():
         video_path = os.path.join(job_dir, 'video.mp4')
         audio_path = os.path.join(job_dir, 'audio.wav')
         
-        logger.info(f"Legacy mode paths - Video: {video_path}, Audio: {audio_path}")
+        logger.info(f"Legacy fallback paths - Video: {video_path}, Audio: {audio_path}")
     
     # Basic directory structure check for debugging
     try:
-        if os.path.exists(job_dir):
-            dir_contents = os.listdir(job_dir)
-            logger.info(f"Job directory contents: {dir_contents}")
+        # Check the parent directory of the video file for D drive paths
+        if video_path_param:
+            video_dir = os.path.dirname(video_path)
+            if os.path.exists(video_dir):
+                dir_contents = os.listdir(video_dir)
+                logger.info(f"Video directory contents: {dir_contents}")
+            else:
+                logger.error(f"Video directory {video_dir} does not exist")
         else:
-            logger.error(f"Job directory {job_dir} does not exist")
-            logger.info(f"Creating job directory: {job_dir}")
-            os.makedirs(job_dir, exist_ok=True)
+            # Legacy mode - check job directory
+            job_dir = os.path.join(S3_JOBS_DIR, job_id)
+            if os.path.exists(job_dir):
+                dir_contents = os.listdir(job_dir)
+                logger.info(f"Job directory contents: {dir_contents}")
+            else:
+                logger.error(f"Job directory {job_dir} does not exist")
+                logger.info(f"Creating job directory: {job_dir}")
+                os.makedirs(job_dir, exist_ok=True)
     except Exception as e:
-        logger.error(f"Error with job directory: {str(e)}")
+        logger.error(f"Error with directory check: {str(e)}")
     
     try:
         # Check if the video file exists

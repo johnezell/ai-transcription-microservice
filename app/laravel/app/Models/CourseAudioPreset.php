@@ -44,7 +44,7 @@ class CourseAudioPreset extends Model
      */
     public function truefireCourse(): BelongsTo
     {
-        return $this->belongsTo(TruefireCourse::class, 'truefire_course_id');
+        return $this->belongsTo(LocalTruefireCourse::class, 'truefire_course_id');
     }
 
     /**

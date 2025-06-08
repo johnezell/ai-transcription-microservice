@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\LocalTruefireCourse;
-use App\Models\TruefireCourse;
 use App\Models\CourseAudioPreset;
+use App\Models\CourseTranscriptionPreset;
 use App\Models\SegmentDownload;
 use App\Models\TranscriptionLog;
 use App\Models\AudioTestBatch;
@@ -62,6 +62,13 @@ class TruefireCourseController extends Controller
                 
                 $courses = $query->paginate($perPage);
                 
+                // Transform courses to include proper preset data
+                $courses->getCollection()->transform(function ($course) {
+                    // Add the correct audio extraction preset using the model method
+                    $course->audio_extraction_preset = $course->getAudioExtractionPreset();
+                    return $course;
+                });
+                
                 // Append search parameter to pagination links
                 $courses->appends($request->query());
                 
@@ -108,41 +115,48 @@ class TruefireCourseController extends Controller
                     $physicalPath = Storage::disk($disk)->path($newFilePath);
                     $isDownloaded = file_exists($physicalPath);
                     
-                    try {
-                        $segmentsWithSignedUrls[] = [
-                            'id' => $segment->id,
-                            'channel_id' => $channel->id,
-                            'channel_name' => $channel->name ?? $channel->title ?? "Channel #{$channel->id}",
-                            'video' => $segment->video,
-                            'title' => $segment->title ?? "Segment #{$segment->id}",
-                            'signed_url' => $segment->getSignedUrl(),
-                            'is_downloaded' => $isDownloaded,
-                            'file_size' => $isDownloaded ? Storage::disk($disk)->size($newFilePath) : null,
-                            'downloaded_at' => $isDownloaded ? Storage::disk($disk)->lastModified($newFilePath) : null,
-                        ];
-                    } catch (\Exception $e) {
-                        \Log::warning('Failed to generate signed URL for segment', [
-                            'segment_id' => $segment->id,
-                            'error' => $e->getMessage()
-                        ]);
-                        $segmentsWithSignedUrls[] = [
-                            'id' => $segment->id,
-                            'channel_id' => $channel->id,
-                            'channel_name' => $channel->name ?? $channel->title ?? "Channel #{$channel->id}",
-                            'video' => $segment->video,
-                            'title' => $segment->title ?? "Segment #{$segment->id}",
-                            'signed_url' => null,
-                            'error' => 'Failed to generate signed URL',
-                            'is_downloaded' => $isDownloaded,
-                            'file_size' => $isDownloaded ? Storage::disk($disk)->size($newFilePath) : null,
-                            'downloaded_at' => $isDownloaded ? Storage::disk($disk)->lastModified($newFilePath) : null,
-                        ];
+                    // Check if S3 signed URL generation is enabled
+                    $s3Enabled = config('app.truefire_s3_enabled', false);
+                    $signedUrl = null;
+                    $urlError = null;
+                    
+                    if ($s3Enabled) {
+                        try {
+                            $signedUrl = $segment->getSignedUrl();
+                        } catch (\Exception $e) {
+                            \Log::warning('Failed to generate signed URL for segment', [
+                                'segment_id' => $segment->id,
+                                'error' => $e->getMessage()
+                            ]);
+                            $urlError = 'Failed to generate signed URL';
+                        }
+                    } else {
+                        // S3 signed URLs disabled - assets are localized
+                        $signedUrl = null;
                     }
+
+                    $segmentData = [
+                        'id' => $segment->id,
+                        'channel_id' => $channel->id,
+                        'channel_name' => $channel->name ?? $channel->title ?? "Channel #{$channel->id}",
+                        'video' => $segment->video,
+                        'title' => $segment->title ?? "Segment #{$segment->id}",
+                        'signed_url' => $signedUrl,
+                        'is_downloaded' => $isDownloaded,
+                        'file_size' => $isDownloaded ? Storage::disk($disk)->size($newFilePath) : null,
+                        'downloaded_at' => $isDownloaded ? Storage::disk($disk)->lastModified($newFilePath) : null,
+                    ];
+                    
+                    if ($urlError) {
+                        $segmentData['error'] = $urlError;
+                    }
+                    
+                    $segmentsWithSignedUrls[] = $segmentData;
                 }
             }
             
             // Get the configured disk
-            $disk = config('filesystems.default');
+            $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             
             // TEMPORARY DEBUG - Test storage methods in controller context
             Log::info("Controller Storage Test", [
@@ -165,7 +179,7 @@ class TruefireCourseController extends Controller
      * Download all videos from a TrueFire course to local storage.
      * Uses Laravel queues for background processing.
      */
-    public function downloadAll(TruefireCourse $truefireCourse, Request $request)
+    public function downloadAll(LocalTruefireCourse $truefireCourse, Request $request)
     {
         try {
             // Load segments with valid video fields for the course through channels
@@ -369,7 +383,7 @@ class TruefireCourseController extends Controller
     /**
      * Get download status for a course - which segments are already downloaded
      */
-    public function downloadStatus(TruefireCourse $truefireCourse)
+    public function downloadStatus(LocalTruefireCourse $truefireCourse)
     {
         try {
             // Load course with all segments (remove withVideo filter temporarily to debug)
@@ -377,7 +391,7 @@ class TruefireCourseController extends Controller
             $courseDir = "truefire-courses/{$truefireCourse->id}";
             
             // Get the configured disk
-            $disk = config('filesystems.default');
+            $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             
             // TEMPORARY DEBUG - Test storage methods in controller context
             Log::info("Controller Storage Test", [
@@ -540,7 +554,7 @@ class TruefireCourseController extends Controller
     /**
      * Get download statistics from cache (used for real-time progress tracking)
      */
-    public function downloadStats(TruefireCourse $truefireCourse)
+    public function downloadStats(LocalTruefireCourse $truefireCourse)
     {
         try {
             $key = "download_stats_{$truefireCourse->id}";
@@ -650,7 +664,7 @@ class TruefireCourseController extends Controller
                 $cacheKey, 
                 300, 
                 function () use ($perPage) {
-                    $query = TruefireCourse::withCount('segments')
+                    $query = LocalTruefireCourse::withCount('segments')
                         ->withSum('segments', 'runtime');
                     
                     $courses = $query->paginate($perPage);
@@ -735,7 +749,7 @@ class TruefireCourseController extends Controller
     /**
      * Get queue status for segments (queued, processing, completed)
      */
-    public function queueStatus(TruefireCourse $truefireCourse)
+    public function queueStatus(LocalTruefireCourse $truefireCourse)
     {
         try {
             // Get segments with valid video fields for this course
@@ -844,7 +858,7 @@ class TruefireCourseController extends Controller
                 // Check if file exists
                 $filename = "{$segment->id}.mp4";
                 $filePath = "{$courseDir}/{$filename}";
-                $disk = config('filesystems.default');
+                $disk = 'd_drive'; // Always use d_drive for TrueFire courses
                 $isDownloaded = Storage::disk($disk)->exists($filePath);
                 
                 // Determine status
@@ -940,7 +954,7 @@ class TruefireCourseController extends Controller
     /**
      * Download a specific segment
      */
-    public function downloadSegment(TruefireCourse $truefireCourse, $segmentId)
+    public function downloadSegment(LocalTruefireCourse $truefireCourse, $segmentId)
     {
         try {
             // Load the course with segments (including video field filtering) to find the requested segment
@@ -968,7 +982,7 @@ class TruefireCourseController extends Controller
             $courseDir = "truefire-courses/{$truefireCourse->id}";
             
             // Ensure course directory exists
-            $disk = config('filesystems.default');
+            $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             Storage::disk($disk)->makeDirectory($courseDir);
             
             // Check if file already exists
@@ -1085,7 +1099,7 @@ class TruefireCourseController extends Controller
     {
         try {
             // Get all TrueFire courses
-            $courses = TruefireCourse::withCount(['channels', 'segments' => function ($query) {
+            $courses = LocalTruefireCourse::withCount(['channels', 'segments' => function ($query) {
                 $query->withVideo(); // Only count segments with valid video fields
             }])->get();
 
@@ -1171,7 +1185,7 @@ class TruefireCourseController extends Controller
                 $courseDir = "truefire-courses/{$course->id}";
                 
                 // Ensure course directory exists
-                $disk = config('filesystems.default');
+                $disk = 'd_drive'; // Always use d_drive for TrueFire courses
                 Storage::disk($disk)->makeDirectory($courseDir);
 
                 $courseSegmentsQueued = 0;
@@ -1343,7 +1357,7 @@ class TruefireCourseController extends Controller
                 $courseStats = Cache::get($courseStatsKey, ['success' => 0, 'failed' => 0, 'skipped' => 0]);
                 
                 // Get course info
-                $course = TruefireCourse::find($courseId);
+                $course = LocalTruefireCourse::find($courseId);
                 if ($course) {
                     $courseDetails[] = [
                         'course_id' => $courseId,
@@ -1407,7 +1421,7 @@ class TruefireCourseController extends Controller
 
             // Get queue status for each course
             foreach ($queuedCourses as $courseId) {
-                $course = TruefireCourse::find($courseId);
+                $course = LocalTruefireCourse::find($courseId);
                 if (!$course) continue;
 
                 // Get segments with valid video fields for this course
@@ -1577,7 +1591,7 @@ class TruefireCourseController extends Controller
     /**
      * Test audio extraction for a specific segment
      */
-    public function testAudioExtraction(TruefireCourse $truefireCourse, $segmentId, Request $request)
+    public function testAudioExtraction(LocalTruefireCourse $truefireCourse, $segmentId, Request $request)
     {
         try {
             // Validate the request with support for both single and multi-quality
@@ -1620,7 +1634,7 @@ class TruefireCourseController extends Controller
             $courseDir = "truefire-courses/{$truefireCourse->id}";
             $videoFilename = "{$segment->id}.mp4";
             $videoFilePath = "{$courseDir}/{$videoFilename}";
-            $disk = config('filesystems.default');
+            $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             
             if (!Storage::disk($disk)->exists($videoFilePath)) {
                 return response()->json([
@@ -1689,7 +1703,8 @@ class TruefireCourseController extends Controller
                         'enable_quality_analysis' => $enableQualityAnalysis
                     ]),
                     $segmentId,
-                    $truefireCourse->id
+                    $truefireCourse->id,
+                    $audioExtractionJobId // Pass the job ID that frontend will poll for
                 );
 
                 $dispatchedJobs[] = [
@@ -1768,7 +1783,7 @@ class TruefireCourseController extends Controller
     /**
      * Get audio test results for a specific segment
      */
-    public function getAudioTestResults(TruefireCourse $truefireCourse, $segmentId, Request $request)
+    public function getAudioTestResults(LocalTruefireCourse $truefireCourse, $segmentId, Request $request)
     {
         try {
             // Get test ID and quality level from request if provided
@@ -1946,7 +1961,7 @@ class TruefireCourseController extends Controller
                 'per_page' => 'sometimes|integer|min:1|max:100',
                 'status' => 'sometimes|string|in:queued,processing,completed,failed',
                 'quality_level' => 'sometimes|string|in:fast,balanced,high,premium',
-                'course_id' => 'sometimes|integer|exists:truefire_courses,id'
+                'course_id' => 'sometimes|integer|exists:local_truefire_courses,id'
             ]);
 
             $perPage = $validated['per_page'] ?? 15;
@@ -2055,7 +2070,7 @@ class TruefireCourseController extends Controller
     /**
      * Create a batch audio extraction test
      */
-    public function createBatchTest(TruefireCourse $truefireCourse, CreateBatchTestRequest $request)
+    public function createBatchTest(LocalTruefireCourse $truefireCourse, CreateBatchTestRequest $request)
     {
         try {
             $validated = $request->validated();
@@ -2085,7 +2100,7 @@ class TruefireCourseController extends Controller
 
             // Check if video files exist for the segments
             $courseDir = "truefire-courses/{$truefireCourse->id}";
-            $disk = config('filesystems.default');
+            $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             $missingFiles = [];
 
             foreach ($validated['segment_ids'] as $segmentId) {
@@ -2155,7 +2170,7 @@ class TruefireCourseController extends Controller
     /**
      * Get batch test status
      */
-    public function getBatchTestStatus(TruefireCourse $truefireCourse, $batchId)
+    public function getBatchTestStatus(LocalTruefireCourse $truefireCourse, $batchId)
     {
         try {
             $batch = AudioTestBatch::where('id', $batchId)
@@ -2249,7 +2264,7 @@ class TruefireCourseController extends Controller
     /**
      * Get batch test results
      */
-    public function getBatchTestResults(TruefireCourse $truefireCourse, $batchId)
+    public function getBatchTestResults(LocalTruefireCourse $truefireCourse, $batchId)
     {
         try {
             $batch = AudioTestBatch::where('id', $batchId)
@@ -2323,7 +2338,7 @@ class TruefireCourseController extends Controller
     /**
      * Cancel batch test
      */
-    public function cancelBatchTest(TruefireCourse $truefireCourse, $batchId)
+    public function cancelBatchTest(LocalTruefireCourse $truefireCourse, $batchId)
     {
         try {
             $batch = AudioTestBatch::where('id', $batchId)
@@ -2391,7 +2406,7 @@ class TruefireCourseController extends Controller
     /**
      * Retry batch test
      */
-    public function retryBatchTest(TruefireCourse $truefireCourse, $batchId)
+    public function retryBatchTest(LocalTruefireCourse $truefireCourse, $batchId)
     {
         try {
             $batch = AudioTestBatch::where('id', $batchId)
@@ -2475,7 +2490,7 @@ class TruefireCourseController extends Controller
     /**
      * Delete batch test
      */
-    public function deleteBatchTest(TruefireCourse $truefireCourse, $batchId)
+    public function deleteBatchTest(LocalTruefireCourse $truefireCourse, $batchId)
     {
         try {
             $batch = AudioTestBatch::where('id', $batchId)
@@ -2652,7 +2667,7 @@ class TruefireCourseController extends Controller
     /**
      * Process all videos in a course for transcription workflow
      */
-    public function processAllVideos(TruefireCourse $truefireCourse, Request $request)
+    public function processAllVideos(LocalTruefireCourse $truefireCourse, Request $request)
     {
         try {
             $validated = $request->validate([
@@ -2687,7 +2702,7 @@ class TruefireCourseController extends Controller
 
             // Check if video files exist for the segments
             $courseDir = "truefire-courses/{$truefireCourse->id}";
-            $disk = config('filesystems.default');
+            $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             $missingFiles = [];
             $availableSegments = 0;
 
@@ -2741,7 +2756,7 @@ class TruefireCourseController extends Controller
                     'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
                     'preset' => $truefireCourse->getAudioExtractionPreset(),
                     'for_transcription' => $forTranscription,
-                    'output_format' => $forTranscription ? 'mp3' : 'wav',
+                    'output_format' => 'wav', // Always WAV for Whisper compatibility
                     'total_segments' => $allSegments->count(),
                     'available_segments' => $availableSegments,
                     'missing_segments' => count($missingFiles),
@@ -2752,7 +2767,7 @@ class TruefireCourseController extends Controller
                 'workflow_info' => [
                     'next_step' => 'Individual audio extraction jobs will be queued for each segment',
                     'expected_output' => $forTranscription
-                        ? 'MP3 files with simple naming for transcription workflow'
+                        ? 'WAV files with simple naming for transcription workflow (Whisper compatible)'
                         : 'WAV files with quality suffix for testing',
                     'monitoring' => 'Check TranscriptionLog for progress tracking'
                 ]
@@ -2783,7 +2798,7 @@ class TruefireCourseController extends Controller
     /**
      * Get course-level audio extraction progress
      */
-    public function getCourseAudioExtractionProgress(TruefireCourse $truefireCourse, Request $request)
+    public function getCourseAudioExtractionProgress(LocalTruefireCourse $truefireCourse, Request $request)
     {
         try {
             $jobId = $request->get('job_id');
@@ -2906,5 +2921,149 @@ class TruefireCourseController extends Controller
         }
 
         return 'unknown';
+    }
+
+    /**
+     * Get transcription preset for a course
+     */
+    public function getTranscriptionPreset(LocalTruefireCourse $truefireCourse)
+    {
+        try {
+            $preset = CourseTranscriptionPreset::getPresetForCourse($truefireCourse->id);
+            $settings = CourseTranscriptionPreset::getSettingsForCourse($truefireCourse->id);
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'course_id' => $truefireCourse->id,
+                    'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                    'preset' => $preset,
+                    'settings' => $settings,
+                    'available_presets' => CourseTranscriptionPreset::getAvailablePresets()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting transcription preset', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error getting transcription preset',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update transcription preset for a course
+     */
+    public function updateTranscriptionPreset(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'preset' => 'required|string|in:fast,balanced,high,premium',
+                'settings' => 'sometimes|array'
+            ]);
+
+            $oldPreset = CourseTranscriptionPreset::getPresetForCourse($truefireCourse->id);
+            $settings = $validated['settings'] ?? [];
+            
+            // Update the course transcription preset
+            CourseTranscriptionPreset::updateForCourse(
+                $truefireCourse->id,
+                $validated['preset'],
+                $settings
+            );
+
+            Log::info('Transcription preset updated for course', [
+                'course_id' => $truefireCourse->id,
+                'old_preset' => $oldPreset,
+                'new_preset' => $validated['preset'],
+                'settings' => $settings,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Transcription preset updated to {$validated['preset']}",
+                'data' => [
+                    'course_id' => $truefireCourse->id,
+                    'preset' => $validated['preset'],
+                    'previous_preset' => $oldPreset,
+                    'settings' => $settings
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error updating transcription preset', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating transcription preset',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get available transcription preset options
+     */
+    public function getTranscriptionPresetOptions()
+    {
+        try {
+            $presets = CourseTranscriptionPreset::getAvailablePresets();
+            $presetConfig = config('transcription_presets.presets', []);
+            
+            // Enhance preset data with configuration details
+            $enhancedPresets = [];
+            foreach ($presets as $presetName) {
+                $config = $presetConfig[$presetName] ?? [];
+                $enhancedPresets[$presetName] = [
+                    'name' => $presetName,
+                    'display_name' => ucfirst($presetName),
+                    'description' => $config['description'] ?? "Transcription preset: {$presetName}",
+                    'model' => $config['model'] ?? 'whisper-1',
+                    'language' => $config['language'] ?? 'en',
+                    'temperature' => $config['temperature'] ?? 0.0,
+                    'response_format' => $config['response_format'] ?? 'verbose_json',
+                    'timestamp_granularities' => $config['timestamp_granularities'] ?? ['segment'],
+                    'recommended_for' => $config['recommended_for'] ?? []
+                ];
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'presets' => $enhancedPresets,
+                    'default_preset' => config('transcription_presets.default_preset', 'balanced'),
+                    'available_models' => config('transcription_presets.available_models', ['whisper-1']),
+                    'supported_languages' => config('transcription_presets.supported_languages', ['en'])
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting transcription preset options', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error getting transcription preset options',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 }

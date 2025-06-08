@@ -171,6 +171,7 @@ const startTest = async () => {
         emit('test-failed', error);
     } finally {
         isTestRunning.value = false;
+        console.log('Test execution finished, isTestRunning set to false');
     }
 };
 
@@ -192,35 +193,47 @@ const monitorMultiQualityProgress = async (dispatchedJobs) => {
                         continue; // Skip already completed jobs
                     }
 
-                    const response = await axios.get(
-                        `/truefire-courses/${props.courseId}/audio-test-results/${selectedSegmentId.value}`,
-                        {
-                            params: {
-                                quality_level: job.quality_level,
-                                test_id: job.job_id
+                    try {
+                        const response = await axios.get(
+                            `/truefire-courses/${props.courseId}/audio-test-results/${selectedSegmentId.value}`,
+                            {
+                                params: {
+                                    quality_level: job.quality_level,
+                                    test_id: job.job_id
+                                }
                             }
-                        }
-                    );
+                        );
 
-                    const result = response.data;
-                    
-                    if (result.status === 'completed') {
-                        completedJobs.add(job.job_id);
+                        const result = response.data;
                         
-                        testResults.value.push({
-                            quality: job.quality_level,
-                            result: result,
-                            testIndex: job.index - 1
-                        });
+                        if (result.status === 'completed') {
+                            completedJobs.add(job.job_id);
+                            
+                            testResults.value.push({
+                                quality: job.quality_level,
+                                result: result,
+                                testIndex: job.index - 1
+                            });
+                            
+                            testProgress.value.completedTests = completedJobs.size;
+                            
+                            console.log(`Completed ${job.quality_level} quality test`);
+                        } else if (result.status === 'failed') {
+                            testProgress.value.status = 'failed';
+                            testProgress.value.message = `Test failed for ${job.quality_level} quality: ${result.error_message || 'Unknown error'}`;
+                            reject(new Error(`Test failed for ${job.quality_level} quality`));
+                            return;
+                        }
                         
-                        testProgress.value.completedTests = completedJobs.size;
-                        
-                        console.log(`Completed ${job.quality_level} quality test`);
-                    } else if (result.status === 'failed') {
-                        testProgress.value.status = 'failed';
-                        testProgress.value.message = `Test failed for ${job.quality_level} quality: ${result.error_message || 'Unknown error'}`;
-                        reject(new Error(`Test failed for ${job.quality_level} quality`));
-                        return;
+                    } catch (jobError) {
+                        // Handle 404 and other errors for individual job polling
+                        if (jobError.response?.status === 404) {
+                            // 404 is expected when test results don't exist yet - continue polling
+                            console.log(`Test results not ready yet for ${job.quality_level} (${job.job_id})`);
+                        } else {
+                            // Log other errors but continue polling
+                            console.warn(`Error polling for ${job.quality_level} quality:`, jobError.message);
+                        }
                     }
                 }
 
@@ -246,6 +259,11 @@ const monitorMultiQualityProgress = async (dispatchedJobs) => {
                         endTime: new Date(),
                         results: testResults.value
                     };
+                    
+                    // Stop the test running state
+                    isTestRunning.value = false;
+                    
+                    console.log('All tests completed, stopping polling and enabling modal close');
                     emit('test-completed', testResults.value);
                     resolve(testResults.value);
                     return;
@@ -261,8 +279,16 @@ const monitorMultiQualityProgress = async (dispatchedJobs) => {
 
             } catch (error) {
                 console.error('Error polling multi-quality test progress:', error);
-                // Continue polling despite errors, but with exponential backoff
-                setTimeout(poll, Math.min(pollInterval * 2, 10000));
+                
+                // If we're still within the time limit, continue polling with backoff
+                if (Date.now() - startTime < maxPollingTime) {
+                    const backoffInterval = Math.min(pollInterval * 2, 10000);
+                    console.log(`Retrying polling in ${backoffInterval}ms due to error:`, error.message);
+                    setTimeout(poll, backoffInterval);
+                } else {
+                    // If we've exceeded the time limit, reject with timeout
+                    reject(new Error(`Polling timeout after ${maxPollingTime/1000}s - last error: ${error.message}`));
+                }
             }
         };
 
@@ -383,9 +409,15 @@ const resetTest = () => {
 };
 
 const closePanel = () => {
-    if (!isTestRunning.value) {
+    // Allow closing if not running OR if completed/failed
+    if (!isTestRunning.value || testProgress.value.status === 'completed' || testProgress.value.status === 'failed') {
         resetTest();
         emit('close');
+    } else {
+        console.log('Cannot close panel: test is still running', { 
+            isTestRunning: isTestRunning.value, 
+            status: testProgress.value.status 
+        });
     }
 };
 

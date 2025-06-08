@@ -97,7 +97,7 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
             }
 
             $courseDir = "truefire-courses/{$this->course->id}";
-            $disk = config('filesystems.default');
+            $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             $processedCount = 0;
             $skippedCount = 0;
             $errorCount = 0;
@@ -140,6 +140,8 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                             'course_id' => $this->course->id,
                             'segment_id' => $segment->id,
                             'video_file_path' => $videoFilePath,
+                            'disk' => $disk,
+                            'full_path_attempted' => Storage::disk($disk)->path($videoFilePath),
                             'workflow_step' => 'segment_file_not_found'
                         ]);
                         $skippedCount++;
@@ -151,7 +153,7 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                         'course_batch_processing' => true,
                         'master_log_id' => $masterLog->id,
                         'for_transcription' => $this->forTranscription,
-                        'output_format' => $this->forTranscription ? 'mp3' : 'wav',
+                        'output_format' => 'wav', // Always WAV for Whisper compatibility
                         'simple_naming' => $this->forTranscription, // Use simple naming for transcription
                         'sample_rate' => $this->forTranscription ? 16000 : 44100,
                         'channels' => $this->forTranscription ? 1 : 2,

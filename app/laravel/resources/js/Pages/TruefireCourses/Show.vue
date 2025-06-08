@@ -8,30 +8,13 @@ import AudioTestResults from '@/Components/AudioTestResults.vue';
 import AudioTestHistory from '@/Components/AudioTestHistory.vue';
 import BatchTestManager from '@/Components/BatchTestManager.vue';
 import CoursePresetManager from '@/Components/CoursePresetManager.vue';
+import CourseTranscriptionPresetManager from '@/Components/CourseTranscriptionPresetManager.vue';
 
 const props = defineProps({
     course: Object,
     segmentsWithSignedUrls: Array
 });
 
-// Download state management
-const isDownloading = ref(false);
-const downloadStatus = ref(null);
-const queueStatus = ref(null);
-const downloadingSegments = ref(new Set()); // Track which segments are being downloaded
-const downloadProgress = ref({
-    current: 0,
-    total: 0,
-    successful: 0,
-    failed: 0,
-    skipped: 0,
-    processing: 0,
-    queued: 0,
-    errors: []
-});
-const showConfirmDialog = ref(false);
-const showProgressDialog = ref(false);
-const showResultsDialog = ref(false);
 const notifications = ref([]); // For toast notifications
 
 // Audio testing state
@@ -40,6 +23,7 @@ const showAudioTestResults = ref(false);
 const showAudioTestHistory = ref(false);
 const showBatchTestManager = ref(false);
 const showCoursePresetManager = ref(false);
+const showCourseTranscriptionPresetManager = ref(false);
 const selectedTestSegmentId = ref(null);
 const currentTestResults = ref(null);
 
@@ -52,14 +36,6 @@ const hasSegments = computed(() => {
     return totalSegments.value > 0;
 });
 
-const downloadedCount = computed(() => {
-    return downloadStatus.value ? downloadStatus.value.downloaded_segments : 0;
-});
-
-const downloadProgressPercent = computed(() => {
-    if (!downloadStatus.value || downloadStatus.value.total_segments === 0) return 0;
-    return Math.round((downloadStatus.value.downloaded_segments / downloadStatus.value.total_segments) * 100);
-});
 
 // Copy to clipboard function
 const copyToClipboard = async (text) => {
@@ -78,101 +54,6 @@ const copyToClipboard = async (text) => {
     }
 };
 
-// Load download status on component mount
-const loadDownloadStatus = async () => {
-    try {
-        const response = await axios.get(`/truefire-courses/${props.course.id}/download-status`);
-        downloadStatus.value = response.data;
-        console.log('Download status loaded:', response.data);
-    } catch (error) {
-        console.error('Failed to load download status:', error);
-    }
-};
-
-// Load queue status to see segment processing states
-const loadQueueStatus = async () => {
-    try {
-        const response = await axios.get(`/truefire-courses/${props.course.id}/queue-status`);
-        queueStatus.value = response.data;
-        console.log('Queue status loaded:', response.data);
-    } catch (error) {
-        console.error('Failed to load queue status:', error);
-    }
-};
-
-// Load both statuses when component mounts
-loadDownloadStatus();
-loadQueueStatus();
-
-// Download functionality
-const showDownloadConfirmation = () => {
-    if (!hasSegments.value) {
-        alert('No segments available for download.');
-        return;
-    }
-    showConfirmDialog.value = true;
-};
-
-const cancelDownload = () => {
-    showConfirmDialog.value = false;
-};
-
-const confirmDownload = () => {
-    showConfirmDialog.value = false;
-    startDownload();
-};
-
-// NEW: Download individual segment
-const downloadSegment = async (segment) => {
-    try {
-        console.log('🔥 Downloading individual segment:', segment.id);
-        
-        // Add visual feedback immediately
-        downloadingSegments.value.add(segment.id);
-        
-        // Check if already downloaded
-        if (segment.is_downloaded) {
-            if (!confirm(`Segment ${segment.id} is already downloaded. Download again?`)) {
-                downloadingSegments.value.delete(segment.id);
-                return;
-            }
-        }
-        
-        // Show immediate feedback
-        showNotification(`Queuing download for segment ${segment.id}...`, 'info');
-        
-        // Make API call to trigger download for this specific segment
-        const response = await axios.post(`/truefire-courses/${props.course.id}/download-segment/${segment.id}`);
-        const result = response.data;
-        
-        console.log('✅ Segment download job queued:', result);
-        
-        // Update queue status immediately in the UI
-        if (queueStatus.value && queueStatus.value.segments) {
-            const segmentIndex = queueStatus.value.segments.findIndex(s => s.segment_id === segment.id);
-            if (segmentIndex !== -1) {
-                queueStatus.value.segments[segmentIndex].status = 'queued';
-            }
-            // Update status counts
-            queueStatus.value.status_counts.queued = (queueStatus.value.status_counts.queued || 0) + 1;
-            queueStatus.value.status_counts.not_started = Math.max(0, (queueStatus.value.status_counts.not_started || 0) - 1);
-        }
-        
-        // Show success notification
-        showNotification(`✅ Segment ${segment.id} queued for download!`, 'success');
-        
-        // Refresh status to get accurate queue state (but don't wait for it)
-        setTimeout(() => {
-            loadQueueStatus();
-            downloadingSegments.value.delete(segment.id);
-        }, 1000);
-        
-    } catch (error) {
-        console.error('❌ Failed to queue segment download:', error);
-        downloadingSegments.value.delete(segment.id);
-        showNotification(`❌ Failed to queue segment ${segment.id}: ${error.response?.data?.message || error.message}`, 'error');
-    }
-};
 
 // Toast notification system
 const showNotification = (message, type = 'info') => {
@@ -197,383 +78,6 @@ const removeNotification = (id) => {
     }
 };
 
-const startTestDownload = async () => {
-    console.log('=== STARTING TEST DOWNLOAD (1 FILE) ===');
-    console.log('Course ID:', props.course.id);
-    
-    isDownloading.value = true;
-    showProgressDialog.value = true;
-    
-    // Reset progress
-    downloadProgress.value = {
-        current: 0,
-        total: 0,
-        successful: 0,
-        failed: 0,
-        skipped: 0,
-        processing: 0,
-        queued: 0,
-        errors: []
-    };
-
-    try {
-        console.log('🧪 Triggering test download job (1 file only)...');
-        
-        // Show immediate feedback
-        showNotification('Queuing test download job (1 file)...', 'info');
-        
-        // Make API call to trigger server-side test download (1 file only)
-        const response = await axios.get(`/truefire-courses/${props.course.id}/download-all?test=1`);
-        const result = response.data;
-        
-        console.log('✅ Test download job queued successfully:', result);
-        console.log('📊 Initial stats:', result.stats);
-        
-        // Initialize progress with queued job info
-        downloadProgress.value = {
-            current: 0,
-            total: result.stats.total_segments,
-            successful: 0,
-            failed: 0,
-            skipped: 0,
-            processing: 0,
-            queued: 0,
-            errors: []
-        };
-        
-        // Update UI for test download (just the first segment)
-        if (queueStatus.value && queueStatus.value.segments && result.stats.queued_downloads > 0) {
-            const firstNotStartedSegment = queueStatus.value.segments.find(s => s.status === 'not_started');
-            if (firstNotStartedSegment) {
-                firstNotStartedSegment.status = 'queued';
-                queueStatus.value.status_counts.queued = (queueStatus.value.status_counts.queued || 0) + 1;
-                queueStatus.value.status_counts.not_started = Math.max(0, (queueStatus.value.status_counts.not_started || 0) - 1);
-                console.log(`Updated UI: Test segment ${firstNotStartedSegment.segment_id} marked as queued`);
-            }
-        }
-        
-        // Show success notification
-        showNotification(`✅ Test download job queued successfully!`, 'success');
-        
-        // Start polling for real-time progress updates (shorter polling for test)
-        console.log('🔄 Starting real-time progress polling for test download...');
-        await pollDownloadProgress(true); // Pass true for test mode
-        
-    } catch (error) {
-        console.error('❌ Failed to start test download job:', error);
-        showNotification(`❌ Failed to queue test download: ${error.response?.data?.message || error.message}`, 'error');
-        downloadProgress.value.errors.push({
-            segment_id: 'SERVER_ERROR',
-            error: error.response?.data?.message || 'Failed to start test download job'
-        });
-        
-        isDownloading.value = false;
-        showProgressDialog.value = false;
-        showResultsDialog.value = true;
-    }
-};
-
-const startDownload = async () => {
-    console.log('=== STARTING QUEUE-BASED DOWNLOAD ===');
-    console.log('Course ID:', props.course.id);
-    
-    isDownloading.value = true;
-    showProgressDialog.value = true;
-    
-    // Reset progress
-    downloadProgress.value = {
-        current: 0,
-        total: 0,
-        successful: 0,
-        failed: 0,
-        skipped: 0,
-        processing: 0,
-        queued: 0,
-        errors: []
-    };
-
-    try {
-        console.log('🚀 Triggering server-side download jobs...');
-        
-        // Show immediate feedback
-        showNotification('Queuing download jobs for all segments...', 'info');
-        
-        // Make API call to trigger server-side downloads
-        const response = await axios.get(`/truefire-courses/${props.course.id}/download-all`);
-        const result = response.data;
-        
-        console.log('✅ Download jobs queued successfully:', result);
-        console.log('📊 Initial stats:', result.stats);
-        
-        // Initialize progress with queued job info
-        downloadProgress.value = {
-            current: 0,
-            total: result.stats.total_segments,
-            successful: 0,
-            failed: 0,
-            skipped: 0,
-            processing: 0,
-            queued: 0,
-            errors: []
-        };
-        
-        // Immediately update UI to show segments as queued
-        if (queueStatus.value && queueStatus.value.segments) {
-            let queuedCount = 0;
-            queueStatus.value.segments.forEach(segment => {
-                // Only update segments that were actually queued (not already downloaded)
-                if (segment.status === 'not_started') {
-                    segment.status = 'queued';
-                    queuedCount++;
-                }
-            });
-            
-            // Update status counts
-            queueStatus.value.status_counts.queued = (queueStatus.value.status_counts.queued || 0) + queuedCount;
-            queueStatus.value.status_counts.not_started = Math.max(0, (queueStatus.value.status_counts.not_started || 0) - queuedCount);
-            
-            console.log(`Updated UI: ${queuedCount} segments marked as queued`);
-        }
-        
-        // Show success notification
-        showNotification(`✅ ${result.stats.queued_downloads} download jobs queued successfully!`, 'success');
-        
-        // Start polling for real-time progress updates
-        console.log('🔄 Starting real-time progress polling...');
-        await pollDownloadProgress();
-        
-    } catch (error) {
-        console.error('❌ Failed to start download jobs:', error);
-        showNotification(`❌ Failed to queue download jobs: ${error.response?.data?.message || error.message}`, 'error');
-        downloadProgress.value.errors.push({
-            segment_id: 'SERVER_ERROR',
-            error: error.response?.data?.message || 'Failed to start download jobs'
-        });
-        
-        isDownloading.value = false;
-        showProgressDialog.value = false;
-        showResultsDialog.value = true;
-    }
-};
-
-// NEW: Poll for real-time download progress
-const pollDownloadProgress = async (isTestMode = false) => {
-    console.log('📡 Starting progress polling...', isTestMode ? '(TEST MODE)' : '(FULL DOWNLOAD)');
-    const maxPollingTime = isTestMode ? 5 * 60 * 1000 : 30 * 60 * 1000; // 5 minutes for test, 30 for full
-    const pollInterval = isTestMode ? 1000 : 2000; // Poll every 1s for test, 2s for full
-    const startTime = Date.now();
-    
-    let consecutiveNoChange = 0;
-    let lastTotalProcessed = 0;
-    
-    const poll = async () => {
-        try {
-            console.log('🔍 Polling download progress...');
-            
-            // Get current download status (files on disk)
-            const statusResponse = await axios.get(`/truefire-courses/${props.course.id}/download-status`);
-            const status = statusResponse.data;
-            
-            // Get queue status for real-time segment states
-            await loadQueueStatus();
-            
-            // Get download stats from queue cache
-            let queueStats = { success: 0, failed: 0, skipped: 0 };
-            try {
-                const statsResponse = await axios.get(`/truefire-courses/${props.course.id}/download-stats`);
-                queueStats = statsResponse.data;
-                console.log('📈 Queue stats from cache:', queueStats);
-            } catch (statsError) {
-                console.log('⚠️ Could not fetch queue stats:', statsError.message);
-            }
-            
-            // Calculate total jobs processed
-            const totalProcessed = queueStats.success + queueStats.failed + queueStats.skipped;
-            const filesOnDisk = status.downloaded_segments;
-            
-            console.log('📊 Progress summary:', {
-                files_on_disk: filesOnDisk,
-                total_segments: status.total_segments,
-                queue_processed: totalProcessed,
-                queue_success: queueStats.success,
-                queue_failed: queueStats.failed,
-                queue_skipped: queueStats.skipped,
-                completion_pct: Math.round((filesOnDisk / status.total_segments) * 100) + '%'
-            });
-            
-            // Update progress with comprehensive data
-            downloadProgress.value = {
-                current: filesOnDisk, // Files actually downloaded to disk
-                total: status.total_segments, // Total segments in course
-                successful: queueStats.success, // Jobs that completed successfully
-                failed: queueStats.failed, // Jobs that failed
-                skipped: queueStats.skipped, // Jobs that were skipped (already downloaded)
-                processing: queueStatus.value?.status_counts?.processing || 0, // Currently processing
-                queued: queueStatus.value?.status_counts?.queued || 0, // Still queued
-                errors: queueStats.failed > 0 ? [{ 
-                    segment_id: 'QUEUE_ERRORS', 
-                    error: `${queueStats.failed} download jobs failed. Check logs for details.` 
-                }] : []
-            };
-            
-            // Log progress for debugging
-            console.log('📊 Updated progress:', {
-                progress_current: downloadProgress.value.current,
-                progress_total: downloadProgress.value.total,
-                progress_successful: downloadProgress.value.successful,
-                progress_failed: downloadProgress.value.failed,
-                progress_queued: downloadProgress.value.queued,
-                progress_processing: downloadProgress.value.processing
-            });
-            
-            // Check progress
-            const isComplete = filesOnDisk >= status.total_segments;
-            const hasProgress = totalProcessed > lastTotalProcessed || filesOnDisk > lastTotalProcessed;
-            
-            if (!hasProgress) {
-                consecutiveNoChange++;
-                console.log(`⏳ No progress detected (${consecutiveNoChange} consecutive polls)`);
-            } else {
-                consecutiveNoChange = 0;
-                lastTotalProcessed = Math.max(totalProcessed, filesOnDisk);
-                console.log(`✅ Progress detected: ${totalProcessed} jobs processed, ${filesOnDisk} files on disk`);
-            }
-            
-            // Stop polling conditions
-            if (isComplete) {
-                console.log('🎉 All downloads completed!');
-                await loadDownloadStatus(); // Final status update
-                isDownloading.value = false;
-                showProgressDialog.value = false;
-                showResultsDialog.value = true;
-                return;
-            }
-            
-            // Stop if no progress for too long (queue might be stuck)
-            if (consecutiveNoChange >= 30) { // 30 polls = 60 seconds of no progress
-                console.log('⚠️ No progress for 60 seconds, stopping polling');
-                downloadProgress.value.errors.push({
-                    segment_id: 'TIMEOUT',
-                    error: `Download progress stalled - ${totalProcessed} jobs processed, ${filesOnDisk} files downloaded. Queue may be stuck or paused.`
-                });
-                isDownloading.value = false;
-                showProgressDialog.value = false;
-                showResultsDialog.value = true;
-                return;
-            }
-            
-            // Stop if polling for too long
-            if (Date.now() - startTime > maxPollingTime) {
-                console.log('⚠️ Maximum polling time reached');
-                downloadProgress.value.errors.push({
-                    segment_id: 'TIMEOUT',
-                    error: `Download polling timeout - ${totalProcessed} jobs processed, ${filesOnDisk} files downloaded. Downloads may still be running in background.`
-                });
-                isDownloading.value = false;
-                showProgressDialog.value = false;
-                showResultsDialog.value = true;
-                return;
-            }
-            
-            // Continue polling
-            setTimeout(poll, pollInterval);
-            
-        } catch (error) {
-            console.error('❌ Error polling download progress:', error);
-            consecutiveNoChange++;
-            
-            // If we get too many errors, stop polling
-            if (consecutiveNoChange >= 10) {
-                downloadProgress.value.errors.push({
-                    segment_id: 'POLLING_ERROR',
-                    error: 'Failed to poll download progress: ' + error.message
-                });
-                isDownloading.value = false;
-                showProgressDialog.value = false;
-                showResultsDialog.value = true;
-                return;
-            }
-            
-            // Continue polling despite error
-            setTimeout(poll, pollInterval);
-        }
-    };
-    
-    // Start the polling loop
-    poll();
-};
-
-
-const closeResultsDialog = () => {
-    showResultsDialog.value = false;
-    // Reset progress for next download
-    downloadProgress.value = {
-        current: 0,
-        total: 0,
-        successful: 0,
-        failed: 0,
-        skipped: 0,
-        processing: 0,
-        queued: 0,
-        errors: []
-    };
-};
-
-// Refresh download status
-const refreshStatus = async () => {
-    await loadDownloadStatus();
-    await loadQueueStatus();
-};
-
-// Get queue status for a specific segment
-const getSegmentQueueStatus = (segmentId) => {
-    if (!queueStatus.value || !queueStatus.value.segments) {
-        return 'unknown';
-    }
-    
-    const segment = queueStatus.value.segments.find(s => s.segment_id === segmentId);
-    return segment ? segment.status : 'unknown';
-};
-
-// Get status display info for a segment
-const getStatusDisplay = (segmentId) => {
-    const status = getSegmentQueueStatus(segmentId);
-    
-    const statusConfig = {
-        'completed': {
-            icon: '✅',
-            text: 'Downloaded',
-            class: 'text-green-600',
-            bgClass: 'bg-green-50'
-        },
-        'processing': {
-            icon: '🔄',
-            text: 'Processing',
-            class: 'text-blue-600',
-            bgClass: 'bg-blue-50'
-        },
-        'queued': {
-            icon: '⏳',
-            text: 'Queued',
-            class: 'text-yellow-600',
-            bgClass: 'bg-yellow-50'
-        },
-        'not_started': {
-            icon: '⏸️',
-            text: 'Not Started',
-            class: 'text-gray-600',
-            bgClass: 'bg-gray-50'
-        },
-        'unknown': {
-            icon: '❓',
-            text: 'Unknown',
-            class: 'text-gray-600',
-            bgClass: 'bg-gray-50'
-        }
-    };
-    
-    return statusConfig[status] || statusConfig['unknown'];
-};
 
 // Utility functions for formatting
 const formatFileSize = (bytes) => {
@@ -595,7 +99,10 @@ const openAudioTestPanel = () => {
 
 const closeAudioTestPanel = () => {
     showAudioTestPanel.value = false;
-    selectedTestSegmentId.value = null;
+    // Only reset selectedTestSegmentId if we're not transitioning to results modal
+    if (!showAudioTestResults.value) {
+        selectedTestSegmentId.value = null;
+    }
 };
 
 const onTestStarted = (testData) => {
@@ -605,10 +112,19 @@ const onTestStarted = (testData) => {
 
 const onTestCompleted = (results) => {
     console.log('Audio test completed:', results);
+    console.log('Current selectedTestSegmentId:', selectedTestSegmentId.value);
+    
+    // Store results and ensure we preserve the segment ID
     currentTestResults.value = results;
-    showAudioTestPanel.value = false;
+    
+    // First open the results modal, then close the test panel to preserve selectedTestSegmentId
     showAudioTestResults.value = true;
-    showNotification(`Audio test completed with ${results.quality_score}/100 quality score`, 'success');
+    showAudioTestPanel.value = false;
+    
+    const qualityScore = results.quality_score || 
+                        (Array.isArray(results) && results[0]?.result?.quality_score) ||
+                        'N/A';
+    showNotification(`Audio test completed with ${qualityScore}/100 quality score`, 'success');
 };
 
 const onTestFailed = (error) => {
@@ -617,6 +133,13 @@ const onTestFailed = (error) => {
 };
 
 const openAudioTestResults = (segmentId) => {
+    // Validate segmentId before proceeding
+    if (!segmentId || segmentId === null || segmentId === undefined) {
+        console.error('Cannot open audio test results: Invalid segment ID provided:', segmentId);
+        showNotification('Cannot view test results: Invalid segment ID', 'error');
+        return;
+    }
+    
     selectedTestSegmentId.value = segmentId;
     showAudioTestResults.value = true;
 };
@@ -653,6 +176,13 @@ const closeAudioTestHistory = () => {
 };
 
 const onViewResults = (resultData) => {
+    // Validate resultData and segmentId
+    if (!resultData || !resultData.segmentId) {
+        console.error('Cannot view test results: Invalid result data provided:', resultData);
+        showNotification('Cannot view test results: Invalid data received', 'error');
+        return;
+    }
+    
     selectedTestSegmentId.value = resultData.segmentId;
     currentTestResults.value = null; // Will be loaded by the component
     closeAudioTestHistory();
@@ -711,6 +241,20 @@ const onBatchFailed = (error) => {
     console.error('Course batch processing failed:', error);
     showNotification('Course batch processing failed. Please check the logs.', 'error');
 };
+
+// Course transcription preset manager methods
+const openCourseTranscriptionPresetManager = () => {
+    showCourseTranscriptionPresetManager.value = true;
+};
+
+const closeCourseTranscriptionPresetManager = () => {
+    showCourseTranscriptionPresetManager.value = false;
+};
+
+const onTranscriptionPresetUpdated = (presetData) => {
+    console.log('Course transcription preset updated:', presetData);
+    showNotification(`Transcription preset updated to ${presetData.preset}`, 'success');
+};
 </script>
 
 <template>
@@ -723,41 +267,6 @@ const onBatchFailed = (error) => {
                     {{ course.name || course.title || `TrueFire Course #${course.id}` }}
                 </h2>
                 <div class="flex items-center space-x-3">
-                    <!-- Download Status Badge -->
-                    <div v-if="downloadStatus" class="flex items-center space-x-2">
-                        <div class="text-sm text-gray-600">
-                            <span class="font-medium">{{ downloadedCount }}</span> / {{ downloadStatus.total_segments }} downloaded
-                        </div>
-                        <div class="w-20 bg-gray-200 rounded-full h-2">
-                            <div class="bg-green-600 h-2 rounded-full transition-all duration-300" :style="{ width: downloadProgressPercent + '%' }"></div>
-                        </div>
-                        <button
-                            @click="refreshStatus"
-                            class="text-gray-500 hover:text-gray-700"
-                            title="Refresh Status"
-                        >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                            </svg>
-                        </button>
-                    </div>
-                    
-                    
-                    <button
-                        @click="showDownloadConfirmation"
-                        :disabled="!hasSegments || isDownloading"
-                        class="inline-flex items-center px-4 py-2 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700 focus:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition ease-in-out duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                        :class="{ 'opacity-50 cursor-not-allowed': !hasSegments || isDownloading }"
-                    >
-                        <svg v-if="isDownloading" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                        </svg>
-                        {{ isDownloading ? 'Downloading...' : 'Download All' }}
-                    </button>
                     <Link
                         :href="route('truefire-courses.index')"
                         class="inline-flex items-center px-4 py-2 bg-gray-800 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700 focus:bg-gray-700 active:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150"
@@ -794,47 +303,6 @@ const onBatchFailed = (error) => {
                             </div>
                         </dl>
                         
-                        <!-- Download Status Summary -->
-                        <div v-if="downloadStatus" class="mt-6 p-4 bg-blue-50 rounded-lg">
-                            <h4 class="text-sm font-medium text-blue-900 mb-2">Local Download Status</h4>
-                            <div class="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <span class="text-blue-700">Storage Path:</span>
-                                    <code class="block text-xs bg-blue-100 p-1 rounded mt-1">{{ downloadStatus.storage_path }}</code>
-                                </div>
-                                <div class="text-right">
-                                    <div class="text-blue-700">Progress: <span class="font-bold">{{ downloadedCount }}/{{ downloadStatus.total_segments }}</span></div>
-                                    <div class="text-xs text-blue-600 mt-1">{{ downloadProgressPercent }}% complete</div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Queue Status Summary -->
-                        <div v-if="queueStatus" class="mt-4 p-4 bg-green-50 rounded-lg">
-                            <h4 class="text-sm font-medium text-green-900 mb-2">Queue Status ({{ queueStatus.queue_driver }} driver)</h4>
-                            <div class="grid grid-cols-4 gap-4 text-sm">
-                                <div class="text-center">
-                                    <div class="text-2xl">✅</div>
-                                    <div class="font-bold text-green-700">{{ queueStatus.status_counts?.completed || 0 }}</div>
-                                    <div class="text-xs text-green-600">Completed</div>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-2xl">🔄</div>
-                                    <div class="font-bold text-blue-700">{{ queueStatus.status_counts?.processing || 0 }}</div>
-                                    <div class="text-xs text-blue-600">Processing</div>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-2xl">⏳</div>
-                                    <div class="font-bold text-yellow-700">{{ queueStatus.status_counts?.queued || 0 }}</div>
-                                    <div class="text-xs text-yellow-600">Queued</div>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-2xl">⏸️</div>
-                                    <div class="font-bold text-gray-700">{{ queueStatus.status_counts?.not_started || 0 }}</div>
-                                    <div class="text-xs text-gray-600">Not Started</div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
 <!-- Channels Table -->
@@ -933,9 +401,6 @@ const onBatchFailed = (error) => {
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
                                     </svg>
                                     Batch Testing
-                                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                        Phase 3
-                                    </span>
                                 </button>
                                 <button
                                     @click="openCoursePresetManager"
@@ -945,9 +410,21 @@ const onBatchFailed = (error) => {
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                     </svg>
-                                    Course Presets
+                                    Audio Presets
                                     <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        Transcription
+                                        WAV
+                                    </span>
+                                </button>
+                                <button
+                                    @click="openCourseTranscriptionPresetManager"
+                                    class="inline-flex items-center px-3 py-2 border border-indigo-300 rounded-md text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                >
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                                    </svg>
+                                    Transcription Presets
+                                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                                        Whisper
                                     </span>
                                 </button>
                                 <button
@@ -1042,7 +519,7 @@ const onBatchFailed = (error) => {
                                 <div class="flex items-start space-x-3">
                                     <div class="flex-shrink-0 w-8 h-8 bg-amber-600 rounded-full flex items-center justify-center text-white text-sm font-bold">3</div>
                                     <div>
-                                        <h5 class="font-medium text-amber-900">Batch Testing (Phase 3)</h5>
+                                        <h5 class="font-medium text-amber-900">Batch Testing</h5>
                                         <p class="text-sm text-amber-700">Test multiple segments simultaneously for efficient quality analysis.</p>
                                     </div>
                                 </div>
@@ -1085,9 +562,6 @@ const onBatchFailed = (error) => {
                                             Title
                                         </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Download Status
-                                        </th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Audio Testing
                                         </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1096,15 +570,9 @@ const onBatchFailed = (error) => {
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="segment in segmentsWithSignedUrls" :key="segment.id" class="hover:bg-gray-50" :class="getStatusDisplay(segment.id).bgClass">
+                                    <tr v-for="segment in segmentsWithSignedUrls" :key="segment.id" class="hover:bg-gray-50">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            <div class="flex items-center">
-                                                <!-- Queue Status indicator icon -->
-                                                <div class="mr-2" :class="getStatusDisplay(segment.id).class">
-                                                    <span class="text-lg">{{ getStatusDisplay(segment.id).icon }}</span>
-                                                </div>
-                                                {{ segment.id }}
-                                            </div>
+                                            {{ segment.id }}
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                             <div class="text-sm font-medium text-gray-900">{{ segment.channel_name }}</div>
@@ -1112,20 +580,6 @@ const onBatchFailed = (error) => {
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                             {{ segment.title }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <div class="flex items-center" :class="getStatusDisplay(segment.id).class">
-                                                <span class="text-lg mr-2">{{ getStatusDisplay(segment.id).icon }}</span>
-                                                <div>
-                                                    <div class="font-medium">{{ getStatusDisplay(segment.id).text }}</div>
-                                                    <div v-if="segment.is_downloaded && segment.file_size" class="text-xs text-gray-500">
-                                                        {{ formatFileSize(segment.file_size) }}
-                                                    </div>
-                                                    <div v-if="segment.is_downloaded && segment.downloaded_at" class="text-xs text-gray-500">
-                                                        {{ formatDate(segment.downloaded_at) }}
-                                                    </div>
-                                                </div>
-                                            </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">
@@ -1154,26 +608,6 @@ const onBatchFailed = (error) => {
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">
-                                                <!-- Download Button -->
-                                                <button
-                                                    v-if="segment.signed_url"
-                                                    @click="downloadSegment(segment)"
-                                                    :disabled="downloadingSegments.has(segment.id)"
-                                                    class="inline-flex items-center px-3 py-1 bg-green-50 text-green-700 rounded-md text-xs hover:bg-green-100 transition-all duration-200"
-                                                    :class="{ 
-                                                        'opacity-50 cursor-not-allowed': segment.is_downloaded && !downloadingSegments.has(segment.id),
-                                                        'animate-pulse bg-yellow-50 text-yellow-700': downloadingSegments.has(segment.id)
-                                                    }"
-                                                >
-                                                    <svg v-if="downloadingSegments.has(segment.id)" class="animate-spin w-3 h-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                    </svg>
-                                                    <svg v-else class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                    </svg>
-                                                    {{ downloadingSegments.has(segment.id) ? 'Queuing...' : (segment.is_downloaded ? 'Re-download' : 'Download') }}
-                                                </button>
                                                 <!-- Test Link -->
                                                 <a
                                                     v-if="segment.signed_url"
@@ -1208,194 +642,6 @@ const onBatchFailed = (error) => {
             </div>
         </div>
 
-        <!-- Confirmation Dialog -->
-        <div v-if="showConfirmDialog" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-            <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
-                <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                        <div class="sm:flex sm:items-start">
-                            <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                                <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                            </div>
-                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
-                                    Download All Course Videos
-                                </h3>
-                                <div class="mt-2">
-                                    <p class="text-sm text-gray-500">
-                                        This will download all {{ downloadStatus ? downloadStatus.total_segments : totalSegments }} video files from this course to the server's local storage.
-                                        Files will be saved as "{segment_id}.mp4" in the course directory.
-                                    </p>
-                                    <p class="text-sm text-gray-500 mt-2">
-                                        <strong>Server-side download:</strong> Files will be downloaded directly to the server using signed URLs,
-                                        which is more cost-effective than repeated CloudFront access.
-                                    </p>
-                                    <div v-if="downloadStatus" class="mt-2 text-xs text-blue-600">
-                                        {{ downloadedCount }} files already downloaded, {{ totalSegments - downloadedCount }} remaining
-                                    </div>
-                                    <p class="text-sm text-gray-500 mt-2">
-                                        Are you sure you want to proceed?
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                        <button @click="confirmDownload" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
-                            Download All
-                        </button>
-                        <button @click="cancelDownload" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Progress Dialog -->
-        <div v-if="showProgressDialog" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-            <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
-                <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                        <div class="sm:flex sm:items-start">
-                            <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                                <svg class="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            </div>
-                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                                <h3 class="text-lg leading-6 font-medium text-gray-900">
-                                    Downloading Course Videos
-                                </h3>
-                                <div class="mt-2">
-                                    <p class="text-sm text-gray-500">
-                                        Server is downloading {{ downloadProgress.total || 0 }} files...
-                                    </p>
-                                    
-                                    <!-- Progress Bar -->
-                                    <div class="w-full bg-gray-200 rounded-full h-3 mt-3">
-                                        <div
-                                            class="bg-blue-600 h-3 rounded-full transition-all duration-300"
-                                            :style="{ width: downloadProgress.total > 0 ? (downloadProgress.current / downloadProgress.total * 100) + '%' : '0%' }"
-                                        ></div>
-                                    </div>
-                                    
-                                    <!-- Detailed Progress Stats -->
-                                    <div class="text-xs text-gray-500 mt-3 space-y-2">
-                                        <!-- Main Progress -->
-                                        <div class="text-center">
-                                            <div class="font-medium text-sm text-gray-700">
-                                                {{ downloadProgress.current || 0 }} / {{ downloadProgress.total || 0 }} files completed
-                                            </div>
-                                            <div class="text-blue-600">
-                                                {{ downloadProgress.total > 0 ? Math.round((downloadProgress.current / downloadProgress.total) * 100) : 0 }}% complete
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Queue Status Grid -->
-                                        <div class="grid grid-cols-4 gap-2 text-center bg-gray-50 rounded-lg p-2">
-                                            <div class="text-green-600">
-                                                <div class="font-bold">{{ downloadProgress.successful || 0 }}</div>
-                                                <div class="text-xs">✅ Success</div>
-                                            </div>
-                                            <div class="text-blue-600">
-                                                <div class="font-bold">{{ downloadProgress.processing || 0 }}</div>
-                                                <div class="text-xs">🔄 Processing</div>
-                                            </div>
-                                            <div class="text-yellow-600">
-                                                <div class="font-bold">{{ downloadProgress.queued || 0 }}</div>
-                                                <div class="text-xs">⏳ Queued</div>
-                                            </div>
-                                            <div class="text-red-600" v-if="downloadProgress.failed > 0">
-                                                <div class="font-bold">{{ downloadProgress.failed || 0 }}</div>
-                                                <div class="text-xs">❌ Failed</div>
-                                            </div>
-                                            <div class="text-gray-600" v-else>
-                                                <div class="font-bold">{{ downloadProgress.skipped || 0 }}</div>
-                                                <div class="text-xs">⏭️ Skipped</div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="text-blue-600 text-center">
-                                            Queue jobs running in background...
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Results Dialog -->
-        <div v-if="showResultsDialog" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-            <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
-                <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
-                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                        <div class="sm:flex sm:items-start">
-                            <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full sm:mx-0 sm:h-10 sm:w-10" :class="downloadProgress.failed === 0 ? 'bg-green-100' : 'bg-yellow-100'">
-                                <svg v-if="downloadProgress.failed === 0" class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                                </svg>
-                                <svg v-else class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                </svg>
-                            </div>
-                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                                <h3 class="text-lg leading-6 font-medium text-gray-900">
-                                    Download Complete
-                                </h3>
-                                <div class="mt-2">
-                                    <div class="grid grid-cols-3 gap-4 mb-4">
-                                        <div class="bg-green-50 p-3 rounded-lg">
-                                            <div class="text-sm font-medium text-green-800">New Downloads</div>
-                                            <div class="text-2xl font-bold text-green-600">{{ downloadProgress.successful }}</div>
-                                        </div>
-                                        <div class="bg-blue-50 p-3 rounded-lg">
-                                            <div class="text-sm font-medium text-blue-800">Already Downloaded</div>
-                                            <div class="text-2xl font-bold text-blue-600">{{ downloadedCount - downloadProgress.successful }}</div>
-                                        </div>
-                                        <div class="bg-red-50 p-3 rounded-lg" v-if="downloadProgress.failed > 0">
-                                            <div class="text-sm font-medium text-red-800">Failed Downloads</div>
-                                            <div class="text-2xl font-bold text-red-600">{{ downloadProgress.failed }}</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div v-if="downloadStatus" class="mb-4 p-3 bg-gray-50 rounded-lg">
-                                        <div class="text-sm font-medium text-gray-700">Files stored in:</div>
-                                        <code class="text-xs text-gray-600">{{ downloadStatus.storage_path }}</code>
-                                    </div>
-                                    
-                                    <div v-if="downloadProgress.errors.length > 0" class="mt-4">
-                                        <h4 class="text-sm font-medium text-gray-900 mb-2">Error Details:</h4>
-                                        <div class="max-h-32 overflow-y-auto bg-gray-50 rounded-md p-3">
-                                            <div v-for="error in downloadProgress.errors" :key="error.segment_id" class="text-xs text-red-600 mb-1">
-                                                <strong>{{ error.segment_id }}:</strong> {{ error.error }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                        <button @click="closeResultsDialog" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <!-- Toast Notifications -->
         <div class="fixed top-4 right-4 z-50 space-y-2">
@@ -1493,11 +739,20 @@ const onBatchFailed = (error) => {
         <CoursePresetManager
             :show="showCoursePresetManager"
             :course-id="course.id"
+            :course="course"
             @close="closeCoursePresetManager"
             @preset-updated="onPresetUpdated"
             @batch-started="onBatchStarted"
             @batch-completed="onBatchCompleted"
             @batch-failed="onBatchFailed"
+        />
+
+        <CourseTranscriptionPresetManager
+            :show="showCourseTranscriptionPresetManager"
+            :course-id="course.id"
+            :course="course"
+            @close="closeCourseTranscriptionPresetManager"
+            @preset-updated="onTranscriptionPresetUpdated"
         />
     </AuthenticatedLayout>
 </template>

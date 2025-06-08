@@ -265,7 +265,7 @@ class VideoController extends Controller
             \App\Jobs\AudioExtractionJob::dispatch($video);
             
             return redirect()->route('videos.show', $video)
-                ->with('success', 'Transcription process started. Check back later for results.');
+                ->with('success', 'Audio extraction started. You will need to approve the audio quality before transcription begins.');
         } catch (\Exception $e) {
             // Handle exception
             Log::error('Exception when requesting transcription', [
@@ -279,6 +279,63 @@ class VideoController extends Controller
             
             return redirect()->route('videos.show', $video)
                 ->with('error', 'An error occurred: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Approve audio extraction and trigger transcription.
+     */
+    public function approveAudioExtraction(Request $request, Video $video)
+    {
+        try {
+            // Validate that the video is in the correct state for approval
+            if ($video->status !== 'audio_extracted') {
+                return redirect()->route('videos.show', $video)
+                    ->with('error', 'Video is not ready for audio approval. Current status: ' . $video->status);
+            }
+            
+            // Validate that audio file exists
+            if (empty($video->audio_path)) {
+                return redirect()->route('videos.show', $video)
+                    ->with('error', 'No audio file found for this video.');
+            }
+            
+            // Validate request data
+            $validated = $request->validate([
+                'approved_by' => 'required|string|max:255',
+                'notes' => 'nullable|string|max:1000'
+            ]);
+            
+            // Update the video with approval information
+            $video->update([
+                'audio_extraction_approved' => true,
+                'audio_extraction_approved_at' => now(),
+                'audio_extraction_approved_by' => $validated['approved_by'],
+                'audio_extraction_notes' => $validated['notes'] ?? null,
+                'status' => 'processing'
+            ]);
+            
+            // Dispatch the job to process the approved audio extraction
+            \App\Jobs\ProcessApprovedAudioExtractionJob::dispatch($video);
+            
+            Log::info('Audio extraction approved via web interface', [
+                'video_id' => $video->id,
+                'approved_by' => $validated['approved_by'],
+                'notes' => $validated['notes'] ?? null,
+                'audio_path' => $video->audio_path
+            ]);
+            
+            return redirect()->route('videos.show', $video)
+                ->with('success', 'Audio extraction approved! Transcription process has been started.');
+                
+        } catch (\Exception $e) {
+            Log::error('Error approving audio extraction via web interface', [
+                'video_id' => $video->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return redirect()->route('videos.show', $video)
+                ->with('error', 'Error approving audio extraction: ' . $e->getMessage());
         }
     }
 }

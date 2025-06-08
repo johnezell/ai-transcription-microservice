@@ -6,10 +6,6 @@ use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\TruefireCourse;
 use App\Models\LocalTruefireCourse;
-use App\Models\Channel;
-use App\Models\LocalTruefireChannel;
-use App\Models\Segment;
-use App\Models\LocalTruefireSegment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -18,25 +14,24 @@ class LocalTruefireCourseSeeder extends Seeder
     /**
      * Run the database seeds.
      *
-     * This seeder copies all TrueFire courses, channels, and segments from the external database
+     * This seeder copies all TrueFire courses from the external database
      * to our local database for better performance and relationship management.
+     * 
+     * Note: This seeder only handles courses. Use LocalTruefireChannelSeeder
+     * and LocalTruefireSegmentSeeder for channels and segments respectively.
      */
     public function run(): void
     {
-        $this->command->info('Starting TrueFire data synchronization...');
+        $this->command->info('Starting TrueFire courses synchronization...');
         
         try {
             // Get total counts for progress tracking
             $totalCourses = DB::connection('truefire')->table('courses')->count();
-            $totalChannels = DB::connection('truefire')->table('channels.channels')->count();
-            $totalSegments = DB::connection('truefire')->table('channels.segments')->count();
             
-            $this->command->info("Found {$totalCourses} courses, {$totalChannels} channels, and {$totalSegments} segments to sync");
+            $this->command->info("Found {$totalCourses} courses to sync");
             
-            // Clear existing local data (in reverse dependency order)
-            $this->command->info('Clearing existing local data...');
-            LocalTruefireSegment::truncate();
-            LocalTruefireChannel::truncate();
+            // Clear existing local courses data
+            $this->command->info('Clearing existing local courses data...');
             LocalTruefireCourse::truncate();
             
             // Process courses in chunks to avoid memory issues
@@ -101,20 +96,9 @@ class LocalTruefireCourseSeeder extends Seeder
             $localCoursesCount = LocalTruefireCourse::count();
             $this->command->info("Local courses table now contains: {$localCoursesCount} records");
             
-            // Now sync channels
-            $this->syncChannels();
-            
-            // Finally sync segments
-            $this->syncSegments();
-            
-            // Final verification
-            $localChannelsCount = LocalTruefireChannel::count();
-            $localSegmentsCount = LocalTruefireSegment::count();
-            
-            $this->command->info("=== Final Synchronization Results ===");
-            $this->command->info("Courses: {$localCoursesCount} records");
-            $this->command->info("Channels: {$localChannelsCount} records");
-            $this->command->info("Segments: {$localSegmentsCount} records");
+            $this->command->info("=== Courses Synchronization Complete ===");
+            $this->command->info("To sync channels, run: php artisan db:seed --class=LocalTruefireChannelSeeder");
+            $this->command->info("To sync segments, run: php artisan db:seed --class=LocalTruefireSegmentSeeder (when available)");
             
         } catch (\Exception $e) {
             Log::error('Critical error during TrueFire courses synchronization', [
@@ -255,213 +239,5 @@ class LocalTruefireCourseSeeder extends Seeder
         }
         
         return $courseData;
-    }
-
-    /**
-     * Synchronize channels from external database to local database.
-     */
-    private function syncChannels(): void
-    {
-        $this->command->info('Starting channels synchronization...');
-        
-        try {
-            $totalChannels = DB::connection('truefire')->table('channels.channels')->count();
-            $this->command->info("Found {$totalChannels} channels to sync");
-            
-            $chunkSize = 100;
-            $processedCount = 0;
-            $errorCount = 0;
-            
-            DB::connection('truefire')->table('channels.channels')
-                ->orderBy('id')
-                ->chunk($chunkSize, function ($channels) use (&$processedCount, &$errorCount) {
-                    $localChannels = [];
-                    
-                    foreach ($channels as $channel) {
-                        try {
-                            // Convert stdClass to array and prepare for local insertion
-                            $channelData = (array) $channel;
-                            
-                            // Add timestamps
-                            $channelData['created_at'] = now();
-                            $channelData['updated_at'] = now();
-                            
-                            // Handle any data type conversions if needed
-                            $channelData = $this->sanitizeChannelData($channelData);
-                            
-                            $localChannels[] = $channelData;
-                            $processedCount++;
-                            
-                        } catch (\Exception $e) {
-                            $errorCount++;
-                            Log::error('Error processing channel during sync', [
-                                'channel_id' => $channel->id ?? 'unknown',
-                                'error' => $e->getMessage()
-                            ]);
-                        }
-                    }
-                    
-                    // Bulk insert the chunk
-                    if (!empty($localChannels)) {
-                        try {
-                            LocalTruefireChannel::insert($localChannels);
-                            $this->command->info("Processed {$processedCount} channels...");
-                        } catch (\Exception $e) {
-                            $errorCount += count($localChannels);
-                            Log::error('Error during channels bulk insert', [
-                                'chunk_size' => count($localChannels),
-                                'error' => $e->getMessage()
-                            ]);
-                        }
-                    }
-                });
-            
-            $this->command->info("Channels synchronization completed!");
-            $this->command->info("Successfully processed: {$processedCount} channels");
-            
-            if ($errorCount > 0) {
-                $this->command->warn("Channel errors encountered: {$errorCount}");
-            }
-            
-        } catch (\Exception $e) {
-            Log::error('Critical error during channels synchronization', [
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
-        }
-    }
-
-    /**
-     * Synchronize segments from external database to local database.
-     */
-    private function syncSegments(): void
-    {
-        $this->command->info('Starting segments synchronization...');
-        
-        try {
-            $totalSegments = DB::connection('truefire')->table('channels.segments')->count();
-            $this->command->info("Found {$totalSegments} segments to sync");
-            
-            $chunkSize = 500; // Larger chunk size for segments
-            $processedCount = 0;
-            $errorCount = 0;
-            
-            DB::connection('truefire')->table('channels.segments')
-                ->orderBy('id')
-                ->chunk($chunkSize, function ($segments) use (&$processedCount, &$errorCount) {
-                    $localSegments = [];
-                    
-                    foreach ($segments as $segment) {
-                        try {
-                            // Convert stdClass to array and prepare for local insertion
-                            $segmentData = (array) $segment;
-                            
-                            // Add timestamps
-                            $segmentData['created_at'] = now();
-                            $segmentData['updated_at'] = now();
-                            
-                            // Handle any data type conversions if needed
-                            $segmentData = $this->sanitizeSegmentData($segmentData);
-                            
-                            $localSegments[] = $segmentData;
-                            $processedCount++;
-                            
-                        } catch (\Exception $e) {
-                            $errorCount++;
-                            Log::error('Error processing segment during sync', [
-                                'segment_id' => $segment->id ?? 'unknown',
-                                'error' => $e->getMessage()
-                            ]);
-                        }
-                    }
-                    
-                    // Bulk insert the chunk
-                    if (!empty($localSegments)) {
-                        try {
-                            LocalTruefireSegment::insert($localSegments);
-                            $this->command->info("Processed {$processedCount} segments...");
-                        } catch (\Exception $e) {
-                            $errorCount += count($localSegments);
-                            Log::error('Error during segments bulk insert', [
-                                'chunk_size' => count($localSegments),
-                                'error' => $e->getMessage()
-                            ]);
-                        }
-                    }
-                });
-            
-            $this->command->info("Segments synchronization completed!");
-            $this->command->info("Successfully processed: {$processedCount} segments");
-            
-            if ($errorCount > 0) {
-                $this->command->warn("Segment errors encountered: {$errorCount}");
-            }
-            
-        } catch (\Exception $e) {
-            Log::error('Critical error during segments synchronization', [
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
-        }
-    }
-
-    /**
-     * Sanitize channel data for local database insertion.
-     */
-    private function sanitizeChannelData(array $channelData): array
-    {
-        // Handle boolean fields
-        $booleanFields = ['new_item', 'on_sale', 'top_picks'];
-        foreach ($booleanFields as $field) {
-            if (isset($channelData[$field])) {
-                $channelData[$field] = (bool) $channelData[$field];
-            }
-        }
-        
-        // Handle date fields
-        if (isset($channelData['date_modified']) && $channelData['date_modified'] === '0000-00-00 00:00:00') {
-            $channelData['date_modified'] = null;
-        }
-        
-        // Handle time fields
-        if (isset($channelData['run_time']) && $channelData['run_time'] === '00:00:00') {
-            $channelData['run_time'] = '00:00:00';
-        }
-        
-        // Handle numeric fields
-        $numericFields = ['level1', 'tf_itemid', 'tf_authorid', 'courseid'];
-        foreach ($numericFields as $field) {
-            if (isset($channelData[$field]) && $channelData[$field] === '') {
-                $channelData[$field] = null;
-            }
-        }
-        
-        return $channelData;
-    }
-
-    /**
-     * Sanitize segment data for local database insertion.
-     */
-    private function sanitizeSegmentData(array $segmentData): array
-    {
-        // Handle boolean fields
-        if (isset($segmentData['is_hd'])) {
-            $segmentData['is_hd'] = (bool) $segmentData['is_hd'];
-        }
-        
-        // Handle date fields
-        if (isset($segmentData['document_date']) && $segmentData['document_date'] === '0000-00-00 00:00:00') {
-            $segmentData['document_date'] = null;
-        }
-        
-        // Handle numeric fields
-        $numericFields = ['channel_id', 'sub_channel_id', 'item_order', 'runtime'];
-        foreach ($numericFields as $field) {
-            if (isset($segmentData[$field]) && $segmentData[$field] === '') {
-                $segmentData[$field] = null;
-            }
-        }
-        
-        return $segmentData;
     }
 }

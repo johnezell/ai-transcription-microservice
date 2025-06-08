@@ -27,6 +27,10 @@ class Video extends Model
         'audio_path',
         'audio_duration',
         'audio_size',
+        'audio_extraction_approved',
+        'audio_extraction_approved_at',
+        'audio_extraction_approved_by',
+        'audio_extraction_notes',
         'transcript_path',
         'transcript_text',
         'transcript_json',
@@ -50,6 +54,8 @@ class Video extends Model
         'size_bytes' => 'integer',
         'audio_size' => 'integer',
         'audio_duration' => 'float',
+        'audio_extraction_approved' => 'boolean',
+        'audio_extraction_approved_at' => 'datetime',
         'terminology_count' => 'integer',
         'terminology_metadata' => 'array',
         'transcript_json' => 'array',
@@ -206,11 +212,34 @@ class Video extends Model
     {
         return in_array($this->status, [
             'processing', 
-            'extracting_audio', 
+            'extracting_audio',
+            'audio_extracted', 
             'transcribing', 
             'transcribed',
             'processing_music_terms'
         ]);
+    }
+    
+    /**
+     * Check if the video is ready for audio extraction approval.
+     * 
+     * @return bool
+     */
+    public function getIsReadyForAudioApprovalAttribute()
+    {
+        return $this->status === 'audio_extracted' && 
+               !empty($this->audio_path) && 
+               !$this->audio_extraction_approved;
+    }
+    
+    /**
+     * Check if the audio extraction has been approved.
+     * 
+     * @return bool
+     */
+    public function getIsAudioApprovedAttribute()
+    {
+        return $this->audio_extraction_approved === true;
     }
     
     /**

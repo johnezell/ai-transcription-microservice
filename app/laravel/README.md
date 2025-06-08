@@ -59,3 +59,24 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## S3 Signed URL Configuration
+
+To improve performance when assets are localized, S3 signed URL generation can be disabled:
+
+### Environment Configuration
+
+Add this to your `.env` file:
+
+```bash
+# Disable S3 signed URL generation (default: false)
+# Set to true only if you need S3 download functionality
+TRUEFIRE_S3_ENABLED=false
+```
+
+### Performance Impact
+
+- **Disabled (false)**: Pages load faster, no S3 API calls
+- **Enabled (true)**: Generates S3 signed URLs for all segments (slower loading)
+
+When `TRUEFIRE_S3_ENABLED=false`, the `/truefire-courses/{id}` page will skip S3 signed URL generation, significantly improving load times since assets are now localized.

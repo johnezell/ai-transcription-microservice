@@ -70,18 +70,82 @@ def calculate_confidence(segments):
     # Calculate mean probability
     return sum(probabilities) / len(probabilities)
 
-def process_audio(audio_path, model_name="base", initial_prompt=None):
-    """Process audio with Whisper and extract detailed information."""
-    logger.info(f"Processing audio: {audio_path} with model: {model_name}")
+def get_preset_config(preset_name: str) -> Dict[str, Any]:
+    """
+    Get preset configuration for transcription settings.
     
-    model = load_whisper_model(model_name)
+    Args:
+        preset_name: Name of the preset ('fast', 'balanced', 'high', 'premium')
+        
+    Returns:
+        Dictionary containing preset configuration parameters
+    """
+    presets = {
+        'fast': {
+            'model_name': 'tiny',
+            'temperature': 0,
+            'initial_prompt': 'Guitar lesson audio transcription.',
+            'word_timestamps': False
+        },
+        'balanced': {
+            'model_name': 'small',
+            'temperature': 0,
+            'initial_prompt': 'Guitar lesson with music theory and techniques.',
+            'word_timestamps': True
+        },
+        'high': {
+            'model_name': 'medium',
+            'temperature': 0.2,
+            'initial_prompt': 'Guitar lesson covering music theory, techniques, chord progressions, scales, and musical terminology.',
+            'word_timestamps': True
+        },
+        'premium': {
+            'model_name': 'large-v3',
+            'temperature': 0.3,
+            'initial_prompt': 'Comprehensive guitar instruction covering advanced music theory, complex techniques, detailed chord progressions, scales, modes, musical terminology, and educational concepts.',
+            'word_timestamps': True
+        }
+    }
+    
+    # Return the requested preset or default to 'balanced'
+    return presets.get(preset_name, presets['balanced'])
+
+def process_audio(audio_path, model_name="base", initial_prompt=None, preset_config=None):
+    """
+    Process audio with Whisper and extract detailed information.
+    
+    Args:
+        audio_path: Path to the audio file
+        model_name: Whisper model name (used for backward compatibility)
+        initial_prompt: Initial prompt for transcription (used for backward compatibility)
+        preset_config: Dictionary containing preset configuration parameters
+        
+    Returns:
+        Dictionary containing transcription results and metadata
+    """
+    # Use preset config if provided, otherwise use legacy parameters
+    if preset_config:
+        effective_model_name = preset_config['model_name']
+        effective_initial_prompt = preset_config['initial_prompt']
+        effective_temperature = preset_config['temperature']
+        effective_word_timestamps = preset_config['word_timestamps']
+        logger.info(f"Processing audio with preset configuration: {audio_path}")
+    else:
+        # Backward compatibility: use provided parameters or defaults
+        effective_model_name = model_name
+        effective_initial_prompt = initial_prompt
+        effective_temperature = 0
+        effective_word_timestamps = True
+        logger.info(f"Processing audio with legacy parameters: {audio_path} with model: {model_name}")
+    
+    model = load_whisper_model(effective_model_name)
     
     # Configure transcription settings
     settings = {
-        "model_name": model_name,
-        "initial_prompt": initial_prompt,
-        "temperature": 0,
-        "word_timestamps": True,
+        "model_name": effective_model_name,
+        "initial_prompt": effective_initial_prompt,
+        "temperature": effective_temperature,
+        "word_timestamps": effective_word_timestamps,
         "condition_on_previous_text": False,
         "language": "en",
     }
@@ -89,10 +153,10 @@ def process_audio(audio_path, model_name="base", initial_prompt=None):
     # Perform transcription
     result = model.transcribe(
         str(audio_path),
-        initial_prompt=initial_prompt,
+        initial_prompt=effective_initial_prompt,
         language=settings["language"],
-        temperature=settings["temperature"],
-        word_timestamps=settings["word_timestamps"],
+        temperature=effective_temperature,
+        word_timestamps=effective_word_timestamps,
         condition_on_previous_text=settings["condition_on_previous_text"]
     )
     
@@ -189,7 +253,17 @@ def test_laravel_connectivity():
 
 @app.route('/process', methods=['POST'])
 def process_transcription():
-    """Process a transcription job."""
+    """
+    Process a transcription job with optional preset configuration.
+    
+    Expected JSON payload:
+    {
+        "job_id": "required_job_id",
+        "preset": "optional_preset_name",  # 'fast', 'balanced', 'high', 'premium'
+        "model_name": "optional_legacy_model",  # for backward compatibility
+        "initial_prompt": "optional_legacy_prompt"  # for backward compatibility
+    }
+    """
     data = request.json
     
     if not data or 'job_id' not in data:
@@ -199,10 +273,24 @@ def process_transcription():
         }), 400
     
     job_id = data['job_id']
+    preset_name = data.get('preset', None)
+    
+    # Legacy parameters for backward compatibility
     model_name = data.get('model_name', 'base')
     initial_prompt = data.get('initial_prompt', None)
     
-    logger.info(f"Received transcription job: {job_id}")
+    # Validate preset if provided
+    if preset_name and preset_name not in ['fast', 'balanced', 'high', 'premium']:
+        return jsonify({
+            'success': False,
+            'message': f'Invalid preset "{preset_name}". Valid presets are: fast, balanced, high, premium.'
+        }), 400
+    
+    # Log the job details
+    if preset_name:
+        logger.info(f"Received transcription job: {job_id} with preset: {preset_name}")
+    else:
+        logger.info(f"Received transcription job: {job_id} (legacy mode)")
     
     # Create or get job directory
     job_dir = os.path.join(S3_JOBS_DIR, job_id)
@@ -228,14 +316,23 @@ def process_transcription():
         # but we'll still send an update to confirm we've started
         update_job_status(job_id, 'transcribing')
         
-        # Process the audio with Whisper
-        transcription_result = process_audio(audio_path, model_name, initial_prompt)
+        # Get preset configuration if preset is specified
+        preset_config = None
+        if preset_name:
+            preset_config = get_preset_config(preset_name)
+            logger.info(f"Using preset '{preset_name}' with model: {preset_config['model_name']}")
+        
+        # Process the audio with Whisper (using preset config or legacy parameters)
+        transcription_result = process_audio(audio_path, model_name, initial_prompt, preset_config)
         
         # Save the transcript to files
         save_transcript_to_file(transcription_result['text'], transcript_path)
         save_srt(transcription_result['segments'], srt_path)
         with open(json_path, 'w') as f:
             json.dump(transcription_result, f, indent=2)
+        
+        # Determine effective model name for metadata
+        effective_model_name = preset_config['model_name'] if preset_config else model_name
         
         # Prepare response data
         response_data = {
@@ -247,7 +344,9 @@ def process_transcription():
             'metadata': {
                 'service': 'transcription-service',
                 'processed_by': 'Whisper-based transcription',
-                'model': model_name
+                'model': effective_model_name,
+                'preset': preset_name if preset_name else None,
+                'settings': transcription_result.get('settings', {})
             }
         }
         

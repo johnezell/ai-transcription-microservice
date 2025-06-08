@@ -188,13 +188,23 @@ class LocalTruefireCourse extends Model
     }
 
     /**
-     * Relationship to course audio presets.
+     * Get the audio extraction preset for this course (single relationship).
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function audioPreset()
+    {
+        return $this->hasOne(CourseAudioPreset::class, 'truefire_course_id');
+    }
+
+    /**
+     * Relationship to course audio presets (multiple).
      *
      * @return \Illuminate\Database\Eloquent\Relations\HasMany
      */
     public function audioPresets()
     {
-        return $this->hasMany(CourseAudioPreset::class, 'course_id');
+        return $this->hasMany(CourseAudioPreset::class, 'truefire_course_id');
     }
 
     /**
@@ -204,6 +214,18 @@ class LocalTruefireCourse extends Model
      */
     public function currentAudioPreset()
     {
-        return $this->hasOne(CourseAudioPreset::class, 'course_id')->latest();
+        return $this->hasOne(CourseAudioPreset::class, 'truefire_course_id')->latest();
+    }
+
+    /**
+     * Set the audio extraction preset for this course.
+     *
+     * @param string $preset
+     * @param array $settings
+     * @return CourseAudioPreset
+     */
+    public function setAudioExtractionPreset(string $preset, array $settings = []): CourseAudioPreset
+    {
+        return CourseAudioPreset::updateForCourse($this->id, $preset, $settings);
     }
 }

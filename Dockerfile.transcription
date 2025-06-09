@@ -2,11 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including CUDA support libraries
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
     git \
+    wget \
+    curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -15,10 +18,20 @@ COPY app/services/transcription/requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Set environment variables
+# Set environment variables for WhisperX
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=service.py
 ENV FLASK_ENV=development
+ENV CUDA_VISIBLE_DEVICES=0
+ENV TORCH_HOME=/app/models
+ENV HF_HOME=/app/models/huggingface
+ENV WHISPERX_CACHE_DIR=/app/models/whisperx
+
+# Create model cache directories
+RUN mkdir -p /app/models/whisperx /app/models/huggingface
+
+# Increase memory limits for WhisperX processing
+ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 # Command to run the service
-CMD ["python", "service.py"] 
+CMD ["python", "service.py"]

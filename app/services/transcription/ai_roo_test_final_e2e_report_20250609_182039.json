@@ -1,0 +1,70 @@
+{
+  "timestamp": "2025-06-09T18:20:21.365293",
+  "test_summary": {
+    "total_tests": 10,
+    "passed": 2,
+    "failed": 8,
+    "errors": [
+      {
+        "test": "Transcription - Fast Preset",
+        "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+      },
+      {
+        "test": "Transcription - Balanced Preset",
+        "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+      },
+      {
+        "test": "Transcription - Accurate Preset",
+        "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+      },
+      {
+        "test": "Error Handling - Missing Job ID",
+        "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+      },
+      {
+        "test": "Error Handling - Invalid Preset",
+        "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+      },
+      {
+        "test": "Error Handling - Missing Audio Path",
+        "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+      },
+      {
+        "test": "Error Handling - Nonexistent Audio File",
+        "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+      },
+      {
+        "test": "GPU Acceleration Validation",
+        "error": "No transcription test data available"
+      }
+    ]
+  },
+  "health_check": {
+    "backend": "WhisperX",
+    "service": "transcription-service",
+    "status": "healthy",
+    "timestamp": "2025-06-09T18:20:21.371300"
+  },
+  "preset_tests": {},
+  "performance_metrics": {},
+  "transcription_samples": {},
+  "error_handling": {
+    "Missing Job ID": {
+      "success": false,
+      "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+    },
+    "Invalid Preset": {
+      "success": false,
+      "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+    },
+    "Missing Audio Path": {
+      "success": false,
+      "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+    },
+    "Nonexistent Audio File": {
+      "success": false,
+      "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+    }
+  },
+  "gpu_validation": {}
+}

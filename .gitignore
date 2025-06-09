@@ -3,3 +3,12 @@
 sample_course
 app/shared/jobs/*
 app/laravel/storage/*
+
+# Hugging Face model files and cache
+app/services/transcription/models/
+app/services/*/models/
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth

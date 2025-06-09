@@ -540,7 +540,7 @@ const closePanel = () => {
     }
 };
 
-// Computed property for the selected preset's configuration including Whisper prompt
+// Computed property for the selected preset's configuration including WhisperX prompt
 const selectedPresetConfig = computed(() => {
     if (useMultiPreset.value) {
         // For multi-preset, return configs for all selected presets
@@ -930,7 +930,7 @@ watch(availableSegments, (segments) => {
                                         <div class="flex-1">
                                             <div class="flex items-center justify-between mb-2">
                                                 <h4 class="text-sm font-medium text-blue-900">
-                                                    Whisper AI Prompt Template - {{ selectedPresetConfig.name || selectedPresetConfig.label }} Preset
+                                                    WhisperX Prompt Template - {{ selectedPresetConfig.name || selectedPresetConfig.label }} Preset
                                                 </h4>
                                                 <div class="flex space-x-2">
                                                     <button
@@ -1031,7 +1031,7 @@ watch(availableSegments, (segments) => {
                                         </div>
                                         <div class="flex-1">
                                             <h4 class="text-sm font-medium text-blue-900 mb-3">
-                                                Whisper AI Prompts for Selected Presets
+                                                WhisperX Prompts for Selected Presets
                                             </h4>
                                             <div class="space-y-3">
                                                 <div 
@@ -1064,7 +1064,7 @@ watch(availableSegments, (segments) => {
                                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    <span>Loading preset configurations with Whisper prompts...</span>
+                                    <span>Loading preset configurations with WhisperX prompts...</span>
                                 </div>
                             </div>
                             

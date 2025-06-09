@@ -662,7 +662,7 @@ if (availableSegments.value.length > 0 && !selectedSegmentId.value) {
                                         </span>
                                     </label>
                                     <p class="text-xs text-amber-700 mt-1">
-                                        Generate multiple quality levels (Fast, Balanced, High, Premium) and automatically select the best WAV file for Whisper transcription.
+                                        Generate multiple quality levels (Fast, Balanced, High, Premium) and automatically select the best WAV file for WhisperX transcription.
                                         Creates analysis file with detailed quality metrics and selection reasoning.
                                     </p>
                                     <div class="mt-2 text-xs text-amber-600">

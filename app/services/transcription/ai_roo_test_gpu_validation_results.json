@@ -1,0 +1,17 @@
+{
+  "cuda_available": false,
+  "gpu_memory_before": 0.0,
+  "gpu_memory_after": 0,
+  "gpu_memory_used": 0,
+  "transcription_time": 0,
+  "transcription_success": false,
+  "cuda_libraries_loaded": false,
+  "gpu_utilization_detected": false,
+  "errors": [
+    "Service health check exception: HTTPConnectionPool(host='localhost', port=5051): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x77b9b383ba30>: Failed to establish a new connection: [Errno 111] Connection refused'))",
+    "Exception during CUDA check: [Errno 2] No such file or directory: 'docker'",
+    "Exception during CUDA libraries check: [Errno 2] No such file or directory: 'docker'",
+    "Transcription test exception: HTTPConnectionPool(host='localhost', port=5051): Max retries exceeded with url: /transcribe (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x77b9b388d1e0>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+  ],
+  "overall_success": false
+}

@@ -1,0 +1,120 @@
+{
+  "timestamp": "2025-06-09T15:27:04.506731",
+  "phase": "Phase 6 - Integration & End-to-End Testing",
+  "tests": {
+    "service_health": {
+      "service_healthy": true,
+      "backend_whisperx": true,
+      "endpoints_available": {
+        "/presets/info": true,
+        "/features/capabilities": true
+      }
+    },
+    "preset_configurations": {
+      "presets_available": [
+        "balanced",
+        "fast",
+        "high",
+        "premium"
+      ],
+      "all_presets_valid": true,
+      "preset_details": {
+        "fast": {
+          "model_name": "tiny",
+          "alignment_enabled": true,
+          "diarization_enabled": false
+        },
+        "balanced": {
+          "model_name": "small",
+          "alignment_enabled": true,
+          "diarization_enabled": false
+        },
+        "high": {
+          "model_name": "medium",
+          "alignment_enabled": true,
+          "diarization_enabled": true
+        },
+        "premium": {
+          "model_name": "large-v3",
+          "alignment_enabled": true,
+          "diarization_enabled": true
+        }
+      }
+    },
+    "transcription_workflows": {
+      "preset_tests": {
+        "fast": {
+          "transcription_success": false,
+          "confidence_score": 0.0,
+          "has_segments": false,
+          "has_metadata": false,
+          "processing_time": 0.0014338493347167969,
+          "error": "HTTP 404"
+        },
+        "balanced": {
+          "transcription_success": false,
+          "confidence_score": 0.0,
+          "has_segments": false,
+          "has_metadata": false,
+          "processing_time": 0.0013203620910644531,
+          "error": "HTTP 404"
+        },
+        "high": {
+          "transcription_success": false,
+          "confidence_score": 0.0,
+          "has_segments": false,
+          "has_metadata": false,
+          "processing_time": 0.0012466907501220703,
+          "error": "HTTP 404"
+        },
+        "premium": {
+          "transcription_success": false,
+          "confidence_score": 0.0,
+          "has_segments": false,
+          "has_metadata": false,
+          "processing_time": 0.0013580322265625,
+          "error": "HTTP 404"
+        }
+      },
+      "overall_success": false
+    },
+    "whisperx_features": {
+      "alignment_detected": false,
+      "diarization_detected": false,
+      "timing_accuracy_improved": false,
+      "enhanced_metadata": false
+    },
+    "performance_benchmarks": {
+      "preset_performance": {
+        "fast": {
+          "processing_time": 0.0011518001556396484,
+          "meets_threshold": true
+        },
+        "balanced": {
+          "processing_time": 0.0011539459228515625,
+          "meets_threshold": true
+        }
+      },
+      "meets_thresholds": true
+    },
+    "error_handling": {
+      "handles_invalid_preset": true,
+      "handles_missing_data": true,
+      "handles_timeout": false
+    },
+    "production_readiness": {
+      "service_stable": true,
+      "performance_acceptable": false,
+      "features_working": true,
+      "error_handling_robust": true
+    }
+  },
+  "summary": {
+    "total_tests": 18,
+    "passed": 11,
+    "failed": 7,
+    "success_rate": 61.111111111111114,
+    "execution_time_seconds": 0.026403427124023438
+  },
+  "production_readiness_score": 50.0
+}

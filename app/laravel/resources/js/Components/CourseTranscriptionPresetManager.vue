@@ -308,7 +308,7 @@ watch(() => props.show, (newValue) => {
                                     Course Transcription Preset Manager
                                 </h3>
                                 <p class="text-sm text-indigo-100">
-                                    Configure Whisper model settings for optimal transcription quality
+                                    Configure WhisperX model settings for optimal transcription quality
                                 </p>
                             </div>
                         </div>
@@ -344,7 +344,7 @@ watch(() => props.show, (newValue) => {
                                 <div>
                                     <h4 class="text-sm font-medium text-gray-900">Current Transcription Preset</h4>
                                     <p class="text-sm text-gray-600 mt-1">
-                                        Active Whisper model configuration for this course
+                                        Active WhisperX model configuration for this course
                                     </p>
                                 </div>
                                 <div class="text-right">

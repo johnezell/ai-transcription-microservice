@@ -1,8 +1,9 @@
-FROM python:3.11-slim
+FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
 WORKDIR /app
 
-# Install system dependencies including CUDA support libraries
+# Install system dependencies
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
@@ -10,7 +11,20 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     build-essential \
+    tzdata \
+    && ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
+    && dpkg-reconfigure --frontend noninteractive tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Install cuDNN 8 to match PyTorch expectations
+RUN conda install -c conda-forge cudnn=8.9.2 --yes
+
+# Create symbolic links for cuDNN 8 libraries to fix runtime loading
+RUN cd /opt/conda/lib && \
+    ln -sf libcudnn_ops_infer.so.8.9.2 libcudnn_ops_infer.so.8 && \
+    ln -sf libcudnn.so.8.9.2 libcudnn.so.8 && \
+    ln -sf libcudnn_adv_infer.so.8.9.2 libcudnn_adv_infer.so.8 && \
+    ln -sf libcudnn_cnn_infer.so.8.9.2 libcudnn_cnn_infer.so.8
 
 # Copy requirements first for better caching
 COPY app/services/transcription/requirements.txt .

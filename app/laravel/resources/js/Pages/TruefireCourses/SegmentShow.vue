@@ -907,7 +907,7 @@ function forceComponentRefresh() {
                                                             <div class="flex-1">
                                                                 <div class="flex items-center justify-between mb-2">
                                                                     <h4 class="text-sm font-medium text-blue-900">
-                                                                        Whisper AI Prompt - {{ selectedTranscriptionConfig.name }} Preset
+                                                                        WhisperX Prompt - {{ selectedTranscriptionConfig.name }} Preset
                                                                     </h4>
                                                                     <div class="flex space-x-2">
                                                                         <button

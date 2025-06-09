@@ -10,6 +10,7 @@ import subprocess
 from datetime import datetime
 import tempfile
 import uuid
+import time
 from pathlib import Path
 
 # Suppress specific warnings
@@ -23,11 +24,20 @@ if torch.cuda.is_available():
 else:
     torch.set_default_tensor_type(torch.FloatTensor)
 
-# Import Whisper for transcription
-import whisper
+# Import WhisperX for transcription with alignment and diarization
+import whisperx
 from functools import lru_cache
 import re
 from typing import Dict, List, Union, Optional, Any, Tuple
+
+# Import our WhisperX model management system
+from whisperx_models import (
+    load_whisperx_model,
+    get_alignment_model,
+    get_diarization_pipeline,
+    get_model_info,
+    clear_model_cache
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -47,12 +57,13 @@ LARAVEL_API_URL = os.environ.get('LARAVEL_API_URL', 'http://laravel/api')
 # Ensure base directory exists
 os.makedirs(S3_JOBS_DIR, exist_ok=True)
 
-# Lazy-load Whisper model to save memory
+# Backward compatibility function - now uses WhisperX
 @lru_cache(maxsize=1)
 def load_whisper_model(model_name="base"):
-    """Load the Whisper model with caching for efficiency."""
-    logger.info(f"Loading Whisper model: {model_name}")
-    return whisper.load_model(model_name)
+    """Load the WhisperX model with caching for efficiency (backward compatibility)."""
+    logger.info(f"Loading WhisperX model: {model_name}")
+    model, metadata = load_whisperx_model(model_name)
+    return model
 
 def calculate_confidence(segments):
     """Calculate the overall confidence score for a transcription."""
@@ -71,187 +82,91 @@ def calculate_confidence(segments):
     # Calculate mean probability
     return sum(probabilities) / len(probabilities)
 
-def detect_voice_start_time(audio_path: str, silence_threshold: float = -40.0, min_voice_duration: float = 0.5) -> Optional[float]:
-    """
-    Detect the actual start time of voice in the audio file using FFmpeg's silencedetect.
-    
-    Args:
-        audio_path: Path to audio file
-        silence_threshold: dB threshold for silence detection (default: -40dB)
-        min_voice_duration: Minimum duration to consider as voice (default: 0.5s)
-        
-    Returns:
-        float: Voice start time in seconds, or None if detection fails
-    """
-    try:
-        logger.info(f"Detecting voice start time in: {audio_path}")
-        
-        # Use ffmpeg's silencedetect filter to find voice start
-        command = [
-            "ffmpeg", "-i", str(audio_path),
-            "-af", f"silencedetect=noise={silence_threshold}dB:duration={min_voice_duration}",
-            "-f", "null", "-"
-        ]
-        
-        result = subprocess.run(command, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            logger.error(f"FFmpeg silencedetect failed: {result.stderr}")
-            return None
-        
-        # Parse silence detection output
-        stderr_output = result.stderr
-        voice_start_time = None
-        
-        # Look for silence_end which indicates voice start
-        for line in stderr_output.split('\n'):
-            if 'silence_end:' in line:
-                # Extract time: [silencedetect @ ...] silence_end: 5.123 | silence_duration: 5.123
-                parts = line.split('silence_end:')
-                if len(parts) > 1:
-                    try:
-                        time_part = parts[1].split('|')[0].strip()
-                        voice_start_time = float(time_part)
-                        logger.info(f"Detected voice start at: {voice_start_time}s")
-                        break
-                    except (ValueError, IndexError):
-                        continue
-        
-        # If no silence_end found, assume voice starts at beginning
-        if voice_start_time is None:
-            logger.info("No initial silence detected, voice starts at 0s")
-            voice_start_time = 0.0
-        
-        return voice_start_time
-        
-    except Exception as e:
-        logger.error(f"Error detecting voice start time: {str(e)}")
-        return None
-
-def correct_transcription_timestamps(transcription_result: Dict, audio_path: str) -> Dict:
-    """
-    Correct Whisper timestamps by adding the actual voice start offset.
-    
-    This fixes the issue where Whisper reports voice starting at 0 seconds
-    when it actually starts later in the audio due to initial silence.
-    
-    Args:
-        transcription_result: Original Whisper transcription result
-        audio_path: Path to the audio file that was transcribed
-        
-    Returns:
-        Dict: Corrected transcription result with adjusted timestamps
-    """
-    try:
-        logger.info("Applying timestamp correction for Whisper transcription")
-        
-        # Detect actual voice start time
-        voice_start_time = detect_voice_start_time(audio_path)
-        
-        if voice_start_time is None:
-            logger.warning("Could not detect voice start time, returning original timestamps")
-            transcription_result['timing_correction'] = {
-                'applied': False,
-                'error': 'Voice start detection failed',
-                'correction_timestamp': datetime.now().isoformat()
-            }
-            return transcription_result
-        
-        if voice_start_time <= 0.1:  # Less than 100ms offset
-            logger.info(f"Voice start time is {voice_start_time}s, no correction needed")
-            transcription_result['timing_correction'] = {
-                'applied': False,
-                'reason': 'No significant silence detected',
-                'voice_start_offset': voice_start_time,
-                'correction_timestamp': datetime.now().isoformat()
-            }
-            return transcription_result
-        
-        logger.info(f"Applying timestamp correction: adding {voice_start_time}s offset")
-        
-        # Create corrected result
-        corrected_result = transcription_result.copy()
-        corrected_result['timing_correction'] = {
-            'applied': True,
-            'voice_start_offset': voice_start_time,
-            'correction_timestamp': datetime.now().isoformat()
-        }
-        
-        # Correct segment timestamps
-        if 'segments' in corrected_result:
-            corrected_segments = []
-            for segment in corrected_result['segments']:
-                corrected_segment = segment.copy()
-                
-                # Adjust segment start and end times
-                if 'start' in corrected_segment:
-                    corrected_segment['start'] += voice_start_time
-                if 'end' in corrected_segment:
-                    corrected_segment['end'] += voice_start_time
-                
-                # Adjust word timestamps if present
-                if 'words' in corrected_segment:
-                    corrected_words = []
-                    for word in corrected_segment['words']:
-                        corrected_word = word.copy()
-                        if 'start' in corrected_word:
-                            corrected_word['start'] += voice_start_time
-                        if 'end' in corrected_word:
-                            corrected_word['end'] += voice_start_time
-                        corrected_words.append(corrected_word)
-                    corrected_segment['words'] = corrected_words
-                
-                corrected_segments.append(corrected_segment)
-            
-            corrected_result['segments'] = corrected_segments
-        
-        logger.info(f"Timestamp correction applied successfully: +{voice_start_time}s offset")
-        return corrected_result
-        
-    except Exception as e:
-        logger.error(f"Error correcting timestamps: {str(e)}")
-        # Return original result with error info if correction fails
-        transcription_result['timing_correction'] = {
-            'applied': False,
-            'error': str(e),
-            'correction_timestamp': datetime.now().isoformat()
-        }
-        return transcription_result
+# Legacy timestamp correction system removed - WhisperX alignment provides superior accuracy
+# WhisperX alignment replaces the need for FFmpeg-based timestamp correction
 
 def get_preset_config(preset_name: str) -> Dict[str, Any]:
     """
-    Get preset configuration for transcription settings.
+    Get preset configuration for WhisperX transcription settings with enhanced WhisperX parameters.
     
     Args:
         preset_name: Name of the preset ('fast', 'balanced', 'high', 'premium')
         
     Returns:
-        Dictionary containing preset configuration parameters
+        Dictionary containing preset configuration parameters optimized for WhisperX
     """
     presets = {
         'fast': {
             'model_name': 'tiny',
             'temperature': 0,
             'initial_prompt': 'This is a guitar lesson with music instruction.',
-            'word_timestamps': True
+            'word_timestamps': True,
+            'language': 'en',
+            'enable_alignment': True,
+            'enable_diarization': False,
+            # WhisperX-specific parameters
+            'alignment_model': 'wav2vec2-base-960h',
+            'batch_size': 16,
+            'chunk_size': 30,
+            'return_char_alignments': False,
+            # 'vad_onset': 0.500,  # Removed - not supported in WhisperX 3.1.1+
+            # 'vad_offset': 0.363,  # Removed - not supported in WhisperX 3.1.1+
+            'performance_profile': 'speed_optimized'
         },
         'balanced': {
             'model_name': 'small',
             'temperature': 0,
             'initial_prompt': 'This is a guitar lesson with music instruction. The instructor discusses guitar techniques, chords, scales, and musical concepts.',
-            'word_timestamps': True
+            'word_timestamps': True,
+            'language': 'en',
+            'enable_alignment': True,
+            'enable_diarization': False,
+            # WhisperX-specific parameters
+            'alignment_model': 'wav2vec2-base-960h',
+            'batch_size': 16,
+            'chunk_size': 30,
+            'return_char_alignments': False,
+            # 'vad_onset': 0.500,  # Removed - not supported in WhisperX 3.1.1+
+            # 'vad_offset': 0.363,  # Removed - not supported in WhisperX 3.1.1+
+            'performance_profile': 'balanced'
         },
         'high': {
             'model_name': 'medium',
             'temperature': 0.2,
             'initial_prompt': 'This is a detailed guitar lesson with comprehensive music instruction. The instructor covers guitar techniques, music theory, chord progressions, scales, fingerpicking patterns, strumming techniques, and musical terminology. Listen carefully for technical terms, note names, chord names, and specific musical instructions.',
-            'word_timestamps': True
+            'word_timestamps': True,
+            'language': 'en',
+            'enable_alignment': True,
+            'enable_diarization': True,
+            # WhisperX-specific parameters
+            'alignment_model': 'wav2vec2-large-960h-lv60-self',
+            'batch_size': 8,
+            'chunk_size': 30,
+            'return_char_alignments': True,
+            # 'vad_onset': 0.400,  # Removed - not supported in WhisperX 3.1.1+
+            # 'vad_offset': 0.300,  # Removed - not supported in WhisperX 3.1.1+
+            'min_speakers': 1,
+            'max_speakers': 3,
+            'performance_profile': 'quality_optimized'
         },
         'premium': {
             'model_name': 'large-v3',
             'temperature': 0.3,
             'initial_prompt': 'This is a comprehensive guitar lesson with advanced music instruction and education content. The instructor provides detailed explanations of guitar techniques, advanced music theory concepts, chord progressions, scale patterns, fingerpicking and strumming techniques, musical terminology, and educational guidance. Pay special attention to technical musical terms, note names, chord names, scale degrees, time signatures, key signatures, musical intervals, and specific instructional language. The content may include references to musical styles, artists, songs, and educational methodologies.',
-            'word_timestamps': True
+            'word_timestamps': True,
+            'language': 'en',
+            'enable_alignment': True,
+            'enable_diarization': True,
+            # WhisperX-specific parameters
+            'alignment_model': 'wav2vec2-large-960h-lv60-self',
+            'batch_size': 4,
+            'chunk_size': 30,
+            'return_char_alignments': True,
+            # 'vad_onset': 0.300,  # Removed - not supported in WhisperX 3.1.1+
+            # 'vad_offset': 0.200,  # Removed - not supported in WhisperX 3.1.1+
+            'min_speakers': 1,
+            'max_speakers': 5,
+            'performance_profile': 'maximum_quality'
         }
     }
     
@@ -299,7 +214,8 @@ def render_template_prompt(preset_name: str, course_id: int = None, segment_id: 
 
 def process_audio(audio_path, model_name="base", initial_prompt=None, preset_config=None, course_id=None, segment_id=None, preset_name=None):
     """
-    Process audio with Whisper and extract detailed information.
+    Process audio with WhisperX including transcription, alignment, and optional diarization.
+    Enhanced with WhisperX-specific parameters and performance monitoring.
     
     Args:
         audio_path: Path to the audio file
@@ -311,63 +227,344 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
         preset_name: Optional preset name for template rendering
         
     Returns:
-        Dictionary containing transcription results and metadata
+        Dictionary containing transcription results and enhanced WhisperX metadata
     """
+    # Performance tracking
+    processing_start_time = time.time()
+    performance_metrics = {
+        'transcription_time': 0,
+        'alignment_time': 0,
+        'diarization_time': 0,
+        'total_processing_time': 0
+    }
+    
     # Use preset config if provided, otherwise use legacy parameters
     if preset_config:
         effective_model_name = preset_config['model_name']
-        effective_temperature = preset_config['temperature']
-        effective_word_timestamps = preset_config['word_timestamps']
+        effective_temperature = preset_config.get('temperature', 0)
+        effective_word_timestamps = preset_config.get('word_timestamps', True)
+        effective_language = preset_config.get('language', 'en')
+        enable_alignment = preset_config.get('enable_alignment', True)
+        enable_diarization = preset_config.get('enable_diarization', False)
+        
+        # WhisperX-specific parameters
+        batch_size = preset_config.get('batch_size', 16)
+        chunk_size = preset_config.get('chunk_size', 30)
+        return_char_alignments = preset_config.get('return_char_alignments', False)
+        # vad_onset = preset_config.get('vad_onset', 0.500)  # Removed - not supported in WhisperX 3.1.1+
+        # vad_offset = preset_config.get('vad_offset', 0.363)  # Removed - not supported in WhisperX 3.1.1+
+        min_speakers = preset_config.get('min_speakers', 1)
+        max_speakers = preset_config.get('max_speakers', 3)
+        performance_profile = preset_config.get('performance_profile', 'balanced')
         
         # Try to render template prompt if we have the necessary information
         if preset_name:
             effective_initial_prompt = render_template_prompt(preset_name, course_id, segment_id)
         else:
-            effective_initial_prompt = preset_config['initial_prompt']
+            effective_initial_prompt = preset_config.get('initial_prompt', '')
             
-        logger.info(f"Processing audio with preset configuration: {audio_path} using prompt: {effective_initial_prompt[:100]}...")
+        logger.info(f"Processing audio with WhisperX preset '{preset_name}': {audio_path} using model: {effective_model_name}, profile: {performance_profile}")
     else:
         # Backward compatibility: use provided parameters or defaults
         effective_model_name = model_name
-        effective_initial_prompt = initial_prompt
+        effective_initial_prompt = initial_prompt or ''
         effective_temperature = 0
         effective_word_timestamps = True
-        logger.info(f"Processing audio with legacy parameters: {audio_path} with model: {model_name}")
+        effective_language = 'en'
+        enable_alignment = True
+        enable_diarization = False
+        
+        # Default WhisperX parameters for legacy mode
+        batch_size = 16
+        chunk_size = 30
+        return_char_alignments = False
+        # vad_onset = 0.500  # Removed - not supported in WhisperX 3.1.1+
+        # vad_offset = 0.363  # Removed - not supported in WhisperX 3.1.1+
+        min_speakers = 1
+        max_speakers = 3
+        performance_profile = 'legacy_compatibility'
+        
+        logger.info(f"Processing audio with WhisperX legacy mode: {audio_path} with model: {model_name}")
     
-    model = load_whisper_model(effective_model_name)
-    
-    # Configure transcription settings
-    settings = {
-        "model_name": effective_model_name,
-        "initial_prompt": effective_initial_prompt,
-        "temperature": effective_temperature,
-        "word_timestamps": effective_word_timestamps,
-        "condition_on_previous_text": False,
-        "language": "en",
-    }
-    
-    # Perform transcription
-    result = model.transcribe(
-        str(audio_path),
-        initial_prompt=effective_initial_prompt,
-        language=settings["language"],
-        temperature=effective_temperature,
-        word_timestamps=effective_word_timestamps,
-        condition_on_previous_text=settings["condition_on_previous_text"]
-    )
-    
-    # Include settings in result
-    result["settings"] = settings
-    
-    # Calculate confidence score
-    confidence_score = calculate_confidence(result["segments"])
-    result["confidence_score"] = confidence_score
-    
-    # Apply timestamp correction to fix Whisper's timing offset issue
-    result = correct_transcription_timestamps(result, audio_path)
-    
-    logger.info(f"Transcription completed with confidence score: {confidence_score:.2f}")
-    return result
+    try:
+        # Step 1: Load WhisperX model and perform transcription
+        logger.info(f"Step 1: Loading WhisperX model '{effective_model_name}' with profile '{performance_profile}'")
+        transcription_step_start = time.time()
+        model, model_metadata = load_whisperx_model(effective_model_name, effective_language)
+        
+        # Configure enhanced transcription settings
+        settings = {
+            "model_name": effective_model_name,
+            "initial_prompt": effective_initial_prompt,
+            "temperature": effective_temperature,
+            "word_timestamps": effective_word_timestamps,
+            "language": effective_language,
+            "enable_alignment": enable_alignment,
+            "enable_diarization": enable_diarization,
+            "whisperx_version": True,
+            # WhisperX-specific settings
+            "batch_size": batch_size,
+            "chunk_size": chunk_size,
+            "return_char_alignments": return_char_alignments,
+            # "vad_onset": vad_onset,  # Removed - not supported in WhisperX 3.1.1+
+            # "vad_offset": vad_offset,  # Removed - not supported in WhisperX 3.1.1+
+            "performance_profile": performance_profile
+        }
+        
+        # Add diarization settings if enabled
+        if enable_diarization:
+            settings.update({
+                "min_speakers": min_speakers,
+                "max_speakers": max_speakers
+            })
+        
+        # Perform WhisperX transcription with enhanced parameters
+        logger.info(f"Step 1: Performing WhisperX transcription with batch_size={batch_size}, chunk_size={chunk_size}...")
+        audio_file = whisperx.load_audio(str(audio_path))
+        
+        # Fix: Convert PyTorch Tensor to NumPy array for WhisperX VAD compatibility
+        if hasattr(audio_file, 'numpy'):
+            audio_file = audio_file.numpy()
+        elif torch.is_tensor(audio_file):
+            audio_file = audio_file.detach().cpu().numpy()
+        
+        # WhisperX 3.1.1+ compatibility: Use only supported parameters
+        # Supported parameters: batch_size, language, chunk_size
+        transcribe_params = {
+            'batch_size': batch_size,
+            'language': effective_language,
+            'chunk_size': chunk_size
+        }
+        
+        # Log the initial prompt for debugging but don't pass it to transcribe
+        if effective_initial_prompt:
+            logger.info(f"Initial prompt configured (not passed to API): {effective_initial_prompt[:100]}...")
+        
+        logger.info(f"Using transcribe parameters: {transcribe_params}")
+        result = model.transcribe(audio_file, **transcribe_params)
+        
+        performance_metrics['transcription_time'] = time.time() - transcription_step_start
+        logger.info(f"Step 1: Transcription completed in {performance_metrics['transcription_time']:.2f}s")
+        
+        # Step 2: Perform alignment for word-level timestamps (if enabled)
+        alignment_metadata = {}
+        if enable_alignment:
+            try:
+                logger.info(f"Step 2: Loading alignment model for language '{effective_language}' with char_alignments={return_char_alignments}")
+                alignment_step_start = time.time()
+                alignment_data, align_metadata = get_alignment_model(effective_language)
+                
+                if alignment_data is not None:
+                    logger.info("Step 2: Performing enhanced word-level alignment...")
+                    # Ensure consistent device usage - use the same device as the transcription model
+                    alignment_device = model_metadata.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
+                    logger.info(f"Using device '{alignment_device}' for alignment to match transcription model")
+                    
+                    # Ensure audio is on the correct device if it's a tensor
+                    if torch.is_tensor(audio_file):
+                        audio_file = audio_file.to(alignment_device)
+                    
+                    result = whisperx.align(
+                        result["segments"],
+                        alignment_data["model"],
+                        alignment_data["metadata"],
+                        audio_file,
+                        device=alignment_device,
+                        return_char_alignments=return_char_alignments
+                    )
+                    alignment_metadata = align_metadata
+                    alignment_metadata['return_char_alignments'] = return_char_alignments
+                    alignment_metadata['alignment_model'] = preset_config.get('alignment_model', 'default') if preset_config else 'default'
+                    
+                    performance_metrics['alignment_time'] = time.time() - alignment_step_start
+                    logger.info(f"Step 2: Word-level alignment completed successfully in {performance_metrics['alignment_time']:.2f}s")
+                else:
+                    logger.warning(f"Step 2: Alignment model not available for '{effective_language}', skipping alignment")
+                    alignment_metadata = {
+                        'error': f'Alignment model not available for {effective_language}',
+                        'fallback_applied': True,
+                        'return_char_alignments': return_char_alignments
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Step 2: Alignment failed: {str(e)}")
+                alignment_metadata = {
+                    'error': str(e),
+                    'fallback_applied': True,
+                    'return_char_alignments': return_char_alignments
+                }
+        
+        # Step 3: Perform speaker diarization (if enabled)
+        diarization_metadata = {}
+        if enable_diarization:
+            try:
+                logger.info(f"Step 3: Loading speaker diarization pipeline (speakers: {min_speakers}-{max_speakers})")
+                diarization_step_start = time.time()
+                diarize_model, diarize_metadata = get_diarization_pipeline()
+                
+                if diarize_model is not None:
+                    logger.info(f"Step 3: Performing speaker diarization with {min_speakers}-{max_speakers} speakers...")
+                    
+                    # Enhanced diarization with speaker constraints
+                    diarize_segments = diarize_model(
+                        audio_file,
+                        min_speakers=min_speakers,
+                        max_speakers=max_speakers
+                    )
+                    
+                    # Assign speakers to words with enhanced metadata
+                    result = whisperx.assign_word_speakers(diarize_segments, result)
+                    
+                    # Enhanced diarization metadata
+                    diarization_metadata = diarize_metadata.copy()
+                    diarization_metadata.update({
+                        'min_speakers': min_speakers,
+                        'max_speakers': max_speakers,
+                        'detected_speakers': len(set(segment.get('speaker', 'UNKNOWN') for segment in result.get('segments', []))),
+                        'speaker_labels': list(set(segment.get('speaker', 'UNKNOWN') for segment in result.get('segments', []) if segment.get('speaker')))
+                    })
+                    
+                    performance_metrics['diarization_time'] = time.time() - diarization_step_start
+                    logger.info(f"Step 3: Speaker diarization completed successfully in {performance_metrics['diarization_time']:.2f}s - Detected {diarization_metadata['detected_speakers']} speakers")
+                else:
+                    logger.warning("Step 3: Diarization pipeline not available, skipping diarization")
+                    diarization_metadata = {
+                        'error': 'Diarization pipeline not available',
+                        'fallback_applied': True,
+                        'min_speakers': min_speakers,
+                        'max_speakers': max_speakers
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Step 3: Diarization failed: {str(e)}")
+                diarization_metadata = {
+                    'error': str(e),
+                    'fallback_applied': True,
+                    'min_speakers': min_speakers,
+                    'max_speakers': max_speakers
+                }
+        
+        # Calculate total processing time
+        performance_metrics['total_processing_time'] = time.time() - processing_start_time
+        
+        # Include comprehensive settings and metadata in result
+        result["settings"] = settings
+        result["model_metadata"] = model_metadata
+        result["alignment_metadata"] = alignment_metadata
+        result["diarization_metadata"] = diarization_metadata
+        result["performance_metrics"] = performance_metrics
+        
+        # Calculate confidence score from segments
+        confidence_score = calculate_confidence(result.get("segments", []))
+        result["confidence_score"] = confidence_score
+        
+        # WhisperX alignment provides superior timing accuracy - no legacy correction needed
+        logger.info("WhisperX alignment ensures accurate timestamps without legacy correction")
+        
+        # Enhanced WhisperX processing summary with detailed status
+        alignment_status = "completed" if enable_alignment and not alignment_metadata.get('error') else "skipped" if not enable_alignment else "failed"
+        diarization_status = "completed" if enable_diarization and not diarization_metadata.get('error') else "skipped" if not enable_diarization else "failed"
+        
+        result["whisperx_processing"] = {
+            "transcription": "completed",
+            "alignment": alignment_status,
+            "diarization": diarization_status,
+            "processed_by": "WhisperX with enhanced alignment and diarization support",
+            "performance_profile": performance_profile,
+            "processing_times": {
+                "transcription_seconds": performance_metrics['transcription_time'],
+                "alignment_seconds": performance_metrics['alignment_time'],
+                "diarization_seconds": performance_metrics['diarization_time'],
+                "total_seconds": performance_metrics['total_processing_time']
+            }
+        }
+        
+        # Add speaker information if diarization was successful
+        if diarization_status == "completed" and diarization_metadata.get('speaker_labels'):
+            result["speaker_info"] = {
+                "detected_speakers": diarization_metadata.get('detected_speakers', 0),
+                "speaker_labels": diarization_metadata.get('speaker_labels', []),
+                "min_speakers_configured": min_speakers,
+                "max_speakers_configured": max_speakers
+            }
+        
+        # Add alignment quality information
+        if alignment_status == "completed":
+            result["alignment_info"] = {
+                "char_alignments_enabled": return_char_alignments,
+                "alignment_model": alignment_metadata.get('alignment_model', 'default'),
+                "language": effective_language
+            }
+        
+        logger.info(f"WhisperX processing completed in {performance_metrics['total_processing_time']:.2f}s - "
+                   f"Confidence: {confidence_score:.2f}, Alignment: {alignment_status}, "
+                   f"Diarization: {diarization_status}, Profile: {performance_profile}")
+        
+        return result
+        
+    except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"WhisperX processing failed ({error_type}): {error_msg}")
+        
+        # Enhanced error categorization for better debugging
+        if "initial_prompt" in error_msg.lower():
+            logger.error("CRITICAL: API compatibility issue detected - initial_prompt parameter not supported")
+        elif "libcudnn" in error_msg.lower() or "cuda" in error_msg.lower():
+            logger.error("CRITICAL: CUDA library issue detected - missing CUDA dependencies")
+        elif "out of memory" in error_msg.lower():
+            logger.error("CRITICAL: GPU memory exhausted - consider reducing batch_size")
+        elif "timeout" in error_msg.lower():
+            logger.error("CRITICAL: Processing timeout - audio file may be too large")
+        
+        # Fallback to basic transcription if WhisperX fails
+        logger.info("Attempting fallback to basic WhisperX transcription...")
+        try:
+            model, model_metadata = load_whisperx_model(effective_model_name, effective_language)
+            audio_file = whisperx.load_audio(str(audio_path))
+            # WhisperX 3.1.1+ compatibility: Use parameter dictionary for fallback transcription
+            fallback_params = {
+                'batch_size': 8,  # Reduced batch size for fallback
+                'language': effective_language
+            }
+            result = model.transcribe(audio_file, **fallback_params)
+            
+            result["settings"] = settings
+            result["model_metadata"] = model_metadata
+            result["confidence_score"] = calculate_confidence(result.get("segments", []))
+            result["whisperx_processing"] = {
+                "transcription": "completed",
+                "alignment": "failed",
+                "diarization": "failed",
+                "processed_by": "WhisperX fallback mode",
+                "fallback_reason": error_msg,
+                "original_error_type": error_type
+            }
+            
+            logger.info("Fallback WhisperX transcription completed successfully")
+            return result
+            
+        except Exception as fallback_error:
+            fallback_error_type = type(fallback_error).__name__
+            fallback_error_msg = str(fallback_error)
+            logger.error(f"Fallback transcription also failed ({fallback_error_type}): {fallback_error_msg}")
+            
+            # Create comprehensive error information
+            comprehensive_error = {
+                "primary_error": {"type": error_type, "message": error_msg},
+                "fallback_error": {"type": fallback_error_type, "message": fallback_error_msg},
+                "troubleshooting_hints": []
+            }
+            
+            # Add troubleshooting hints based on error patterns
+            if "initial_prompt" in error_msg.lower() or "initial_prompt" in fallback_error_msg.lower():
+                comprehensive_error["troubleshooting_hints"].append("API compatibility issue: WhisperX version may not support initial_prompt parameter")
+            if "libcudnn" in error_msg.lower() or "libcudnn" in fallback_error_msg.lower():
+                comprehensive_error["troubleshooting_hints"].append("CUDA library missing: Install libcudnn8 and related CUDA dependencies")
+            if "out of memory" in error_msg.lower() or "out of memory" in fallback_error_msg.lower():
+                comprehensive_error["troubleshooting_hints"].append("GPU memory issue: Reduce batch_size or use CPU processing")
+            
+            raise Exception(f"Complete WhisperX processing failure. Primary: {error_msg}. Fallback: {fallback_error_msg}. Details: {comprehensive_error}")
 
 def save_transcript_to_file(transcript, file_path):
     """Save transcript to a text file."""
@@ -422,8 +619,49 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'transcription-service',
+        'backend': 'WhisperX',
         'timestamp': datetime.now().isoformat()
     })
+
+@app.route('/models/info', methods=['GET'])
+def get_models_info():
+    """Get information about loaded WhisperX models."""
+    try:
+        model_info = get_model_info()
+        return jsonify({
+            'success': True,
+            'models': model_info,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error getting model info: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/models/clear-cache', methods=['POST'])
+def clear_models_cache():
+    """Clear model cache to free memory."""
+    try:
+        data = request.json or {}
+        model_type = data.get('model_type', None)  # 'whisperx', 'alignment', 'diarization', or None for all
+        
+        clear_model_cache(model_type)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Model cache cleared: {model_type or "all"}',
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error clearing model cache: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 @app.route('/connectivity-test', methods=['GET'])
 def connectivity_test():
@@ -576,21 +814,37 @@ def process_transcription():
         # Determine effective model name for metadata
         effective_model_name = preset_config['model_name'] if preset_config else model_name
         
-        # Prepare response data
+        # Prepare enhanced response data with WhisperX metadata
         response_data = {
             'message': 'Transcription completed successfully',
             'service_timestamp': datetime.now().isoformat(),
             'transcript_path': transcript_path,
             'transcript_text': transcription_result['text'],
             'confidence_score': transcription_result.get('confidence_score', 0.0),
+            'segments': transcription_result.get('segments', []),
             'metadata': {
                 'service': 'transcription-service',
-                'processed_by': 'Whisper-based transcription',
+                'processed_by': 'WhisperX Enhanced Transcription',
                 'model': effective_model_name,
                 'preset': preset_name if preset_name else None,
-                'settings': transcription_result.get('settings', {})
+                'settings': transcription_result.get('settings', {}),
+                'whisperx_processing': transcription_result.get('whisperx_processing', {}),
+                'performance_metrics': transcription_result.get('performance_metrics', {}),
+                'model_metadata': transcription_result.get('model_metadata', {}),
+                'alignment_metadata': transcription_result.get('alignment_metadata', {}),
+                'diarization_metadata': transcription_result.get('diarization_metadata', {})
             }
         }
+        
+        # Add enhanced WhisperX features to response if available
+        if transcription_result.get('speaker_info'):
+            response_data['speaker_info'] = transcription_result['speaker_info']
+            
+        if transcription_result.get('alignment_info'):
+            response_data['alignment_info'] = transcription_result['alignment_info']
+            
+        if transcription_result.get('timing_correction'):
+            response_data['timing_correction'] = transcription_result['timing_correction']
         
         # Update job status in Laravel
         update_job_status(job_id, 'completed', response_data)
@@ -603,15 +857,39 @@ def process_transcription():
         })
         
     except Exception as e:
-        logger.error(f"Error processing job {job_id}: {str(e)}")
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"Error processing job {job_id} ({error_type}): {error_msg}")
         
-        # Update job status in Laravel
-        update_job_status(job_id, 'failed', None, str(e))
+        # Enhanced error analysis for better debugging
+        error_details = {
+            'error_type': error_type,
+            'error_message': error_msg,
+            'job_id': job_id,
+            'audio_path': audio_path if 'audio_path' in locals() else 'unknown',
+            'preset_name': preset_name,
+            'troubleshooting_hints': []
+        }
+        
+        # Add specific troubleshooting hints
+        if "initial_prompt" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("WhisperX API compatibility issue - initial_prompt parameter not supported in current version")
+        if "libcudnn" in error_msg.lower() or "cuda" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("Missing CUDA libraries - rebuild Docker container with CUDA dependencies")
+        if "file not found" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("Audio file missing - check audio extraction process")
+        if "out of memory" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("GPU memory exhausted - reduce batch_size or use CPU processing")
+        
+        # Update job status in Laravel with detailed error information
+        update_job_status(job_id, 'failed', None, error_msg)
         
         return jsonify({
             'success': False,
             'job_id': job_id,
-            'message': f'Transcription failed: {str(e)}'
+            'message': f'Transcription failed: {error_msg}',
+            'error_details': error_details,
+            'timestamp': datetime.now().isoformat()
         }), 500
 
 @app.route('/transcribe', methods=['POST'])
@@ -710,7 +988,7 @@ def transcribe_audio():
             json.dump(transcription_result, f, indent=2, ensure_ascii=False)
         
         
-        # Prepare response data
+        # Prepare enhanced response data with comprehensive WhisperX metadata
         response_data = {
             'success': True,
             'message': 'Transcription completed successfully',
@@ -720,29 +998,215 @@ def transcribe_audio():
             'segments': transcription_result.get('segments', []),
             'metadata': {
                 'service': 'transcription-service',
-                'processed_by': 'Whisper-based transcription',
+                'processed_by': 'WhisperX Enhanced Transcription',
                 'model': preset_config['model_name'],
                 'preset': preset_name,
                 'test_mode': test_mode,
                 'segment_id': segment_id,
                 'course_id': course_id,
                 'audio_path': full_audio_path,
-                'settings': transcription_result.get('settings', {})
+                'settings': transcription_result.get('settings', {}),
+                'whisperx_processing': transcription_result.get('whisperx_processing', {}),
+                'performance_metrics': transcription_result.get('performance_metrics', {}),
+                'model_metadata': transcription_result.get('model_metadata', {}),
+                'alignment_metadata': transcription_result.get('alignment_metadata', {}),
+                'diarization_metadata': transcription_result.get('diarization_metadata', {})
             }
         }
+        
+        # Add enhanced WhisperX features to response if available
+        if transcription_result.get('speaker_info'):
+            response_data['speaker_info'] = transcription_result['speaker_info']
+            
+        if transcription_result.get('alignment_info'):
+            response_data['alignment_info'] = transcription_result['alignment_info']
+            
+        if transcription_result.get('timing_correction'):
+            response_data['timing_correction'] = transcription_result['timing_correction']
+        
+        # Add backward compatibility flag for enhanced response format
+        response_data['enhanced_format'] = True
+        response_data['whisperx_version'] = True
         
         logger.info(f"Transcription test completed successfully for job: {job_id}")
         
         return jsonify(response_data)
         
     except Exception as e:
-        logger.error(f"Error processing transcription test {job_id}: {str(e)}")
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"Error processing transcription test {job_id} ({error_type}): {error_msg}")
+        
+        # Enhanced error analysis for transcription tests
+        error_details = {
+            'error_type': error_type,
+            'error_message': error_msg,
+            'job_id': job_id,
+            'audio_path': full_audio_path if 'full_audio_path' in locals() else 'unknown',
+            'preset_name': preset_name,
+            'test_mode': test_mode,
+            'troubleshooting_hints': []
+        }
+        
+        # Add specific troubleshooting hints for test failures
+        if "initial_prompt" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("WhisperX API compatibility issue - initial_prompt parameter not supported")
+        if "libcudnn" in error_msg.lower() or "cuda" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("Missing CUDA libraries - container needs CUDA dependencies")
+        if "file not found" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("Audio file missing - check file path and permissions")
+        if "out of memory" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("GPU memory exhausted - reduce batch_size in preset")
+        if "timeout" in error_msg.lower():
+            error_details['troubleshooting_hints'].append("Processing timeout - audio file may be too large")
         
         return jsonify({
             'success': False,
             'job_id': job_id,
-            'message': f'Transcription test failed: {str(e)}',
-            'error': str(e)
+            'message': f'Transcription test failed: {error_msg}',
+            'error': error_msg,
+            'error_details': error_details,
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/performance/metrics', methods=['GET'])
+def get_performance_metrics():
+    """Get performance metrics and system information."""
+    try:
+        from whisperx_models import get_model_manager
+        manager = get_model_manager()
+        
+        # Get model information and memory usage
+        model_info = manager.get_model_info()
+        memory_usage = manager.get_memory_usage()
+        
+        return jsonify({
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'system_metrics': {
+                'memory_usage': memory_usage,
+                'device': model_info.get('device', 'unknown'),
+                'compute_type': model_info.get('compute_type', 'unknown')
+            },
+            'model_metrics': {
+                'loaded_models': model_info.get('loaded_models', {}),
+                'load_times': model_info.get('load_times', {}),
+                'cache_dir': model_info.get('cache_dir', 'unknown')
+            },
+            'service_info': {
+                'backend': 'WhisperX Enhanced',
+                'version': '3.0.0',
+                'features': ['transcription', 'alignment', 'diarization', 'performance_monitoring']
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/presets/info', methods=['GET'])
+def get_presets_info():
+    """Get information about available presets and their WhisperX configurations."""
+    try:
+        presets_info = {}
+        preset_names = ['fast', 'balanced', 'high', 'premium']
+        
+        for preset_name in preset_names:
+            config = get_preset_config(preset_name)
+            presets_info[preset_name] = {
+                'model_name': config['model_name'],
+                'language': config['language'],
+                'features': {
+                    'alignment': config['enable_alignment'],
+                    'diarization': config['enable_diarization'],
+                    'word_timestamps': config['word_timestamps']
+                },
+                'performance_profile': config.get('performance_profile', 'standard'),
+                'whisperx_parameters': {
+                    'batch_size': config.get('batch_size', 16),
+                    'chunk_size': config.get('chunk_size', 30),
+                    'return_char_alignments': config.get('return_char_alignments', False),
+                    'vad_onset': config.get('vad_onset', 0.500),
+                    'vad_offset': config.get('vad_offset', 0.363)
+                }
+            }
+            
+            if config['enable_diarization']:
+                presets_info[preset_name]['diarization_parameters'] = {
+                    'min_speakers': config.get('min_speakers', 1),
+                    'max_speakers': config.get('max_speakers', 3)
+                }
+        
+        return jsonify({
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'presets': presets_info,
+            'total_presets': len(presets_info)
+        })
+    except Exception as e:
+        logger.error(f"Error getting presets info: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/features/capabilities', methods=['GET'])
+def get_service_capabilities():
+    """Get comprehensive information about service capabilities and WhisperX features."""
+    try:
+        return jsonify({
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'service_info': {
+                'name': 'WhisperX Transcription Service',
+                'version': '3.0.0',
+                'backend': 'WhisperX with enhanced features',
+                'phase': 'Phase 3 - API/Controller Layer Complete'
+            },
+            'capabilities': {
+                'transcription': {
+                    'supported_models': ['tiny', 'base', 'small', 'medium', 'large-v3'],
+                    'supported_languages': ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh'],
+                    'features': ['word_timestamps', 'confidence_scores', 'segment_detection']
+                },
+                'alignment': {
+                    'enabled': True,
+                    'models': ['wav2vec2-base-960h', 'wav2vec2-large-960h-lv60-self'],
+                    'features': ['word_level_timestamps', 'character_alignments', 'timing_correction']
+                },
+                'diarization': {
+                    'enabled': True,
+                    'features': ['speaker_detection', 'speaker_labeling', 'multi_speaker_support'],
+                    'max_speakers_supported': 10
+                },
+                'performance': {
+                    'gpu_acceleration': True,
+                    'batch_processing': True,
+                    'performance_profiles': ['speed_optimized', 'balanced', 'quality_optimized', 'maximum_quality'],
+                    'monitoring': ['processing_times', 'memory_usage', 'model_performance']
+                }
+            },
+            'api_endpoints': {
+                'transcription': ['/process', '/transcribe'],
+                'management': ['/health', '/models/info', '/models/clear-cache'],
+                'monitoring': ['/performance/metrics', '/connectivity-test'],
+                'information': ['/presets/info', '/features/capabilities']
+            },
+            'supported_formats': {
+                'input': ['wav', 'mp3', 'flac', 'm4a', 'ogg'],
+                'output': ['json', 'txt', 'srt', 'vtt']
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting service capabilities: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
         }), 500
 
 if __name__ == '__main__':

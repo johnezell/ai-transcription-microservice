@@ -16,7 +16,12 @@ class DatabaseSeeder extends Seeder
         // Create a default test user
         $this->call(DefaultUserSeeder::class);
         
-        // Seed music terms
+        // Seed TrueFire data
+        $this->call(LocalTruefireChannelSeeder::class);
+        $this->call(LocalTruefireCourseSeeder::class);
+        $this->call(LocalTruefireSegmentSeeder::class);
+        
+        // Seed music terms (may require table creation first)
         $this->call(MusicTermSeeder::class);
     }
 }

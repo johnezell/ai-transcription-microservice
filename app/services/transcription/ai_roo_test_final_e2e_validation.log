@@ -1,0 +1,93 @@
+2025-06-09 18:12:42,584 - INFO - 🚀 Starting Final WhisperX E2E Validation Tests
+2025-06-09 18:12:42,584 - INFO - ============================================================
+2025-06-09 18:12:42,584 - INFO - 🔍 Testing health endpoint...
+2025-06-09 18:12:42,589 - ERROR - ❌ Health Endpoint: FAILED - HTTPConnectionPool(host='localhost', port=5051): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ad318b1f4f0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-09 18:12:42,590 - ERROR - ❌ Health check failed - aborting further tests
+2025-06-09 18:12:42,590 - INFO - 📊 Generating Final Test Report
+2025-06-09 18:12:42,590 - INFO - ============================================================
+2025-06-09 18:12:42,590 - INFO - 📈 TEST SUMMARY:
+2025-06-09 18:12:42,590 - INFO -    Total Tests: 1
+2025-06-09 18:12:42,591 - INFO -    Passed: 0
+2025-06-09 18:12:42,592 - INFO -    Failed: 1
+2025-06-09 18:12:42,592 - INFO -    Success Rate: 0.0%
+2025-06-09 18:12:42,592 - INFO - 🏥 SERVICE STATUS: 🔴 NEEDS ATTENTION
+2025-06-09 18:12:42,594 - INFO - 📄 Detailed report saved: ai_roo_test_final_e2e_report_20250609_181242.json
+2025-06-09 18:12:42,594 - ERROR - 💥 FINAL VALIDATION: FAILED - WhisperX service needs attention!
+2025-06-09 18:17:01,712 - INFO - 🚀 Starting Final WhisperX E2E Validation Tests
+2025-06-09 18:17:01,713 - INFO - ============================================================
+2025-06-09 18:17:01,713 - INFO - 🔍 Testing health endpoint...
+2025-06-09 18:17:01,733 - INFO - ✅ Health Endpoint: PASSED
+2025-06-09 18:17:01,733 - INFO -    Details: Service healthy - Backend: WhisperX, Status: healthy
+2025-06-09 18:17:01,734 - INFO - 🔍 Searching for available TrueFire audio files...
+2025-06-09 18:17:01,738 - INFO - ✅ Found audio file: /mnt/d_drive/truefire-courses/1/7959.wav (6,661,418 bytes)
+2025-06-09 18:17:01,738 - INFO - ✅ Audio File Availability: PASSED
+2025-06-09 18:17:01,738 - INFO -    Details: Using: /mnt/d_drive/truefire-courses/1/7959.wav
+2025-06-09 18:17:01,738 - INFO - 🎵 Testing transcription with preset: fast
+2025-06-09 18:17:01,816 - ERROR - ❌ Transcription - Fast Preset: FAILED - HTTP 415: <!doctype html>
+<html lang=en>
+<title>415 Unsupported Media Type</title>
+<h1>Unsupported Media Type</h1>
+<p>Did not attempt to load JSON data because the request Content-Type was not &#39;application/json&#39;.</p>
+
+2025-06-09 18:17:01,818 - INFO - 🎵 Testing transcription with preset: balanced
+2025-06-09 18:17:01,921 - ERROR - ❌ Transcription - Balanced Preset: FAILED - HTTP 415: <!doctype html>
+<html lang=en>
+<title>415 Unsupported Media Type</title>
+<h1>Unsupported Media Type</h1>
+<p>Did not attempt to load JSON data because the request Content-Type was not &#39;application/json&#39;.</p>
+
+2025-06-09 18:17:01,922 - INFO - 🎵 Testing transcription with preset: accurate
+2025-06-09 18:17:02,007 - ERROR - ❌ Transcription - Accurate Preset: FAILED - HTTP 415: <!doctype html>
+<html lang=en>
+<title>415 Unsupported Media Type</title>
+<h1>Unsupported Media Type</h1>
+<p>Did not attempt to load JSON data because the request Content-Type was not &#39;application/json&#39;.</p>
+
+2025-06-09 18:17:02,008 - INFO - 🔍 Testing error handling...
+2025-06-09 18:17:02,017 - ERROR - ❌ Error Handling - No Audio File: FAILED - Expected status [400, 422], got 415
+2025-06-09 18:17:02,026 - ERROR - ❌ Error Handling - Invalid Preset: FAILED - Expected status [400, 422], got 415
+2025-06-09 18:17:02,032 - ERROR - ❌ Error Handling - Invalid Audio Format: FAILED - Expected status [400, 422, 500], got 415
+2025-06-09 18:17:02,033 - INFO - 🔍 Validating GPU acceleration...
+2025-06-09 18:17:02,033 - ERROR - ❌ GPU Acceleration Validation: FAILED - No transcription test data available
+2025-06-09 18:17:02,033 - INFO - 📊 Generating Final Test Report
+2025-06-09 18:17:02,033 - INFO - ============================================================
+2025-06-09 18:17:02,034 - INFO - 📈 TEST SUMMARY:
+2025-06-09 18:17:02,034 - INFO -    Total Tests: 9
+2025-06-09 18:17:02,034 - INFO -    Passed: 2
+2025-06-09 18:17:02,034 - INFO -    Failed: 7
+2025-06-09 18:17:02,035 - INFO -    Success Rate: 22.2%
+2025-06-09 18:17:02,035 - INFO - 🏥 SERVICE STATUS: 🔴 NEEDS ATTENTION
+2025-06-09 18:17:02,037 - INFO - 📄 Detailed report saved: ai_roo_test_final_e2e_report_20250609_181702.json
+2025-06-09 18:17:02,037 - ERROR - 💥 FINAL VALIDATION: FAILED - WhisperX service needs attention!
+2025-06-09 18:20:21,365 - INFO - 🚀 Starting Final WhisperX E2E Validation Tests
+2025-06-09 18:20:21,365 - INFO - ============================================================
+2025-06-09 18:20:21,365 - INFO - 🔍 Testing health endpoint...
+2025-06-09 18:20:21,372 - INFO - ✅ Health Endpoint: PASSED
+2025-06-09 18:20:21,372 - INFO -    Details: Service healthy - Backend: WhisperX, Status: healthy
+2025-06-09 18:20:21,372 - INFO - 🔍 Searching for available TrueFire audio files...
+2025-06-09 18:20:21,374 - INFO - ✅ Found audio file: /mnt/d_drive/truefire-courses/1/7959.wav (6,661,418 bytes)
+2025-06-09 18:20:21,374 - INFO - ✅ Audio File Availability: PASSED
+2025-06-09 18:20:21,374 - INFO -    Details: Using: /mnt/d_drive/truefire-courses/1/7959.wav
+2025-06-09 18:20:21,375 - INFO - 🎵 Testing transcription with preset: fast
+2025-06-09 18:20:38,940 - ERROR - ❌ Transcription - Fast Preset: FAILED - ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-06-09 18:20:38,942 - INFO - 🎵 Testing transcription with preset: balanced
+2025-06-09 18:20:39,044 - ERROR - ❌ Transcription - Balanced Preset: FAILED - ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-06-09 18:20:39,045 - INFO - 🎵 Testing transcription with preset: accurate
+2025-06-09 18:20:39,049 - ERROR - ❌ Transcription - Accurate Preset: FAILED - ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-06-09 18:20:39,049 - INFO - 🔍 Testing error handling...
+2025-06-09 18:20:39,053 - ERROR - ❌ Error Handling - Missing Job ID: FAILED - ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-06-09 18:20:39,055 - ERROR - ❌ Error Handling - Invalid Preset: FAILED - ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-06-09 18:20:39,058 - ERROR - ❌ Error Handling - Missing Audio Path: FAILED - ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-06-09 18:20:39,067 - ERROR - ❌ Error Handling - Nonexistent Audio File: FAILED - ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-06-09 18:20:39,067 - INFO - 🔍 Validating GPU acceleration...
+2025-06-09 18:20:39,068 - ERROR - ❌ GPU Acceleration Validation: FAILED - No transcription test data available
+2025-06-09 18:20:39,068 - INFO - 📊 Generating Final Test Report
+2025-06-09 18:20:39,069 - INFO - ============================================================
+2025-06-09 18:20:39,069 - INFO - 📈 TEST SUMMARY:
+2025-06-09 18:20:39,069 - INFO -    Total Tests: 10
+2025-06-09 18:20:39,070 - INFO -    Passed: 2
+2025-06-09 18:20:39,070 - INFO -    Failed: 8
+2025-06-09 18:20:39,070 - INFO -    Success Rate: 20.0%
+2025-06-09 18:20:39,070 - INFO - 🏥 SERVICE STATUS: 🔴 NEEDS ATTENTION
+2025-06-09 18:20:39,072 - INFO - 📄 Detailed report saved: ai_roo_test_final_e2e_report_20250609_182039.json
+2025-06-09 18:20:39,073 - ERROR - 💥 FINAL VALIDATION: FAILED - WhisperX service needs attention!

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\LocalTruefireCourse;
+use App\Models\LocalTruefireSegment;
+use App\Models\TruefireSegmentProcessing;
 use App\Models\CourseAudioPreset;
 use App\Models\CourseTranscriptionPreset;
 use App\Models\SegmentDownload;
@@ -11,6 +13,9 @@ use App\Models\AudioTestBatch;
 use App\Jobs\DownloadTruefireSegmentV3;
 use App\Jobs\AudioExtractionTestJob;
 use App\Jobs\BatchAudioExtractionJob;
+use App\Jobs\TruefireSegmentAudioExtractionJob;
+use App\Jobs\TruefireSegmentTranscriptionJob;
+use App\Jobs\TruefireSegmentTerminologyJob;
 use App\Http\Requests\CreateBatchTestRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -58,7 +63,9 @@ class TruefireCourseController extends Controller
                     'segments' => function ($query) {
                         $query->withVideo(); // Only count segments with valid video fields
                     }
-                ]);
+                ])->withSum(['segments' => function ($query) {
+                    $query->withVideo(); // Only sum runtime for segments with valid video fields
+                }], 'runtime');
                 
                 $courses = $query->paginate($perPage);
                 
@@ -782,8 +789,8 @@ class TruefireCourseController extends Controller
                 $existingQueues = $allJobs->pluck('queue')->unique()->values()->toArray();
                 $debugInfo['checked_queues'] = $existingQueues;
                 
-                // Try multiple possible queue names
-                $possibleQueues = ['downloads', 'default', null, ''];
+                // Try multiple possible queue names - prioritize default queue
+                $possibleQueues = ['default', null, '', 'downloads'];
                 foreach ($possibleQueues as $queueName) {
                     $jobs = \DB::table('jobs');
                     
@@ -3064,6 +3071,643 @@ class TruefireCourseController extends Controller
                 'message' => 'Error getting transcription preset options',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
+        }
+    }
+
+    /**
+     * Show a specific TrueFire course segment with video player and transcription functionality
+     */
+    public function showSegment(LocalTruefireCourse $truefireCourse, $segmentId)
+    {
+        // Find the segment and ensure it belongs to the course
+        $segment = LocalTruefireSegment::with('channel')->findOrFail($segmentId);
+        
+        // Verify the segment belongs to this course through the channel
+        if ($segment->channel->courseid != $truefireCourse->id) {
+            abort(404, 'Segment not found in this course');
+        }
+        
+        // Get or create processing record
+        $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+        
+        if (!$processing) {
+            $processing = TruefireSegmentProcessing::create([
+                'segment_id' => $segmentId,
+                'course_id' => $truefireCourse->id,
+                'status' => 'ready',
+                'progress_percentage' => 0
+            ]);
+        }
+        
+        // Check if local video file exists and use it, otherwise fallback to S3
+        $courseDir = "truefire-courses/{$truefireCourse->id}";
+        $videoFilename = "{$segmentId}.mp4";
+        $videoPath = "{$courseDir}/{$videoFilename}";
+        $disk = 'd_drive';
+        
+        $videoUrl = null;
+        $isLocalVideo = false;
+        
+        if (Storage::disk($disk)->exists($videoPath)) {
+            // Use local video file - serve it through Laravel
+            $videoUrl = route('truefire-courses.segment.video', [
+                'truefireCourse' => $truefireCourse->id,
+                'segment' => $segmentId
+            ]);
+            $isLocalVideo = true;
+            Log::info('Using local video file for segment', [
+                'segment_id' => $segmentId,
+                'local_path' => $videoPath
+            ]);
+        } else {
+            // Fallback to S3 signed URL
+            try {
+                $videoUrl = $segment->getSignedUrl();
+                Log::info('Using S3 signed URL for segment (local file not found)', [
+                    'segment_id' => $segmentId,
+                    'expected_path' => $videoPath
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to generate S3 signed URL for segment', [
+                    'segment_id' => $segmentId,
+                    'error' => $e->getMessage()
+                ]);
+                $videoUrl = null;
+            }
+        }
+        
+        // Build segment data with processing information
+        $segmentData = [
+            'id' => $segment->id,
+            'title' => $segment->title,
+            'name' => $segment->name,
+            'description' => $segment->description,
+            'runtime' => $segment->runtime,
+            'channel_id' => $segment->channel_id,
+            'channel' => $segment->channel,
+            'course_id' => $truefireCourse->id,
+            
+            // Video URL (prioritizes local file)
+            'url' => $videoUrl,
+            'video' => $segment->video,
+            'is_local_video' => $isLocalVideo,
+            
+            // Processing status
+            'status' => $processing->status,
+            'error_message' => $processing->error_message,
+            'is_processing' => $processing->is_processing,
+            
+            // Audio files
+            'audio_path' => $processing->audio_path,
+            'audio_url' => $processing->audio_url,
+            'audio_size' => $processing->audio_size,
+            'audio_duration' => $processing->audio_duration,
+            'formatted_duration' => $processing->formatted_duration,
+            'audio_extraction_approved' => $processing->audio_extraction_approved,
+            
+            // Transcript files
+            'transcript_path' => $processing->transcript_path,
+            'transcript_url' => $processing->transcript_url,
+            'transcript_text' => $processing->transcript_text,
+            'transcript_json_url' => $processing->transcript_json_url,
+            'transcript_json_api_url' => ($processing->transcript_path || $processing->transcript_text) ? 
+                "/api/truefire-courses/{$truefireCourse->id}/segments/{$segmentId}/transcript-json" : null,
+            'subtitles_url' => $processing->subtitles_url,
+            
+            // Terminology
+            'has_terminology' => $processing->has_terminology,
+            'terminology_path' => $processing->terminology_path,
+            'terminology_url' => $processing->terminology_url,
+            'terminology_json_api_url' => $processing->has_terminology ? 
+                "/api/truefire-courses/{$truefireCourse->id}/segments/{$segmentId}/terminology-json" : null,
+            'terminology_count' => $processing->terminology_count,
+            'terminology_metadata' => $processing->terminology_metadata,
+            
+            // Timestamps
+            'created_at' => $segment->created_at,
+            'updated_at' => $processing->updated_at,
+        ];
+        
+        Log::info('Showing TrueFire course segment', [
+            'course_id' => $truefireCourse->id,
+            'segment_id' => $segmentId,
+            'status' => $processing->status,
+            'has_video_url' => !empty($segmentData['url'])
+        ]);
+        
+        return Inertia::render('TruefireCourses/SegmentShow', [
+            'course' => $truefireCourse,
+            'segment' => $segmentData
+        ]);
+    }
+
+    /**
+     * Request transcription for a TrueFire course segment
+     */
+    public function requestSegmentTranscription(LocalTruefireCourse $truefireCourse, $segmentId, Request $request)
+    {
+        try {
+            $segment = LocalTruefireSegment::findOrFail($segmentId);
+            
+            // Verify segment belongs to course
+            if ($segment->channel->courseid != $truefireCourse->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment not found in this course'
+                ], 404);
+            }
+            
+            // Get or create processing record
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+            
+            if (!$processing) {
+                $processing = TruefireSegmentProcessing::create([
+                    'segment_id' => $segmentId,
+                    'course_id' => $truefireCourse->id,
+                    'status' => 'ready',
+                    'progress_percentage' => 0
+                ]);
+            }
+            
+            // Check if already processing
+            if ($processing->is_processing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment is already being processed'
+                ], 400);
+            }
+            
+            // Start audio extraction first
+            $processing->startAudioExtraction();
+            
+            // Dispatch audio extraction job
+            TruefireSegmentAudioExtractionJob::dispatch($processing);
+            
+            Log::info('TrueFire segment transcription requested', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Audio extraction and transcription process started'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error requesting TrueFire segment transcription', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error starting transcription: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Restart transcription for a failed TrueFire course segment
+     */
+    public function restartSegmentTranscription(LocalTruefireCourse $truefireCourse, $segmentId, Request $request)
+    {
+        try {
+            $segment = LocalTruefireSegment::findOrFail($segmentId);
+            
+            // Verify segment belongs to course
+            if ($segment->channel->courseid != $truefireCourse->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment not found in this course'
+                ], 404);
+            }
+            
+            // Get processing record
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+            
+            if (!$processing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No processing record found for this segment'
+                ], 400);
+            }
+            
+            // Check if status allows restart
+            if ($processing->status !== 'failed') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Can only restart failed transcriptions. Current status: ' . $processing->status
+                ], 400);
+            }
+            
+            // Check if already processing
+            if ($processing->is_processing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment is already being processed'
+                ], 400);
+            }
+            
+            // Reset processing record for restart
+            $processing->update([
+                'status' => 'ready',
+                'is_processing' => false,
+                'error_message' => null,
+                'progress_percentage' => 0,
+                
+                // Clear previous processing data but keep successful parts
+                'audio_extraction_started_at' => null,
+                'audio_extraction_completed_at' => null,
+                'transcription_started_at' => null,
+                'transcription_completed_at' => null,
+                'terminology_started_at' => null,
+                'terminology_completed_at' => null,
+                
+                // Keep successful file paths/URLs if they exist
+                // 'audio_path' => null,  // Keep if audio was successful
+                // 'audio_url' => null,   // Keep if audio was successful
+                // 'transcript_path' => null,  // Keep if transcript was successful
+                // 'transcript_url' => null,   // Keep if transcript was successful
+                // 'terminology_path' => null, // Keep if terminology was successful
+                // 'terminology_url' => null,  // Keep if terminology was successful
+            ]);
+            
+            // Start audio extraction from the beginning
+            $processing->startAudioExtraction();
+            
+            // Dispatch audio extraction job
+            TruefireSegmentAudioExtractionJob::dispatch($processing);
+            
+            Log::info('TrueFire segment transcription restarted', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'previous_error' => $processing->getOriginal('error_message')
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Transcription process restarted'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error restarting TrueFire segment transcription', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error restarting transcription: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Approve audio extraction for a TrueFire course segment
+     */
+    public function approveSegmentAudioExtraction(LocalTruefireCourse $truefireCourse, $segmentId, Request $request)
+    {
+        try {
+            $segment = LocalTruefireSegment::findOrFail($segmentId);
+            
+            // Verify segment belongs to course
+            if ($segment->channel->courseid != $truefireCourse->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment not found in this course'
+                ], 404);
+            }
+            
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+            
+            if (!$processing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No processing record found'
+                ], 400);
+            }
+            
+            // Validate request data
+            $validated = $request->validate([
+                'approved_by' => 'required|string|max:255',
+                'notes' => 'nullable|string|max:1000'
+            ]);
+            
+            // Update processing record
+            $processing->update([
+                'audio_extraction_approved' => true,
+                'audio_extraction_approved_at' => now(),
+                'audio_extraction_approved_by' => $validated['approved_by'],
+                'audio_extraction_notes' => $validated['notes'] ?? null
+            ]);
+            
+            // Start transcription
+            $processing->startTranscription();
+            
+            // Dispatch transcription job
+            TruefireSegmentTranscriptionJob::dispatch($processing);
+            
+            Log::info('TrueFire segment audio extraction approved', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'approved_by' => $validated['approved_by']
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Audio extraction approved and transcription started'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error approving TrueFire segment audio extraction', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error approving audio extraction: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Request terminology recognition for a TrueFire course segment - DISABLED
+     */
+    public function requestSegmentTerminology(LocalTruefireCourse $truefireCourse, $segmentId)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'Terminology recognition is currently disabled'
+        ], 400);
+        
+        /*
+        try {
+            $segment = LocalTruefireSegment::findOrFail($segmentId);
+            
+            // Verify segment belongs to course
+            if ($segment->channel->courseid != $truefireCourse->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment not found in this course'
+                ], 404);
+            }
+            
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+            
+            if (!$processing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No processing record found'
+                ], 400);
+            }
+            
+            // Check if transcript is available
+            if (empty($processing->transcript_path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transcript not available. Please complete transcription first.'
+                ], 400);
+            }
+            
+            // Start terminology processing
+            $processing->startTerminology();
+            
+            // Dispatch terminology job
+            TruefireSegmentTerminologyJob::dispatch($processing);
+            
+            Log::info('TrueFire segment terminology recognition requested', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Terminology recognition started'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error requesting TrueFire segment terminology', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error starting terminology recognition: ' . $e->getMessage()
+            ], 500);
+        }
+        */
+    }
+
+    /**
+     * Serve the local video file for a TrueFire segment
+     */
+    public function serveSegmentVideo(LocalTruefireCourse $truefireCourse, $segmentId)
+    {
+        try {
+            // Verify segment belongs to course
+            $segment = LocalTruefireSegment::with('channel')->findOrFail($segmentId);
+            
+            if ($segment->channel->courseid != $truefireCourse->id) {
+                abort(404, 'Segment not found in this course');
+            }
+            
+            // Build local video path
+            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $videoFilename = "{$segmentId}.mp4";
+            $videoPath = "{$courseDir}/{$videoFilename}";
+            $disk = 'd_drive';
+            
+            // Check if local file exists
+            if (!Storage::disk($disk)->exists($videoPath)) {
+                Log::warning('Local video file not found', [
+                    'course_id' => $truefireCourse->id,
+                    'segment_id' => $segmentId,
+                    'path' => $videoPath
+                ]);
+                abort(404, 'Video file not found locally');
+            }
+            
+            // Get the full file path
+            $fullPath = Storage::disk($disk)->path($videoPath);
+            
+            // Verify file exists and is readable
+            if (!file_exists($fullPath) || !is_readable($fullPath)) {
+                Log::error('Video file exists in storage but not accessible', [
+                    'segment_id' => $segmentId,
+                    'full_path' => $fullPath
+                ]);
+                abort(404, 'Video file not accessible');
+            }
+            
+            // Get file size and MIME type
+            $fileSize = filesize($fullPath);
+            $mimeType = 'video/mp4';
+            
+            Log::info('Serving local video file', [
+                'segment_id' => $segmentId,
+                'file_size' => $fileSize,
+                'path' => $videoPath
+            ]);
+            
+            // Set appropriate headers for video streaming
+            $headers = [
+                'Content-Type' => $mimeType,
+                'Content-Length' => $fileSize,
+                'Accept-Ranges' => 'bytes',
+                'Cache-Control' => 'public, max-age=3600',
+            ];
+            
+            // Handle range requests for video seeking
+            $request = request();
+            if ($request->hasHeader('Range')) {
+                $range = $request->header('Range');
+                if (preg_match('/bytes=(\d+)-(\d*)/', $range, $matches)) {
+                    $start = intval($matches[1]);
+                    $end = !empty($matches[2]) ? intval($matches[2]) : $fileSize - 1;
+                    $length = $end - $start + 1;
+                    
+                    $headers['Content-Range'] = "bytes {$start}-{$end}/{$fileSize}";
+                    $headers['Content-Length'] = $length;
+                    
+                    $stream = fopen($fullPath, 'rb');
+                    fseek($stream, $start);
+                    $data = fread($stream, $length);
+                    fclose($stream);
+                    
+                    return response($data, 206, $headers);
+                }
+            }
+            
+            // Return full file
+            return response()->file($fullPath, $headers);
+            
+        } catch (\Exception $e) {
+            Log::error('Error serving TrueFire segment video', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage()
+            ]);
+            
+            abort(500, 'Error serving video file');
+        }
+    }
+
+    /**
+     * Serve the extracted audio file for a TrueFire segment
+     */
+    public function serveSegmentAudio(LocalTruefireCourse $truefireCourse, $segmentId, $filename)
+    {
+        try {
+            // Verify segment belongs to course
+            $segment = LocalTruefireSegment::with('channel')->findOrFail($segmentId);
+            
+            if ($segment->channel->courseid != $truefireCourse->id) {
+                abort(404, 'Segment not found in this course');
+            }
+            
+            // Build audio file path - check both in course directory and root d_drive
+            $possiblePaths = [
+                "truefire-courses/{$truefireCourse->id}/{$filename}",  // In course directory
+                $filename  // In root d_drive (for files like 7959.wav)
+            ];
+            
+            $disk = 'd_drive';
+            $audioPath = null;
+            $fullPath = null;
+            
+            // Find the audio file in one of the possible locations
+            foreach ($possiblePaths as $path) {
+                if (Storage::disk($disk)->exists($path)) {
+                    $audioPath = $path;
+                    $fullPath = Storage::disk($disk)->path($path);
+                    break;
+                }
+            }
+            
+            // If not found in storage, check direct paths on D drive
+            if (!$audioPath) {
+                $directPaths = [
+                    "/mnt/d_drive/truefire-courses/{$truefireCourse->id}/{$filename}",
+                    "/mnt/d_drive/{$filename}"
+                ];
+                
+                foreach ($directPaths as $directPath) {
+                    if (file_exists($directPath)) {
+                        $fullPath = $directPath;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$fullPath || !file_exists($fullPath) || !is_readable($fullPath)) {
+                Log::warning('Audio file not found', [
+                    'course_id' => $truefireCourse->id,
+                    'segment_id' => $segmentId,
+                    'filename' => $filename,
+                    'checked_paths' => $possiblePaths
+                ]);
+                abort(404, 'Audio file not found');
+            }
+            
+            // Get file size and MIME type
+            $fileSize = filesize($fullPath);
+            $mimeType = 'audio/wav';
+            
+            Log::info('Serving audio file', [
+                'segment_id' => $segmentId,
+                'filename' => $filename,
+                'file_size' => $fileSize,
+                'path' => $fullPath
+            ]);
+            
+            // Set appropriate headers for audio streaming
+            $headers = [
+                'Content-Type' => $mimeType,
+                'Content-Length' => $fileSize,
+                'Accept-Ranges' => 'bytes',
+                'Cache-Control' => 'public, max-age=3600',
+                'Content-Disposition' => 'inline; filename="' . basename($filename) . '"'
+            ];
+            
+            // Handle range requests for audio seeking
+            $request = request();
+            if ($request->hasHeader('Range')) {
+                $range = $request->header('Range');
+                if (preg_match('/bytes=(\d+)-(\d*)/', $range, $matches)) {
+                    $start = intval($matches[1]);
+                    $end = !empty($matches[2]) ? intval($matches[2]) : $fileSize - 1;
+                    $length = $end - $start + 1;
+                    
+                    $headers['Content-Range'] = "bytes {$start}-{$end}/{$fileSize}";
+                    $headers['Content-Length'] = $length;
+                    
+                    $stream = fopen($fullPath, 'rb');
+                    fseek($stream, $start);
+                    $data = fread($stream, $length);
+                    fclose($stream);
+                    
+                    return response($data, 206, $headers);
+                }
+            }
+            
+            // Return full file
+            return response()->file($fullPath, $headers);
+            
+        } catch (\Exception $e) {
+            Log::error('Error serving TrueFire segment audio', [
+                'course_id' => $truefireCourse->id,
+                'segment_id' => $segmentId,
+                'filename' => $filename,
+                'error' => $e->getMessage()
+            ]);
+            
+            abort(500, 'Error serving audio file');
         }
     }
 }

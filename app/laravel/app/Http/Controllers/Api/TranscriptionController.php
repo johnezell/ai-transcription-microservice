@@ -102,6 +102,11 @@ class TranscriptionController extends Controller
      */
     public function updateJobStatus($jobId, Request $request)
     {
+        // Check if this is a TrueFire segment job
+        if (str_starts_with($jobId, 'truefire_segment_')) {
+            return $this->handleTruefireSegmentCallback($jobId, $request);
+        }
+        
         // Get current timestamp
         $now = now();
         
@@ -454,8 +459,10 @@ class TranscriptionController extends Controller
                     ]);
                 }
                 
+                // Auto terminology recognition is DISABLED
                 // Only trigger terminology recognition after the transcription is finished and it's safe to do so
                 // We wait for the transaction to finish first to avoid race conditions
+                /*
                 if (isset($responseData['transcript_path']) && 
                     !$isTerminologyCallback && 
                     $videoData['status'] === 'transcribed') {
@@ -484,6 +491,18 @@ class TranscriptionController extends Controller
                         ]);
                     }
                 }
+                */
+                
+                // Mark videos as completed after transcription since terminology is disabled
+                if (isset($responseData['transcript_path']) && 
+                    !$isTerminologyCallback && 
+                    $videoData['status'] === 'transcribed') {
+                    
+                    $video->update(['status' => 'completed']);
+                    Log::info('Marked video as completed after transcription (terminology disabled)', [
+                        'video_id' => $video->id
+                    ]);
+                }
             }
 
             return response()->json([
@@ -491,6 +510,248 @@ class TranscriptionController extends Controller
                 'message' => 'Job status updated successfully',
             ]);
         });
+    }
+
+    /**
+     * Handle callback for TrueFire segment processing
+     */
+    protected function handleTruefireSegmentCallback($jobId, Request $request)
+    {
+        try {
+            Log::info('TrueFire segment callback received via TranscriptionController', [
+                'job_id' => $jobId,
+                'status' => $request->input('status'),
+                'request_data' => $request->all()
+            ]);
+
+            // Extract segment ID from job ID (format: "truefire_segment_7961")
+            $segmentId = str_replace('truefire_segment_', '', $jobId);
+            
+            // Find the processing record
+            $processing = \App\Models\TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+            
+            if (!$processing) {
+                Log::error('TrueFire segment processing record not found', [
+                    'job_id' => $jobId,
+                    'segment_id' => $segmentId
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment processing record not found'
+                ], 404);
+            }
+
+            $status = $request->input('status');
+            $responseData = $request->input('response_data', []);
+
+            // Handle different types of callbacks based on response data and current status
+            if ($status === 'completed' || ($status === 'processing' && (isset($responseData['audio_path']) || isset($responseData['duration_seconds'])))) {
+                // Audio extraction completed (either test mode with 'completed' or regular mode with 'processing' + audio data)
+                if (isset($responseData['audio_path']) || isset($responseData['duration_seconds'])) {
+                    Log::info('Processing TrueFire audio extraction completion callback', [
+                        'job_id' => $jobId,
+                        'segment_id' => $segmentId,
+                        'status' => $status,
+                        'has_audio_flag' => $responseData['has_audio'] ?? 'not_set',
+                        'audio_path' => $responseData['audio_path'] ?? 'not_set'
+                    ]);
+                    $this->handleTruefireAudioExtractionComplete($processing, $responseData);
+                    
+                } elseif (isset($responseData['transcript_path'])) {
+                    // Transcription completed
+                    $this->handleTruefireTranscriptionComplete($processing, $responseData);
+                    
+                } elseif (isset($responseData['music_terms_json_path']) || isset($responseData['terminology_path'])) {
+                    // Terminology completed
+                    $this->handleTruefireTerminologyComplete($processing, $responseData);
+                    
+                } else {
+                    Log::warning('Unknown TrueFire callback type', [
+                        'job_id' => $jobId,
+                        'response_data' => $responseData
+                    ]);
+                }
+                
+            } elseif ($status === 'failed') {
+                $errorMessage = $responseData['error'] ?? 'Processing failed';
+                $hasAudio = isset($responseData['has_audio']) ? (bool)$responseData['has_audio'] : false;
+                
+                $processing->update(['has_audio' => $hasAudio]);
+                $processing->markAsFailed($errorMessage);
+                
+                Log::error('TrueFire segment processing failed', [
+                    'job_id' => $jobId,
+                    'segment_id' => $segmentId,
+                    'error' => $errorMessage,
+                    'has_audio' => $hasAudio
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'TrueFire segment callback processed successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error processing TrueFire segment callback', [
+                'job_id' => $jobId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error processing callback: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Handle audio extraction completion for TrueFire segment
+     */
+    protected function handleTruefireAudioExtractionComplete($processing, $responseData)
+    {
+        $audioPath = $responseData['audio_path'] ?? null;
+        $audioDuration = $responseData['duration_seconds'] ?? null;
+        $audioSize = $responseData['audio_size_bytes'] ?? null;
+        $hasAudio = isset($responseData['has_audio']) ? (bool)$responseData['has_audio'] : ($audioPath ? true : false);
+
+        $processing->update([
+            'status' => 'audio_extracted',
+            'audio_path' => $audioPath,
+            'audio_duration' => $audioDuration,
+            'audio_size' => $audioSize,
+            'has_audio' => $hasAudio,
+            'audio_extraction_completed_at' => now(),
+            'progress_percentage' => 40
+        ]);
+
+        // Generate audio URL - handle both storage and D drive paths
+        if ($audioPath && file_exists($audioPath)) {
+            if (str_contains($audioPath, '/mnt/d_drive/')) {
+                // For D drive files, we need to serve them through Laravel
+                $filename = basename($audioPath);
+                $audioUrl = url("/truefire-courses/{$processing->course_id}/segments/{$processing->segment_id}/audio/{$filename}");
+            } else {
+                // For storage files, use the normal asset URL
+                $relativePath = str_replace(storage_path('app/public/'), '', $audioPath);
+                $audioUrl = asset('storage/' . $relativePath);
+            }
+            
+            $processing->update(['audio_url' => $audioUrl]);
+        }
+
+        Log::info('TrueFire segment audio extraction completed', [
+            'segment_id' => $processing->segment_id,
+            'audio_path' => $audioPath,
+            'duration' => $audioDuration
+        ]);
+
+        // Auto-start transcription (same behavior as callback methods)
+        $processing->startTranscription();
+        \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing);
+    }
+
+    /**
+     * Handle transcription completion for TrueFire segment
+     */
+    protected function handleTruefireTranscriptionComplete($processing, $responseData)
+    {
+        $transcriptPath = $responseData['transcript_path'] ?? null;
+        $transcriptJsonPath = $responseData['transcript_json_path'] ?? null;
+        $subtitlesPath = $responseData['subtitles_path'] ?? null;
+        $transcriptText = $responseData['transcript_text'] ?? null;
+
+        $processing->update([
+            'status' => 'transcribed',
+            'transcript_path' => $transcriptPath,
+            'transcript_text' => $transcriptText,
+            'transcription_completed_at' => now(),
+            'progress_percentage' => 75
+        ]);
+
+        // Generate URLs
+        if ($transcriptPath) {
+            $relativePath = str_replace(storage_path('app/public/'), '', $transcriptPath);
+            $processing->update(['transcript_url' => asset('storage/' . $relativePath)]);
+        }
+
+        if ($transcriptJsonPath) {
+            $relativePath = str_replace(storage_path('app/public/'), '', $transcriptJsonPath);
+            $processing->update(['transcript_json_url' => asset('storage/' . $relativePath)]);
+        }
+
+        if ($subtitlesPath) {
+            $relativePath = str_replace(storage_path('app/public/'), '', $subtitlesPath);
+            $processing->update(['subtitles_url' => asset('storage/' . $subtitlesPath)]);
+        }
+
+        // Store transcript JSON in database if available
+        if ($transcriptJsonPath && file_exists($transcriptJsonPath)) {
+            try {
+                $jsonContent = json_decode(file_get_contents($transcriptJsonPath), true);
+                $processing->update(['transcript_json' => $jsonContent]);
+            } catch (\Exception $e) {
+                Log::error('Failed to read TrueFire transcript JSON: ' . $e->getMessage());
+            }
+        }
+
+        Log::info('TrueFire segment transcription completed', [
+            'segment_id' => $processing->segment_id,
+            'transcript_path' => $transcriptPath
+        ]);
+
+        // Auto-start terminology recognition - DISABLED
+        // $processing->startTerminology();
+        // \App\Jobs\TruefireSegmentTerminologyJob::dispatch($processing);
+        
+        // Mark as completed since terminology is disabled
+        $processing->update([
+            'status' => 'completed',
+            'progress_percentage' => 100
+        ]);
+    }
+
+    /**
+     * Handle terminology completion for TrueFire segment
+     */
+    protected function handleTruefireTerminologyComplete($processing, $responseData)
+    {
+        $terminologyPath = $responseData['music_terms_json_path'] ?? $responseData['terminology_path'] ?? null;
+        $terminologyCount = $responseData['term_count'] ?? null;
+        $terminologyMetadata = $responseData['metadata'] ?? null;
+
+        $processing->update([
+            'status' => 'completed',
+            'terminology_path' => $terminologyPath,
+            'terminology_count' => $terminologyCount,
+            'terminology_metadata' => $terminologyMetadata,
+            'has_terminology' => true,
+            'terminology_completed_at' => now(),
+            'progress_percentage' => 100
+        ]);
+
+        // Generate terminology URL
+        if ($terminologyPath) {
+            $relativePath = str_replace(storage_path('app/public/'), '', $terminologyPath);
+            $processing->update(['terminology_url' => asset('storage/' . $relativePath)]);
+        }
+
+        // Store terminology JSON in database if available
+        if ($terminologyPath && file_exists($terminologyPath)) {
+            try {
+                $jsonContent = json_decode(file_get_contents($terminologyPath), true);
+                $processing->update(['terminology_json' => $jsonContent]);
+            } catch (\Exception $e) {
+                Log::error('Failed to read TrueFire terminology JSON: ' . $e->getMessage());
+            }
+        }
+
+        Log::info('TrueFire segment terminology recognition completed', [
+            'segment_id' => $processing->segment_id,
+            'terminology_path' => $terminologyPath,
+            'term_count' => $terminologyCount
+        ]);
     }
 
     /**

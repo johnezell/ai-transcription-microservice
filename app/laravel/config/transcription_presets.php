@@ -33,7 +33,7 @@ return [
             'patience' => 1.0,
             'length_penalty' => 1.0,
             'suppress_tokens' => [-1],
-            'initial_prompt' => 'This is a guitar lesson with music instruction.',
+            'initial_prompt' => 'Guitar lesson music instruction',
             'condition_on_previous_text' => true,
             'fp16' => true,
             'compression_ratio_threshold' => 2.4,
@@ -80,7 +80,7 @@ return [
             'patience' => 1.0,
             'length_penalty' => 1.0,
             'suppress_tokens' => [-1],
-            'initial_prompt' => 'This is a guitar lesson with music instruction. The instructor discusses guitar techniques, chords, scales, and musical concepts.',
+            'initial_prompt' => 'Guitar lesson music instruction',
             'condition_on_previous_text' => true,
             'fp16' => true,
             'compression_ratio_threshold' => 2.4,
@@ -127,7 +127,7 @@ return [
             'patience' => 1.2,
             'length_penalty' => 1.0,
             'suppress_tokens' => [-1],
-            'initial_prompt' => 'This is a detailed guitar lesson with comprehensive music instruction. The instructor covers guitar techniques, music theory, chord progressions, scales, fingerpicking patterns, strumming techniques, and musical terminology. Listen carefully for technical terms, note names, chord names, and specific musical instructions.',
+            'initial_prompt' => 'Guitar lesson chords scales techniques music theory',
             'condition_on_previous_text' => true,
             'fp16' => true,
             'compression_ratio_threshold' => 2.4,
@@ -174,7 +174,7 @@ return [
             'patience' => 1.5,
             'length_penalty' => 1.0,
             'suppress_tokens' => [-1],
-            'initial_prompt' => 'This is a comprehensive guitar lesson with advanced music instruction and education content. The instructor provides detailed explanations of guitar techniques, advanced music theory concepts, chord progressions, scale patterns, fingerpicking and strumming techniques, musical terminology, and educational guidance. Pay special attention to technical musical terms, note names, chord names, scale degrees, time signatures, key signatures, musical intervals, and specific instructional language. The content may include references to musical styles, artists, songs, and educational methodologies.',
+            'initial_prompt' => 'Guitar lesson music theory chords scales fingerpicking intervals progressions',
             'condition_on_previous_text' => true,
             'fp16' => true,
             'compression_ratio_threshold' => 2.4,
@@ -202,6 +202,223 @@ return [
             'min_audio_duration' => 1, // seconds
             'max_audio_duration' => 14400, // 4 hours
             'supported_formats' => ['wav', 'mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wma', 'aac'],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Template Variables
+    |--------------------------------------------------------------------------
+    |
+    | Available variables for mustache templating in initial prompts.
+    | These variables can be populated from course data, segment information,
+    | user preferences, and other contextual sources.
+    |
+    */
+
+    'template_variables' => [
+        
+        // Course Information
+        'course_title' => [
+            'name' => 'Course Title',
+            'description' => 'The full title of the course or lesson series',
+            'example' => 'Advanced Jazz Guitar Masterclass',
+            'source' => 'course.title',
+            'data_type' => 'string',
+            'category' => 'course',
+            'required' => false,
+        ],
+        
+        'course_difficulty' => [
+            'name' => 'Course Difficulty',
+            'description' => 'The difficulty level of the course',
+            'example' => 'intermediate',
+            'source' => 'course.difficulty_level',
+            'data_type' => 'string',
+            'category' => 'course',
+            'required' => false,
+            'allowed_values' => ['beginner', 'intermediate', 'advanced', 'expert'],
+        ],
+        
+        // Instructor Information
+        'instructor_name' => [
+            'name' => 'Instructor Name',
+            'description' => 'The name of the course instructor',
+            'example' => 'John Doe',
+            'source' => 'course.instructor_name',
+            'data_type' => 'string',
+            'category' => 'instructor',
+            'required' => false,
+        ],
+        
+        'instructor_credentials' => [
+            'name' => 'Instructor Credentials',
+            'description' => 'Professional credentials or qualifications of the instructor',
+            'example' => 'Berklee College of Music, Grammy-nominated guitarist',
+            'source' => 'course.instructor_credentials',
+            'data_type' => 'string',
+            'category' => 'instructor',
+            'required' => false,
+        ],
+        
+        // Lesson/Segment Information
+        'lesson_topic' => [
+            'name' => 'Lesson Topic',
+            'description' => 'The main topic or subject of the current lesson',
+            'example' => 'pentatonic scales and blues improvisation',
+            'source' => 'segment.topic || course.topic',
+            'data_type' => 'string',
+            'category' => 'lesson',
+            'required' => false,
+        ],
+        
+        'segment_title' => [
+            'name' => 'Segment Title',
+            'description' => 'The title of the specific video segment being transcribed',
+            'example' => 'Bending Techniques and Vibrato',
+            'source' => 'segment.title',
+            'data_type' => 'string',
+            'category' => 'lesson',
+            'required' => false,
+        ],
+        
+        'lesson_duration' => [
+            'name' => 'Lesson Duration',
+            'description' => 'The duration of the lesson in minutes',
+            'example' => '25',
+            'source' => 'segment.duration_minutes',
+            'data_type' => 'integer',
+            'category' => 'lesson',
+            'required' => false,
+        ],
+        
+        // Musical Information
+        'musical_genre' => [
+            'name' => 'Musical Genre',
+            'description' => 'The primary musical genre or style being taught',
+            'example' => 'jazz',
+            'source' => 'course.genre || segment.genre',
+            'data_type' => 'string',
+            'category' => 'musical',
+            'required' => false,
+            'allowed_values' => ['rock', 'jazz', 'blues', 'classical', 'country', 'folk', 'metal', 'acoustic', 'electric'],
+        ],
+        
+        'skill_level' => [
+            'name' => 'Target Skill Level',
+            'description' => 'The target skill level for the lesson content',
+            'example' => 'intermediate',
+            'source' => 'course.skill_level || segment.skill_level',
+            'data_type' => 'string',
+            'category' => 'musical',
+            'required' => false,
+            'allowed_values' => ['beginner', 'intermediate', 'advanced', 'expert'],
+        ],
+        
+        'specific_techniques' => [
+            'name' => 'Specific Techniques',
+            'description' => 'Specific guitar techniques covered in this lesson',
+            'example' => 'fingerpicking, hammer-ons, pull-offs',
+            'source' => 'segment.techniques || course.techniques',
+            'data_type' => 'string',
+            'category' => 'musical',
+            'required' => false,
+        ],
+        
+        // Educational Information
+        'educational_objectives' => [
+            'name' => 'Educational Objectives',
+            'description' => 'Learning objectives or goals for the lesson',
+            'example' => 'master the minor pentatonic scale, develop improvisational skills',
+            'source' => 'segment.objectives || course.objectives',
+            'data_type' => 'string',
+            'category' => 'educational',
+            'required' => false,
+        ],
+        
+        // Contextual Information
+        'equipment_used' => [
+            'name' => 'Equipment Used',
+            'description' => 'Musical equipment or instruments used in the lesson',
+            'example' => 'electric guitar, tube amplifier, effects pedals',
+            'source' => 'segment.equipment || course.equipment',
+            'data_type' => 'string',
+            'category' => 'contextual',
+            'required' => false,
+        ],
+        
+        'lesson_series' => [
+            'name' => 'Lesson Series',
+            'description' => 'Name of the lesson series or curriculum this belongs to',
+            'example' => 'Blues Guitar Fundamentals Series',
+            'source' => 'course.series_name',
+            'data_type' => 'string',
+            'category' => 'contextual',
+            'required' => false,
+        ],
+        
+        // Dynamic Content
+        'previous_topics' => [
+            'name' => 'Previous Topics',
+            'description' => 'Topics covered in previous lessons (for context)',
+            'example' => 'basic chord progressions, strumming patterns',
+            'source' => 'course.previous_segments_topics',
+            'data_type' => 'string',
+            'category' => 'contextual',
+            'required' => false,
+        ],
+        
+        'upcoming_topics' => [
+            'name' => 'Upcoming Topics',
+            'description' => 'Topics that will be covered in future lessons',
+            'example' => 'advanced chord substitutions, modal improvisation',
+            'source' => 'course.upcoming_segments_topics',
+            'data_type' => 'string',
+            'category' => 'contextual',
+            'required' => false,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Template Categories
+    |--------------------------------------------------------------------------
+    |
+    | Grouping of template variables by category for easier management
+    | and UI organization.
+    |
+    */
+
+    'template_categories' => [
+        'course' => [
+            'name' => 'Course Information',
+            'description' => 'Variables related to the overall course or lesson series',
+            'color' => 'blue',
+        ],
+        'instructor' => [
+            'name' => 'Instructor Information',
+            'description' => 'Variables about the course instructor',
+            'color' => 'green',
+        ],
+        'lesson' => [
+            'name' => 'Lesson/Segment Information',
+            'description' => 'Variables specific to the current lesson or video segment',
+            'color' => 'purple',
+        ],
+        'musical' => [
+            'name' => 'Musical Content',
+            'description' => 'Variables related to musical genre, techniques, and skill level',
+            'color' => 'red',
+        ],
+        'educational' => [
+            'name' => 'Educational Context',
+            'description' => 'Variables about learning objectives and educational goals',
+            'color' => 'yellow',
+        ],
+        'contextual' => [
+            'name' => 'Contextual Information',
+            'description' => 'Additional context about equipment, series, and related content',
+            'color' => 'gray',
         ],
     ],
 

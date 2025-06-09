@@ -208,7 +208,7 @@ def select_best_audio_endpoint():
 ### Environment Setup
 ```bash
 # Run analysis in existing audio-extraction container
-docker exec -it aws-audio-extraction python /app/wav_quality_cli.py /path/to/files/
+docker exec -it audio-service python /app/wav_quality_cli.py /path/to/files/
 
 # API integration
 curl -X POST -F "files=@file1.wav" -F "files=@file2.wav" \

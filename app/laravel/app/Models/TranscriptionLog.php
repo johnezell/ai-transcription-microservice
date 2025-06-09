@@ -43,6 +43,9 @@ class TranscriptionLog extends Model
         'extraction_settings',
         'audio_test_batch_id',
         'batch_position',
+        'is_transcription_test',
+        'test_transcription_preset',
+        'transcription_result',
     ];
 
     /**
@@ -73,6 +76,8 @@ class TranscriptionLog extends Model
         'audio_quality_metrics' => 'array',
         'extraction_settings' => 'array',
         'batch_position' => 'integer',
+        'is_transcription_test' => 'boolean',
+        'transcription_result' => 'array',
     ];
     
     /**

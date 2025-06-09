@@ -97,9 +97,9 @@ class AudioExtractionTestJob implements ShouldQueue
         if ($jobId) {
             $this->testSettings['controller_job_id'] = $jobId;
         }
+        // Use default queue for all audio extraction test jobs
+        // Removed custom queue specification to simplify queue management
         
-        // Set the queue for audio test jobs
-        $this->onQueue('audio_tests');
         
         Log::info('AudioExtractionTestJob created', [
             'video_file_path' => $this->videoFilePath,

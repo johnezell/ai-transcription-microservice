@@ -70,6 +70,22 @@ Route::get('/truefire-courses/{truefireCourse}/download-stats', [TruefireCourseC
     ->name('truefire-courses.download-stats');
 Route::get('/truefire-courses/{truefireCourse}/queue-status', [TruefireCourseController::class, 'queueStatus'])
     ->name('truefire-courses.queue-status');
+
+// TrueFire Course Segment Viewer routes - NEW functionality for video transcription testing
+Route::get('/truefire-courses/{truefireCourse}/segments/{segment}', [TruefireCourseController::class, 'showSegment'])
+    ->name('truefire-courses.segments.show');
+Route::post('/truefire-courses/{truefireCourse}/segments/{segment}/transcription', [TruefireCourseController::class, 'requestSegmentTranscription'])
+    ->name('truefire-courses.segments.transcription.request');
+Route::post('/truefire-courses/{truefireCourse}/segments/{segment}/transcription/restart', [TruefireCourseController::class, 'restartSegmentTranscription'])
+    ->name('truefire-courses.segments.transcription.restart');
+Route::get('/truefire-courses/{truefireCourse}/segments/{segment}/video', [TruefireCourseController::class, 'serveSegmentVideo'])
+    ->name('truefire-courses.segment.video');
+Route::get('/truefire-courses/{course}/segments/{segment}/audio/{filename}', [TruefireCourseController::class, 'serveSegmentAudio'])
+    ->name('truefire-courses.segments.audio');
+Route::post('/truefire-courses/{truefireCourse}/segments/{segment}/approve-audio-extraction', [TruefireCourseController::class, 'approveSegmentAudioExtraction'])
+    ->name('truefire-courses.segments.audio-extraction.approve');
+Route::post('/truefire-courses/{truefireCourse}/segments/{segment}/terminology', [TruefireCourseController::class, 'requestSegmentTerminology'])
+    ->name('truefire-courses.segments.terminology.request');
 Route::post('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'addVideo'])
     ->name('courses.videos.add');
 Route::delete('/courses/{course}/videos', [\App\Http\Controllers\CourseController::class, 'removeVideo'])
@@ -477,5 +493,7 @@ Route::get('/test-cache-tags', function () {
         ], 500);
     }
 })->name('test.cache.tags');
+
+
 
 require __DIR__.'/auth.php';

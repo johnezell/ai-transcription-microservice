@@ -9,6 +9,8 @@ import AudioTestHistory from '@/Components/AudioTestHistory.vue';
 import BatchTestManager from '@/Components/BatchTestManager.vue';
 import CoursePresetManager from '@/Components/CoursePresetManager.vue';
 import CourseTranscriptionPresetManager from '@/Components/CourseTranscriptionPresetManager.vue';
+import TranscriptionTestPanel from '@/Components/TranscriptionTestPanel.vue';
+import TranscriptionTestResults from '@/Components/TranscriptionTestResults.vue';
 
 const props = defineProps({
     course: Object,
@@ -26,6 +28,12 @@ const showCoursePresetManager = ref(false);
 const showCourseTranscriptionPresetManager = ref(false);
 const selectedTestSegmentId = ref(null);
 const currentTestResults = ref(null);
+
+// Transcription testing state
+const showTranscriptionTestPanel = ref(false);
+const showTranscriptionTestResults = ref(false);
+const selectedTranscriptionTestSegmentId = ref(null);
+const currentTranscriptionTestResults = ref(null);
 
 // Computed properties
 const totalSegments = computed(() => {
@@ -255,6 +263,82 @@ const onTranscriptionPresetUpdated = (presetData) => {
     console.log('Course transcription preset updated:', presetData);
     showNotification(`Transcription preset updated to ${presetData.preset}`, 'success');
 };
+
+// Transcription testing methods
+const openTranscriptionTestPanel = () => {
+    showTranscriptionTestPanel.value = true;
+};
+
+const closeTranscriptionTestPanel = () => {
+    showTranscriptionTestPanel.value = false;
+    // Only reset selectedTranscriptionTestSegmentId if we're not transitioning to results modal
+    if (!showTranscriptionTestResults.value) {
+        selectedTranscriptionTestSegmentId.value = null;
+    }
+};
+
+const onTranscriptionTestStarted = (testData) => {
+    console.log('Transcription test started:', testData);
+    showNotification(`Transcription test started for segment ${testData.segmentId}`, 'info');
+};
+
+const onTranscriptionTestCompleted = (results) => {
+    console.log('Transcription test completed:', results);
+    console.log('Current selectedTranscriptionTestSegmentId:', selectedTranscriptionTestSegmentId.value);
+    
+    // Store results and ensure we preserve the segment ID
+    currentTranscriptionTestResults.value = results;
+    
+    // First open the results modal, then close the test panel to preserve selectedTranscriptionTestSegmentId
+    showTranscriptionTestResults.value = true;
+    showTranscriptionTestPanel.value = false;
+    
+    const confidenceScore = results.confidence_score ||
+                           (Array.isArray(results) && results[0]?.result?.confidence_score) ||
+                           'N/A';
+    showNotification(`Transcription test completed with ${confidenceScore}/100 confidence score`, 'success');
+};
+
+const onTranscriptionTestFailed = (error) => {
+    console.error('Transcription test failed:', error);
+    showNotification('Transcription test failed. Please try again.', 'error');
+};
+
+const openTranscriptionTestResults = (segmentId) => {
+    // Validate segmentId before proceeding
+    if (!segmentId || segmentId === null || segmentId === undefined) {
+        console.error('Cannot open transcription test results: Invalid segment ID provided:', segmentId);
+        showNotification('Cannot view test results: Invalid segment ID', 'error');
+        return;
+    }
+    
+    selectedTranscriptionTestSegmentId.value = segmentId;
+    showTranscriptionTestResults.value = true;
+};
+
+const closeTranscriptionTestResults = () => {
+    showTranscriptionTestResults.value = false;
+    selectedTranscriptionTestSegmentId.value = null;
+    currentTranscriptionTestResults.value = null;
+};
+
+const onTranscriptionRetryTest = (testData) => {
+    closeTranscriptionTestResults();
+    selectedTranscriptionTestSegmentId.value = testData.segmentId;
+    showTranscriptionTestPanel.value = true;
+};
+
+const onDownloadTranscription = (downloadData) => {
+    // Create a temporary link to download the transcription file
+    const link = document.createElement('a');
+    link.href = downloadData.url;
+    link.download = downloadData.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadData.url); // Clean up the blob URL
+    showNotification(`Downloading ${downloadData.filename}`, 'success');
+};
 </script>
 
 <template>
@@ -436,6 +520,15 @@ const onTranscriptionPresetUpdated = (presetData) => {
                                     </svg>
                                     Start Audio Test
                                 </button>
+                                <button
+                                    @click="openTranscriptionTestPanel"
+                                    class="inline-flex items-center px-4 py-2 bg-teal-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-teal-700 focus:bg-teal-700 active:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition ease-in-out duration-150"
+                                >
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                                    </svg>
+                                    Start Transcription Test
+                                </button>
                             </div>
                         </div>
                         
@@ -565,6 +658,9 @@ const onTranscriptionPresetUpdated = (presetData) => {
                                             Audio Testing
                                         </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Transcription
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Actions
                                         </th>
                                     </tr>
@@ -605,6 +701,42 @@ const onTranscriptionPresetUpdated = (presetData) => {
                                                     Results
                                                 </button>
                                             </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <div class="flex space-x-2">
+                                                <!-- Transcription Test Button -->
+                                                <button
+                                                    @click="selectedTranscriptionTestSegmentId = segment.id; openTranscriptionTestPanel()"
+                                                    class="inline-flex items-center px-2 py-1 bg-teal-50 text-teal-700 rounded-md text-xs hover:bg-teal-100 transition-all duration-200"
+                                                >
+                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                                                    </svg>
+                                                    Test Transcription
+                                                </button>
+                                                <!-- View Transcription Results Button -->
+                                                <button
+                                                    @click="openTranscriptionTestResults(segment.id)"
+                                                    class="inline-flex items-center px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md text-xs hover:bg-emerald-100 transition-all duration-200"
+                                                    title="View previous transcription results"
+                                                >
+                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                                    </svg>
+                                                    View Text
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <Link
+                                                :href="route('truefire-courses.segments.show', [course.id, segment.id])"
+                                                class="inline-flex items-center px-3 py-1 bg-blue-600 text-white rounded-md text-xs hover:bg-blue-700 transition-all duration-200"
+                                            >
+                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                                </svg>
+                                                View Segment
+                                            </Link>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">
@@ -753,6 +885,26 @@ const onTranscriptionPresetUpdated = (presetData) => {
             :course="course"
             @close="closeCourseTranscriptionPresetManager"
             @preset-updated="onTranscriptionPresetUpdated"
+        />
+
+        <!-- Transcription Testing Components -->
+        <TranscriptionTestPanel
+            :show="showTranscriptionTestPanel"
+            :course-id="course.id"
+            @close="closeTranscriptionTestPanel"
+            @test-started="onTranscriptionTestStarted"
+            @test-completed="onTranscriptionTestCompleted"
+            @test-failed="onTranscriptionTestFailed"
+        />
+
+        <TranscriptionTestResults
+            :show="showTranscriptionTestResults"
+            :course-id="course.id"
+            :segment-id="selectedTranscriptionTestSegmentId"
+            :test-results="currentTranscriptionTestResults"
+            @close="closeTranscriptionTestResults"
+            @retry-test="onTranscriptionRetryTest"
+            @download-transcription="onDownloadTranscription"
         />
     </AuthenticatedLayout>
 </template>

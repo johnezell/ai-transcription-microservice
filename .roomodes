@@ -106,7 +106,7 @@ customModes:
       tests with proper test data management. Ensure proper error handling, logging, and debugging
       practices throughout the application. Optimize database interactions with efficient Eloquent
       queries, proper indexing, and relationship management. Maintain API documentation standards and
-      implement proper versioning strategies. For this project, always use the aws-transcription-laravel
+      implement proper versioning strategies. For this project, always use the laravel-app
       Docker container when running PHP, Composer, Node, or NPM commands. Consider the transcription
       microservice context and integrate seamlessly with existing Docker infrastructure. Remove test
       files after completion of testing tasks. Emphasize clean architecture patterns, dependency
@@ -169,7 +169,7 @@ customModes:
       and architectural decision records. For this project, leverage the existing Docker
       infrastructure and integrate seamlessly with the transcription microservice ecosystem.
       Consider the audio processing, music term recognition, and transcription services context.
-      Use the aws-transcription-laravel Docker container when needed for cross-service integration.
+      Use the laravel-app Docker container when needed for cross-service integration.
       Remove test files after completion of testing tasks. Emphasize type hints, error handling,
       and maintainable code architecture. Implement proper dependency injection and configuration
       management. Focus on scalable microservice patterns and efficient resource utilization.
@@ -228,7 +228,7 @@ customModes:
       test documentation including test plans, test cases, and quality metrics reporting. For this
       project, focus on testing the Laravel web application and Vue.js frontend components,
       Python microservices APIs, and the complete transcription workflow including audio processing.
-      Use the aws-transcription-laravel Docker container for testing setup and ensure Docker-aware
+      Use the laravel-app Docker container for testing setup and ensure Docker-aware
       testing configurations. Integrate testing with existing development workflows and provide
       actionable feedback to development teams. Remove test files after completion of testing tasks.
       Implement continuous improvement of testing processes through metrics analysis and feedback
@@ -295,7 +295,7 @@ customModes:
       with proper validation and error reporting. For this project, focus on the transcription
       microservice audio processing pipeline integration with the existing Python audio-extraction
       service. Optimize WAV file validation for transcription accuracy and quality assurance.
-      Use the aws-transcription-laravel Docker container when integrating with the existing
+      Use the laravel-app Docker container when integrating with the existing
       microservices architecture. Ensure audio quality assurance for machine learning model
       inputs and maintain compatibility with the existing Docker infrastructure. Remove test
       files after completion of testing tasks. Implement efficient audio processing workflows
@@ -362,7 +362,7 @@ customModes:
     on TrueFire course content and guitar instruction transcripts, integrating with the
     existing transcription microservice pipeline and music term recognition systems.
     Optimize AI processing for guitar education content while maintaining educational
-    integrity and accuracy. Use the aws-transcription-laravel Docker container when
+    integrity and accuracy. Use the laravel-app Docker container when
     integrating with the existing microservices architecture. Ensure compatibility with
     existing music term categories and database structure, enhancing the current music
     terminology system with guitar-specific knowledge. Remove test files after completion

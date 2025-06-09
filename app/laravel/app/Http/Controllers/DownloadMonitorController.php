@@ -122,7 +122,7 @@ class DownloadMonitorController extends Controller
     private function getQueueStats(): array
     {
         try {
-            $pendingJobs = DB::table('jobs')->where('queue', 'downloads')->count();
+            $pendingJobs = DB::table('jobs')->where('queue', 'default')->count();
             $failedJobs = DB::table('failed_jobs')->count();
             
             return [
@@ -286,7 +286,7 @@ class DownloadMonitorController extends Controller
      */
     private function getQueueHealth(): string
     {
-        $pendingJobs = DB::table('jobs')->where('queue', 'downloads')->count();
+        $pendingJobs = DB::table('jobs')->where('queue', 'default')->count();
         $failedJobs = DB::table('failed_jobs')->count();
         
         if ($failedJobs > 100) return 'critical';

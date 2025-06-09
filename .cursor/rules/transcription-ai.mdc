@@ -3,4 +3,4 @@ description:
 globs: 
 alwaysApply: true
 ---
-npm/node and php/composer should be ran with the docker exec command in the aws-transcription-laravel
+npm/node and php/composer should be ran with the docker exec command in the laravel-app

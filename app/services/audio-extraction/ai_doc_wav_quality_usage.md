@@ -152,10 +152,10 @@ python ai_roo_wav_quality_cli.py -f audio.wav --json
 
 ```bash
 # Basic analysis
-docker exec aws-audio-extraction python /app/ai_roo_wav_quality_cli.py -f /path/to/audio.wav
+docker exec audio-service python /app/ai_roo_wav_quality_cli.py -f /path/to/audio.wav
 
 # Directory analysis with verbose output
-docker exec aws-audio-extraction python /app/ai_roo_wav_quality_cli.py -d /mnt/d_drive/truefire-courses/1 -v
+docker exec audio-service python /app/ai_roo_wav_quality_cli.py -d /mnt/d_drive/truefire-courses/1 -v
 
 # API call
 curl -X POST -F "files=@file1.wav" -F "files=@file2.wav" \

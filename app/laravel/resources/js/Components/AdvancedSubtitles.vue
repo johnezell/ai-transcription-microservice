@@ -20,30 +20,8 @@
       <div><strong>Active Word Indices:</strong> {{ activeWordIndices.join(', ') || 'None' }}</div>
     </div>
 
-    <!-- Subtitles Controls -->
+    <!-- Simplified Subtitles Controls -->
     <div class="subtitles-controls flex flex-wrap items-center gap-3 mt-2">
-      <button 
-        @click="showSubtitles = !showSubtitles" 
-        class="flex items-center text-sm px-2 py-1 rounded-md transition"
-        :class="showSubtitles ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'"
-      >
-        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
-        </svg>
-        {{ showSubtitles ? 'Subtitles On' : 'Subtitles Off' }}
-      </button>
-
-      <!-- Reload transcription button -->
-      <button 
-        @click="reloadTranscript" 
-        class="flex items-center text-sm px-2 py-1 rounded-md bg-green-500 text-white"
-      >
-        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-        </svg>
-        Reload Transcript
-      </button>
-
       <!-- Confidence threshold control -->
       <div class="flex items-center">
         <span class="text-sm text-gray-700 mr-2">Min. Confidence:</span>
@@ -93,10 +71,10 @@
       </div>
     </div>
     
-    <!-- Always visible subtitles for testing -->
+    <!-- Always visible inline subtitles -->
     <div 
       class="inline-subtitles mt-4 p-3 bg-black bg-opacity-80 text-white rounded-md text-center"
-      v-if="showSubtitles && currentSegment"
+      v-if="currentSegment && currentSegment.words && currentSegment.words.length > 0"
     >
       <span 
         v-for="(word, index) in currentSegment.words" 
@@ -105,6 +83,28 @@
         :class="getWordClasses(word, index)"
         @click="openWordEditor(word, index)"
       >{{ word.word }}</span>
+    </div>
+    
+    <!-- Loading message when transcript is being fetched -->
+    <div 
+      v-else-if="!transcriptData && (transcriptJsonUrl || transcriptJsonApiUrl)"
+      class="inline-subtitles mt-4 p-3 bg-gray-100 text-gray-600 rounded-md text-center"
+    >
+      <svg class="inline-block w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+      </svg>
+      Loading transcript...
+    </div>
+    
+    <!-- Error message if transcript failed to load -->
+    <div 
+      v-else-if="loadError"
+      class="inline-subtitles mt-4 p-3 bg-red-100 text-red-600 rounded-md text-center"
+    >
+      <svg class="inline-block w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+      </svg>
+      Failed to load transcript: {{ loadError }}
     </div>
     
     <!-- Word Editor Modal -->
@@ -307,7 +307,7 @@ export default {
       segments: [],
       currentSegmentIndex: -1,
       activeWordIndices: [], // Track all words active at current time
-      showSubtitles: true,
+
       confidenceThreshold: 0.5, // Default confidence threshold at 50%
       fontSize: 18, // Default subtitle font size
       updateInterval: null,
@@ -326,7 +326,8 @@ export default {
       editingSegmentIndex: -1,
       allowTimeEditing: false,
       showLegend: false,
-      originalConfidence: 0
+      originalConfidence: 0,
+      timingOffset: 0, // Manual timing offset in seconds
     };
   },
   
@@ -341,13 +342,15 @@ export default {
   
   watch: {
     transcriptJsonUrl: {
+      immediate: true,
       handler(url) {
-        if (url && !this.transcriptJsonApiUrl) {
+        if (url) {
           this.fetchTranscriptData();
         }
       }
     },
     transcriptJsonApiUrl: {
+      immediate: true,
       handler(url) {
         if (url) {
           this.fetchTranscriptData();
@@ -369,8 +372,8 @@ export default {
       this.setupVideoListeners();
     }
     
-    // If transcript URL is available, immediately try to load it
-    if (this.transcriptJsonUrl) {
+    // Auto-load transcript data if URL is available
+    if (this.transcriptJsonUrl || this.transcriptJsonApiUrl) {
       this.fetchTranscriptData();
     }
   },
@@ -392,9 +395,6 @@ export default {
   },
   
   methods: {
-    reloadTranscript() {
-      this.fetchTranscriptData();
-    },
     
     setupVideoListeners() {
       if (!this.videoRef) {
@@ -588,16 +588,64 @@ export default {
         return;
       }
       
+      // Calculate timing correction factor for transcript vs actual audio duration
+      let timingCorrection = 1.0;
+      if (this.transcriptData && this.transcriptData.duration && this.videoRef) {
+        const transcriptDuration = this.transcriptData.duration; // e.g., 228.5
+        const actualDuration = this.videoRef.duration; // e.g., 208.166875
+        
+        if (actualDuration && transcriptDuration > 0 && Math.abs(transcriptDuration - actualDuration) > 1) {
+          timingCorrection = actualDuration / transcriptDuration;
+          // Only log occasionally to avoid spam
+          if (Math.random() < 0.01) { // Log 1% of the time
+            console.log('Applying timing correction:', {
+              transcriptDuration,
+              actualDuration,
+              correctionFactor: timingCorrection.toFixed(3)
+            });
+          }
+        }
+      }
+      
       // Find all words that should be active at the current time
+      // Add a small buffer (0.1 seconds) to make word highlighting more visible
+      const buffer = 0.1;
+      
       for (let i = 0; i < this.currentSegment.words.length; i++) {
         const word = this.currentSegment.words[i];
         
-        // Make sure we're using floating point numbers for comparison
-        const wordStart = parseFloat(word.start);
-        const wordEnd = parseFloat(word.end);
+        // Apply timing correction to word timestamps
+        const correctedStart = parseFloat(word.start) * timingCorrection;
+        const correctedEnd = parseFloat(word.end) * timingCorrection;
+        const wordStart = correctedStart - buffer;
+        const wordEnd = correctedEnd + buffer;
         
         if (currentTime >= wordStart && currentTime <= wordEnd) {
           this.activeWordIndices.push(i);
+        }
+      }
+      
+      // If no words are active, find the closest word to highlight (with timing correction)
+      if (this.activeWordIndices.length === 0) {
+        let closestIndex = -1;
+        let closestDistance = Infinity;
+        
+        for (let i = 0; i < this.currentSegment.words.length; i++) {
+          const word = this.currentSegment.words[i];
+          const correctedStart = parseFloat(word.start) * timingCorrection;
+          const correctedEnd = parseFloat(word.end) * timingCorrection;
+          const wordCenter = (correctedStart + correctedEnd) / 2;
+          const distance = Math.abs(currentTime - wordCenter);
+          
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestIndex = i;
+          }
+        }
+        
+        // If we found a close word (within 2 seconds), highlight it
+        if (closestIndex !== -1 && closestDistance < 2.0) {
+          this.activeWordIndices.push(closestIndex);
         }
       }
     },

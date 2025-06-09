@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.laravel
-    container_name: aws-transcription-laravel
+    container_name: laravel-app
     restart: unless-stopped
     ports:
       - "8080:80"
@@ -45,8 +45,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.audio-service
-    container_name: aws-audio-extraction
+    container_name: audio-service
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     volumes:
       - ./app/services/audio-extraction:/app
       - ./app/shared:/var/www/storage/app/public/s3:delegated
@@ -56,6 +63,11 @@ services:
     environment:
       - LARAVEL_API_URL=http://laravel/api
       - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
+      # Audio processing configuration - Force VAD to be completely disabled
+      - ENABLE_VAD=false
+      - ENABLE_NORMALIZATION=true
+      - AUDIO_QUALITY_LEVEL=balanced
+      - FFMPEG_THREADS=4
     ports:
       - "5050:5000"
 
@@ -63,8 +75,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.transcription
-    container_name: aws-transcription-service
+    container_name: transcription-service
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     volumes:
       - ./app/services/transcription:/app
       - ./app/shared:/var/www/storage/app/public/s3:delegated
@@ -83,7 +102,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.music-service
-    container_name: aws-music-term-recognition
+    container_name: music-service
     restart: unless-stopped
     volumes:
       - ./app/services/music-term-recognition:/app
@@ -100,7 +119,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: aws-transcription-redis
+    container_name: redis
     restart: unless-stopped
     ports:
       - "6379:6379"

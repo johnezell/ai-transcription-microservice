@@ -562,7 +562,7 @@ audio-extraction-service:
   build:
     context: .
     dockerfile: Dockerfile.audio-service
-  container_name: aws-audio-extraction
+  container_name: audio-service
   restart: unless-stopped
   volumes:
     - ./app/services/audio-extraction:/app

@@ -56,8 +56,8 @@ class CollectAudioTestMetricsJob implements ShouldQueue
         $this->type = $type;
         $this->days = $days;
         
-        // Set queue based on collection type
-        $this->onQueue($type === 'hourly' ? 'monitoring' : 'low-priority');
+        // Use default queue for all metrics collection jobs
+        // Removed custom queue specification to simplify queue management
     }
 
     /**

@@ -128,13 +128,13 @@ The video will proceed through transcription and terminology recognition automat
 ### Using Docker Commands (as per your workspace rules)
 ```bash
 # Run the migration
-docker exec aws-transcription-laravel php artisan migrate
+docker exec laravel-app php artisan migrate
 
 # Check queue status
-docker exec aws-transcription-laravel php artisan queue:status
+docker exec laravel-app php artisan queue:status
 
 # Monitor queue workers
-docker exec aws-transcription-laravel php artisan queue:work --verbose
+docker exec laravel-app php artisan queue:work --verbose
 ```
 
 ### Demo Interface

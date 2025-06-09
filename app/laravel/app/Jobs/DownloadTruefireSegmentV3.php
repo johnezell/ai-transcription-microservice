@@ -40,8 +40,9 @@ class DownloadTruefireSegmentV3 implements ShouldQueue, ShouldBeUnique
         $this->courseDir = $courseDir;
         $this->courseId = $courseId;
         $this->s3Path = $s3Path;
-            // Set queue name for better organization
-        $this->onQueue('downloads');
+        
+        // Use default queue for all download jobs
+        // Removed custom queue specification to simplify queue management
     }
 
     /**

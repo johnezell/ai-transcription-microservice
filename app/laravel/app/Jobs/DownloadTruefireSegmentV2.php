@@ -34,8 +34,8 @@ class DownloadTruefireSegmentV2 implements ShouldQueue
         $this->signedUrl = $signedUrl;
         $this->courseId = $courseId;
         
-        // Set queue name for better organization
-        $this->onQueue('downloads');
+        // Use default queue for all download jobs
+        // Removed custom queue specification to simplify queue management
     }
 
     /**

@@ -149,6 +149,34 @@ class LocalTruefireCourse extends Model
     }
 
     /**
+     * Get the transcription preset for this course.
+     *
+     * @return string
+     */
+    public function getTranscriptionPreset(): string
+    {
+        // Check if there's a specific preset set via the pivot table
+        $coursePreset = CourseTranscriptionPreset::getPresetForCourse($this->id);
+        
+        if ($coursePreset) {
+            return $coursePreset;
+        }
+        
+        // Fall back to default preset
+        return 'balanced';
+    }
+
+    /**
+     * Get the transcription settings for this course.
+     *
+     * @return array
+     */
+    public function getTranscriptionSettings(): array
+    {
+        return CourseTranscriptionPreset::getSettingsForCourse($this->id);
+    }
+
+    /**
      * Get the channels for the course.
      */
     public function channels()
@@ -227,5 +255,103 @@ class LocalTruefireCourse extends Model
     public function setAudioExtractionPreset(string $preset, array $settings = []): CourseAudioPreset
     {
         return CourseAudioPreset::updateForCourse($this->id, $preset, $settings);
+    }
+
+    /**
+     * Get the transcription preset for this course (single relationship).
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function transcriptionPreset()
+    {
+        return $this->hasOne(CourseTranscriptionPreset::class, 'truefire_course_id');
+    }
+
+    /**
+     * Relationship to course transcription presets (multiple).
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function transcriptionPresets()
+    {
+        return $this->hasMany(CourseTranscriptionPreset::class, 'truefire_course_id');
+    }
+
+    /**
+     * Get the current active transcription preset for this course.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function currentTranscriptionPreset()
+    {
+        return $this->hasOne(CourseTranscriptionPreset::class, 'truefire_course_id')->latest();
+    }
+
+    /**
+     * Set the transcription preset for this course.
+     *
+     * @param string $preset
+     * @param array $settings
+     * @return CourseTranscriptionPreset
+     */
+    public function setTranscriptionPreset(string $preset, array $settings = []): CourseTranscriptionPreset
+    {
+        return CourseTranscriptionPreset::updateForCourse($this->id, $preset, $settings);
+    }
+
+    /**
+     * Get the total duration of all segments with valid video fields for this course.
+     *
+     * @return int Total duration in seconds
+     */
+    public function getTotalDuration(): int
+    {
+        return $this->segments()->sum('runtime') ?? 0;
+    }
+
+    /**
+     * Get the formatted total duration of all segments for this course.
+     *
+     * @return string Formatted duration (e.g., "1h 23m", "45m 30s", "2h 15m")
+     */
+    public function getFormattedDuration(): string
+    {
+        $totalSeconds = $this->getTotalDuration();
+        
+        if ($totalSeconds === 0) {
+            return 'N/A';
+        }
+        
+        $hours = intval($totalSeconds / 3600);
+        $minutes = intval(($totalSeconds % 3600) / 60);
+        $seconds = $totalSeconds % 60;
+        
+        if ($hours > 0) {
+            return $minutes > 0 ? "{$hours}h {$minutes}m" : "{$hours}h";
+        } elseif ($minutes > 0) {
+            return $seconds > 0 ? "{$minutes}m {$seconds}s" : "{$minutes}m";
+        } else {
+            return "{$seconds}s";
+        }
+    }
+
+    /**
+     * Accessor for the total duration attribute.
+     *
+     * @return int
+     */
+    public function getTotalDurationAttribute(): int
+    {
+        return $this->getTotalDuration();
+    }
+
+    /**
+     * Accessor for the formatted duration attribute.
+     *
+     * @return string
+     */
+    public function getFormattedDurationAttribute(): string
+    {
+        return $this->getFormattedDuration();
     }
 }

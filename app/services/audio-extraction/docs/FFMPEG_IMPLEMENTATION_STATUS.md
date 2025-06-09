@@ -160,7 +160,7 @@ ENV PREMIUM_QUALITY_ENABLED=true
 ### Container Status
 ```
 SERVICE                    STATUS    PORTS
-aws-audio-extraction      Up        0.0.0.0:5050->5000/tcp
+audio-service             Up        0.0.0.0:5050->5000/tcp
 ```
 
 ### Service Endpoints

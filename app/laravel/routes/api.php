@@ -4,7 +4,9 @@ use App\Http\Controllers\Api\ConnectivityController;
 use App\Http\Controllers\Api\HelloController;
 use App\Http\Controllers\Api\MusicTermController;
 use App\Http\Controllers\Api\TranscriptionController;
+use App\Http\Controllers\Api\TranscriptionPresetsController;
 use App\Http\Controllers\CloudFrontController;
+use App\Http\Controllers\TranscriptionTestController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Models\Video;
@@ -40,6 +42,16 @@ Route::get('/transcription/{jobId}', [TranscriptionController::class, 'getJobSta
 Route::post('/transcription/{jobId}/status', [TranscriptionController::class, 'updateJobStatus']);
 Route::get('/test-python-service', [TranscriptionController::class, 'testPythonService']);
 
+// Transcription presets endpoints
+Route::get('/transcription-presets', [TranscriptionPresetsController::class, 'index'])->name('api.transcription-presets.index');
+Route::get('/transcription-presets/{preset}', [TranscriptionPresetsController::class, 'show'])->name('api.transcription-presets.show');
+
+// Template variables and rendering endpoints
+Route::get('/transcription-presets/template/variables', [TranscriptionPresetsController::class, 'getTemplateVariables'])->name('api.transcription-presets.template.variables');
+Route::post('/transcription-presets/{preset}/render', [TranscriptionPresetsController::class, 'renderPrompt'])->name('api.transcription-presets.render');
+Route::post('/transcription-presets/{preset}/preview', [TranscriptionPresetsController::class, 'previewPrompt'])->name('api.transcription-presets.preview');
+Route::post('/transcription-presets/template/validate', [TranscriptionPresetsController::class, 'validateTemplate'])->name('api.transcription-presets.template.validate');
+
 // Music term recognition endpoints
 Route::get('/videos/{id}/music-terms', [MusicTermController::class, 'show'])->name('api.music-terms.show');
 Route::post('/videos/{id}/music-terms', [MusicTermController::class, 'process'])->name('api.music-terms.process');
@@ -50,6 +62,26 @@ Route::post('/videos/{id}/music-terms', [MusicTermController::class, 'triggerRec
 // New terminology routes (using the new controller)
 Route::get('/videos/{id}/terminology', [TerminologyController::class, 'show'])->name('api.terminology.show');
 Route::post('/videos/{id}/terminology', [TerminologyController::class, 'triggerRecognition'])->name('api.terminology.process');
+
+// TrueFire Course Segment API routes
+Route::prefix('truefire-courses/{courseId}/segments/{segmentId}')->group(function() {
+    Route::get('/status', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getStatus']);
+    Route::get('/', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'show']);
+    Route::post('/approve-audio-extraction', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'approveAudioExtraction']);
+    Route::get('/transcript-json', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getTranscriptJson']);
+    Route::get('/terminology-json', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getTerminologyJson']);
+    Route::get('/audio', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getAudioFile']);
+    Route::post('/terminology', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'triggerTerminology']);
+    Route::post('/redo', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'redoProcessing']);
+    
+    // Callback routes for service completion notifications
+    Route::post('/audio-extraction-callback', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'audioExtractionCallback']);
+    Route::post('/transcription-callback', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'transcriptionCallback']);
+    Route::post('/terminology-callback', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'terminologyCallback']);
+    
+    // Abort/cancel processing
+    Route::post('/abort', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'abortProcessing']);
+});
 
 // Status polling endpoint for video processing
 Route::get('/videos/{id}/status', function($id) {
@@ -528,4 +560,9 @@ Route::prefix('cloudfront')->group(function() {
 // Transcription preset management endpoints
 Route::get('/courses/{truefireCourse}/transcription-preset', [\App\Http\Controllers\TruefireCourseController::class, 'getTranscriptionPreset'])->name('api.courses.transcription-preset.show');
 Route::put('/courses/{truefireCourse}/transcription-preset', [\App\Http\Controllers\TruefireCourseController::class, 'updateTranscriptionPreset'])->name('api.courses.transcription-preset.update');
-Route::get('/transcription-presets', [\App\Http\Controllers\TruefireCourseController::class, 'getTranscriptionPresetOptions'])->name('api.transcription-presets.index');
+// Route::get('/transcription-presets', [\App\Http\Controllers\TruefireCourseController::class, 'getTranscriptionPresetOptions'])->name('api.transcription-presets.index'); // REMOVED: Duplicate route - use TranscriptionPresetsController::index instead
+
+// Transcription testing routes
+Route::get('/courses/{truefireCourse}/transcription-test/segments', [TranscriptionTestController::class, 'getAvailableSegments'])->name('api.courses.transcription-test.segments');
+Route::post('/courses/{truefireCourse}/transcription-test/{segmentId}', [TranscriptionTestController::class, 'testTranscription'])->name('api.courses.transcription-test.test');
+Route::get('/transcription-test/results/{testId}', [TranscriptionTestController::class, 'getTestResults'])->name('api.transcription-test.results');

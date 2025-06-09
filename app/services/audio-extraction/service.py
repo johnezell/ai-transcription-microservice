@@ -220,8 +220,7 @@ def preprocess_for_whisper(input_path: str, output_path: str, quality_level: str
             },
             "premium": {
                 "filters": ["highpass=f=80", "lowpass=f=8000", "dynaudnorm=p=0.9:s=5:r=0.9", "afftdn=nf=-25", "compand=0.3|0.3:1|1:-90/-60|-60/-40|-40/-30|-20/-20:6:0:-90:0.2"],
-                "threads": 8,
-                "use_vad": True
+                "threads": 8
             }
         }
         
@@ -234,19 +233,9 @@ def preprocess_for_whisper(input_path: str, output_path: str, quality_level: str
         filter_chain = ",".join(config["filters"])
         thread_count = min(config["threads"], AUDIO_PROCESSING_CONFIG["max_threads"])
         
-        # Handle VAD preprocessing for premium quality
-        if quality_level == "premium" and AUDIO_PROCESSING_CONFIG["enable_vad"]:
-            logger.info("Applying VAD preprocessing for premium quality")
-            vad_temp_path = output_path + ".vad_temp.wav"
-            try:
-                # Apply VAD preprocessing first
-                apply_vad_preprocessing(input_path, vad_temp_path)
-                input_for_processing = vad_temp_path
-            except Exception as e:
-                logger.warning(f"VAD preprocessing failed, using original input: {str(e)}")
-                input_for_processing = input_path
-        else:
-            input_for_processing = input_path
+        # VAD is completely disabled - always use original input to maintain timing accuracy
+        input_for_processing = input_path
+        logger.info("VAD preprocessing is disabled - using original input to maintain timing accuracy")
         
         # Build FFmpeg command with quality-specific settings
         command = [
@@ -259,16 +248,6 @@ def preprocess_for_whisper(input_path: str, output_path: str, quality_level: str
         
         logger.info(f"FFmpeg command (quality: {quality_level}, threads: {thread_count}): {' '.join(command)}")
         result = subprocess.run(command, capture_output=True, text=True)
-        
-        # Clean up VAD temp file if it was created
-        if quality_level == "premium" and AUDIO_PROCESSING_CONFIG["enable_vad"]:
-            vad_temp_path = output_path + ".vad_temp.wav"
-            if os.path.exists(vad_temp_path):
-                try:
-                    os.remove(vad_temp_path)
-                    logger.info("Cleaned up VAD temporary file")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up VAD temp file: {str(e)}")
         
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg preprocessing failed: {result.stderr}")
@@ -370,7 +349,7 @@ def get_audio_duration(audio_path):
         logger.warning(f"Error getting duration: {str(e)}")
         return None
 
-def update_job_status(job_id, status, response_data=None, error_message=None):
+def update_job_status(job_id, status, response_data=None, error_message=None, has_audio=None):
     """Update the job status in Laravel."""
     try:
         url = f"{LARAVEL_API_URL}/transcription/{job_id}/status"
@@ -382,6 +361,11 @@ def update_job_status(job_id, status, response_data=None, error_message=None):
             'error_message': error_message,
             'completed_at': datetime.now().isoformat() if status in ['completed', 'failed'] else None
         }
+        
+        # Add has_audio flag if provided
+        if has_audio is not None:
+            payload['has_audio'] = has_audio
+            logger.info(f"Setting has_audio flag to {has_audio} for job {job_id}")
         
         response = requests.post(url, json=payload)
         
@@ -575,7 +559,7 @@ def process_audio_extraction():
             logger.error(error_msg)
             
             # Report error to Laravel
-            update_job_status(job_id, 'failed', None, error_msg)
+            update_job_status(job_id, 'failed', None, error_msg, has_audio=False)
             return jsonify({
                 'success': False,
                 'message': error_msg
@@ -702,10 +686,10 @@ def process_audio_extraction():
         # Update job status in Laravel
         if test_mode:
             # For test mode, mark as completed since we're only extracting audio
-            update_job_status(job_id, 'completed', response_data)
+            update_job_status(job_id, 'completed', response_data, has_audio=True)
         else:
             # For regular mode, continue to transcription
-            update_job_status(job_id, 'processing', response_data)
+            update_job_status(job_id, 'processing', response_data, has_audio=True)
         
         return jsonify({
             'success': True,
@@ -718,7 +702,7 @@ def process_audio_extraction():
         logger.error(f"Error processing job {job_id}: {str(e)}")
         
         # Update job status in Laravel
-        update_job_status(job_id, 'failed', None, str(e))
+        update_job_status(job_id, 'failed', None, str(e), has_audio=False)
         
         return jsonify({
             'success': False,

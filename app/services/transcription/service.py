@@ -462,6 +462,10 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
     # Comprehensive musical terminology context - same for all presets
     GUITAR_LESSON_CONTEXT = '''This is a comprehensive guitar lesson with music instruction and educational content. The instructor provides detailed explanations of guitar techniques, music theory concepts, chord progressions, scale patterns, fingerpicking and strumming techniques, musical terminology, and educational guidance. CRITICAL TERMINOLOGY: Always transcribe "chord" never "cord" when referring to musical chords. Examples: C major chord, D minor chord, E dominant 7 chord, F sharp diminished chord, G suspended 4 chord, A minor 7 flat 5 chord, B flat major 9 chord. Musical notes with proper spelling: A, B, C, D, E, F, G with accidentals - C# (C sharp not "see sharp"), Db (D flat not "the flat"), F# (F sharp), Bb (B flat), Ab (A flat), Eb (E flat), G# (G sharp). Extended chords: major 7, minor 7, dominant 7, major 9, minor 9, add 9, sus2, sus4, 6/9, diminished 7, half-diminished, augmented. Guitar anatomy and hardware: fretboard (not "freight board" or "fret board" as two words), frets (metal strips), strings (high E string, B string, G string, D string, A string, low E string), capo (not "cape-o"), tuning pegs (not "tuning peggs"), nut, bridge, saddle, soundhole, pickup (not "pick up" as two words), volume knob, tone knob, pickup selector switch, tremolo system, whammy bar, locking nut. Advanced guitar techniques: fingerpicking patterns (not "finger picking"), hybrid picking, sweep picking, economy picking, alternate picking, string skipping, palm muting, pinch harmonics, natural harmonics, artificial harmonics, hammer-on (not "hammering"), pull-off (not "pulling off"), string bending, pre-bend, bend and release, vibrato, wide vibrato, finger vibrato, wrist vibrato, sliding, legato, staccato, tapping, two-handed tapping. Scale systems: major scale (Ionian mode), natural minor scale (Aeolian mode), harmonic minor scale, melodic minor scale, pentatonic major scale, pentatonic minor scale, blues scale, chromatic scale, whole tone scale, diminished scale, bebop scale. Modal theory: Ionian (major), Dorian, Phrygian, Lydian, Mixolydian, Aeolian (natural minor), Locrian. Chord theory and progressions: Roman numeral analysis (I-IV-V-I, ii-V-I, vi-IV-I-V, I-vi-ii-V), circle of fifths, secondary dominants, chord substitutions, tritone substitution, voice leading, inversions (first inversion, second inversion), slash chords. Rhythm and time: 4/4 time (four-four time not "four four time"), 3/4 time (three-four time), 2/4 time (two-four time), 6/8 time (six-eight time), 12/8 time (twelve-eight time), compound time, simple time, syncopation, polyrhythm, cross-rhythm. Musical intervals with proper names: perfect unison, minor second, major second, minor third, major third, perfect fourth, tritone (augmented fourth/diminished fifth), perfect fifth, minor sixth, major sixth, minor seventh, major seventh, perfect octave. Key signatures and scales: C major (no sharps or flats), G major (one sharp: F#), D major (two sharps: F#, C#), A major (three sharps: F#, C#, G#), E major (four sharps), B major (five sharps), F# major (six sharps), C# major (seven sharps), F major (one flat: Bb), Bb major (two flats: Bb, Eb), Eb major (three flats), Ab major (four flats), Db major (five flats), Gb major (six flats), Cb major (seven flats).'''
     
+    # DEBUG: Log the actual length of the comprehensive context
+    logger.info(f"PRESET DEBUG: GUITAR_LESSON_CONTEXT length: {len(GUITAR_LESSON_CONTEXT)} characters")
+    logger.info(f"PRESET DEBUG: GUITAR_LESSON_CONTEXT preview: '{GUITAR_LESSON_CONTEXT[:150]}...'")
+    
     presets = {
         'fast': {
             'model_name': 'tiny',
@@ -471,6 +475,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'language': 'en',
             'enable_alignment': True,
             'enable_diarization': False,
+            'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-base-960h',
             'batch_size': 16,
@@ -486,6 +491,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'language': 'en',
             'enable_alignment': True,
             'enable_diarization': False,
+            'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-base-960h',
             'batch_size': 16,
@@ -501,6 +507,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'language': 'en',
             'enable_alignment': True,
             'enable_diarization': True,
+            'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-large-960h-lv60-self',
             'batch_size': 8,
@@ -518,6 +525,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'language': 'en',
             'enable_alignment': True,
             'enable_diarization': True,
+            'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-large-960h-lv60-self',
             'batch_size': 4,
@@ -544,6 +552,13 @@ def render_template_prompt(preset_name: str, course_id: int = None, segment_id: 
     Returns:
         Rendered prompt string
     """
+    # Get the static preset configuration first for comparison
+    preset_config = get_preset_config(preset_name)
+    static_prompt = preset_config.get('initial_prompt', '')
+    
+    logger.info(f"PROMPT DEBUG: Static preset prompt length: {len(static_prompt)} characters")
+    logger.info(f"PROMPT DEBUG: Static prompt preview: {static_prompt[:100]}{'...' if len(static_prompt) > 100 else ''}")
+    
     try:
         # Make request to Laravel's template rendering API
         url = f"{LARAVEL_API_URL}/transcription-presets/{preset_name}/render"
@@ -554,24 +569,43 @@ def render_template_prompt(preset_name: str, course_id: int = None, segment_id: 
         if segment_id:
             payload['segment_id'] = segment_id
             
+        logger.info(f"PROMPT DEBUG: Attempting Laravel template rendering for preset '{preset_name}' at {url}")
         response = requests.post(url, json=payload, timeout=10)
+        
+        logger.info(f"PROMPT DEBUG: Laravel template API response status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
+            logger.info(f"PROMPT DEBUG: Laravel response data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+            
             if data.get('success') and data.get('rendered_prompt'):
-                logger.info(f"Template rendered for preset '{preset_name}': {data['rendered_prompt']}")
-                return data['rendered_prompt']
+                rendered_prompt = data['rendered_prompt']
+                logger.info(f"PROMPT DEBUG: Laravel rendered prompt length: {len(rendered_prompt)} characters")
+                logger.info(f"PROMPT DEBUG: Laravel rendered prompt preview: {rendered_prompt[:100]}{'...' if len(rendered_prompt) > 100 else ''}")
+                
+                # CRITICAL: Compare lengths to detect if Laravel is returning a short prompt
+                if len(rendered_prompt) < 500:
+                    logger.warning(f"PROMPT DEBUG: Laravel returned suspiciously short prompt ({len(rendered_prompt)} chars), using static fallback instead")
+                    logger.warning(f"PROMPT DEBUG: Short Laravel prompt was: '{rendered_prompt}'")
+                    return static_prompt
+                
+                logger.info(f"PROMPT DEBUG: Using Laravel rendered prompt (length: {len(rendered_prompt)})")
+                return rendered_prompt
+            else:
+                logger.warning(f"PROMPT DEBUG: Laravel template rendering unsuccessful: success={data.get('success')}, has_rendered_prompt={bool(data.get('rendered_prompt'))}")
+        else:
+            logger.warning(f"PROMPT DEBUG: Laravel template API returned status {response.status_code}: {response.text[:200]}")
         
-        logger.warning(f"Failed to render template for preset '{preset_name}', falling back to static prompt")
+        logger.warning(f"PROMPT DEBUG: Laravel template rendering failed, using static preset prompt")
         
     except Exception as e:
-        logger.error(f"Error rendering template prompt: {e}")
+        logger.error(f"PROMPT DEBUG: Error rendering template prompt: {e}")
     
     # Fallback to static preset configuration
-    preset_config = get_preset_config(preset_name)
-    return preset_config.get('initial_prompt', '')
+    logger.info(f"PROMPT DEBUG: Using static preset prompt (length: {len(static_prompt)})")
+    return static_prompt
 
-def process_audio(audio_path, model_name="base", initial_prompt=None, preset_config=None, course_id=None, segment_id=None, preset_name=None, enable_intelligent_selection=True):
+def process_audio(audio_path, model_name="base", initial_prompt=None, preset_config=None, course_id=None, segment_id=None, preset_name=None, enable_intelligent_selection=True, enable_optimal_selection=False):
     """
     Process audio with WhisperX including transcription, alignment, and optional diarization.
     Enhanced with WhisperX-specific parameters and performance monitoring.
@@ -634,6 +668,7 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
         return intelligent_process_audio(
             audio_path, 
             core_processor,
+            enable_optimal_selection=enable_optimal_selection,
             **intelligent_kwargs
         )
     
@@ -672,11 +707,15 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
         max_speakers = preset_config.get('max_speakers', 3)
         performance_profile = preset_config.get('performance_profile', 'balanced')
         
-        # Try to render template prompt if we have the necessary information
-        if preset_name:
-            effective_initial_prompt = render_template_prompt(preset_name, course_id, segment_id)
-        else:
-            effective_initial_prompt = preset_config.get('initial_prompt', '')
+        # FIXED: Use hardcoded service presets directly, skip Laravel template rendering
+        # Laravel was returning a short "Guitar lesson music instruction" instead of comprehensive context
+        effective_initial_prompt = preset_config.get('initial_prompt', '')
+        logger.info(f"PROMPT DEBUG: Using hardcoded service preset - Length: {len(effective_initial_prompt)} characters")
+        logger.info(f"PROMPT DEBUG: Skipped Laravel template rendering to ensure comprehensive context is used")
+        
+        # CRITICAL DEBUG: Log the actual prompt being used
+        logger.info(f"PROMPT DEBUG: Final effective_initial_prompt preview: '{effective_initial_prompt[:150]}{'...' if len(effective_initial_prompt) > 150 else ''}'")
+        logger.info(f"PROMPT DEBUG: Final effective_initial_prompt length: {len(effective_initial_prompt)} characters")
             
         logger.info(f"Processing audio with WhisperX preset '{preset_name}': {audio_path} using model: {effective_model_name}, profile: {performance_profile}")
     else:
@@ -783,15 +822,28 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
         
         logger.info(f"Using base transcribe parameters: {list(transcribe_params.keys())}")
         
-        # HYBRID APPROACH: Use WhisperModel directly for hotwords + initial_prompt
+        # ENHANCED APPROACH: Use WhisperModel directly with configurable enhancement strategy
         # while keeping WhisperX for alignment and post-processing
+        
+        # Determine enhancement mode based on preset or configuration
+        enhancement_mode = 'prompt_only'  # Testing: Focus on initial_prompt effectiveness
+        if preset_config:
+            # Could add enhancement_mode to preset config in future
+            performance_profile = preset_config.get('performance_profile', 'balanced')
+            if performance_profile == 'speed_optimized':
+                enhancement_mode = 'hotwords_only'  # Faster, targeted approach
+            elif performance_profile == 'maximum_quality':
+                enhancement_mode = 'adaptive'  # Let system decide best approach
+            else:
+                enhancement_mode = 'prompt_only'  # Focus on comprehensive context
+        
         try:
-            logger.info("Step 1a: Attempting enhanced transcription with direct WhisperModel access")
+            logger.info(f"Step 1a: Attempting enhanced transcription with direct WhisperModel access (mode: {enhancement_mode})")
             result = transcribe_with_enhanced_features(
                 model, audio_file, transcribe_params, 
-                effective_initial_prompt, musical_hotwords, effective_language
+                effective_initial_prompt, musical_hotwords, effective_language, enhancement_mode
             )
-            logger.info("Enhanced transcription completed successfully")
+            logger.info(f"Enhanced transcription completed successfully using {enhancement_mode} mode")
         except Exception as enhanced_error:
             logger.warning(f"Enhanced transcription failed ({type(enhanced_error).__name__}): {enhanced_error}")
             logger.info("Step 1b: Falling back to standard WhisperX FasterWhisperPipeline")
@@ -1045,6 +1097,10 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
         performance_metrics['total_processing_time'] = time.time() - processing_start_time
         
         # Include comprehensive settings and metadata in result
+        # DEBUG: Log what we're putting in settings before saving
+        logger.info(f"SETTINGS DEBUG: About to save settings with initial_prompt length: {len(settings.get('initial_prompt', ''))}")
+        logger.info(f"SETTINGS DEBUG: Settings initial_prompt preview: '{settings.get('initial_prompt', '')[:100]}{'...' if len(settings.get('initial_prompt', '')) > 100 else ''}'")
+        
         result["settings"] = settings
         result["model_metadata"] = model_metadata
         result["alignment_metadata"] = alignment_metadata
@@ -1111,6 +1167,33 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
         quality_metrics = calculate_comprehensive_quality_metrics(result, segments, word_segments)
         result["quality_metrics"] = quality_metrics
         logger.info(f"Calculated comprehensive quality metrics: overall_score={quality_metrics.get('overall_quality_score', 0):.3f}")
+        
+        # ENHANCED: Guitar terminology evaluation and confidence boosting
+        enable_guitar_term_evaluation = True  # Default enabled
+        if preset_config:
+            enable_guitar_term_evaluation = preset_config.get('enable_guitar_term_evaluation', True)
+        
+        if enable_guitar_term_evaluation:
+            try:
+                from guitar_term_evaluator import enhance_guitar_terminology
+                logger.info("Starting guitar terminology evaluation and confidence enhancement...")
+                
+                # Apply guitar terminology enhancement (sets musical terms to 100% confidence)
+                result = enhance_guitar_terminology(result)
+                
+                # Log the enhancement results
+                if 'guitar_term_evaluation' in result:
+                    eval_data = result['guitar_term_evaluation']
+                    logger.info(f"Guitar terminology enhancement completed: "
+                               f"{eval_data.get('musical_terms_found', 0)} musical terms enhanced "
+                               f"out of {eval_data.get('total_words_evaluated', 0)} words evaluated")
+                
+            except ImportError:
+                logger.warning("Guitar terminology evaluator not available - skipping enhancement")
+            except Exception as e:
+                logger.error(f"Guitar terminology enhancement failed: {e} - continuing without enhancement")
+        else:
+            logger.info("Guitar terminology evaluation disabled by preset configuration")
         
         # WhisperX alignment provides superior timing accuracy - no legacy correction needed
         logger.info("WhisperX alignment ensures accurate timestamps without legacy correction")
@@ -1186,11 +1269,14 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                     "hammer-on", "pull-off", "pentatonic", "major scale"
                 ]
                 
+                # Use prompt_only mode for fallback to maximize context effectiveness
+                fallback_enhancement_mode = 'prompt_only'
+                
                 result = transcribe_with_enhanced_features(
                     model, audio_file, {}, 
-                    effective_initial_prompt, fallback_hotwords, effective_language
+                    effective_initial_prompt, fallback_hotwords, effective_language, fallback_enhancement_mode
                 )
-                logger.info(f"Fallback enhanced transcription completed successfully")
+                logger.info(f"Fallback enhanced transcription completed successfully using {fallback_enhancement_mode} mode")
                 
             except Exception as fallback_enhanced_error:
                 logger.warning(f"Fallback enhanced transcription failed: {fallback_enhanced_error}")
@@ -1485,6 +1571,9 @@ def process_transcription():
         # Check for intelligent selection parameter (enabled by default for internal tool)
         enable_intelligent_selection = data.get('enable_intelligent_selection', True)
         
+        # Check for optimal selection mode (disabled by default for speed)
+        enable_optimal_selection = data.get('enable_optimal_selection', False)
+        
         # Process the audio with Whisper (using preset config or legacy parameters)
         transcription_result = process_audio(
             audio_path, 
@@ -1494,7 +1583,8 @@ def process_transcription():
             course_id=course_id,
             segment_id=segment_id,
             preset_name=preset_name,
-            enable_intelligent_selection=enable_intelligent_selection
+            enable_intelligent_selection=enable_intelligent_selection,
+            enable_optimal_selection=enable_optimal_selection
         )
         
         # Save the transcript to files
@@ -1680,6 +1770,9 @@ def transcribe_audio():
         # Check for intelligent selection parameter (enabled by default for internal tool)
         enable_intelligent_selection = data.get('enable_intelligent_selection', True)
         
+        # Check for optimal selection mode (disabled by default for speed)
+        enable_optimal_selection = data.get('enable_optimal_selection', False)
+        
         # Process the audio with Whisper using preset configuration
         transcription_result = process_audio(
             full_audio_path, 
@@ -1687,7 +1780,8 @@ def transcribe_audio():
             course_id=course_id,
             segment_id=segment_id,
             preset_name=preset_name,
-            enable_intelligent_selection=enable_intelligent_selection
+            enable_intelligent_selection=enable_intelligent_selection,
+            enable_optimal_selection=enable_optimal_selection
         )
         
         # Handle output file creation - always use segment-based storage
@@ -1951,10 +2045,22 @@ def get_service_capabilities():
                     'batch_processing': True,
                     'performance_profiles': ['speed_optimized', 'balanced', 'quality_optimized', 'maximum_quality'],
                     'monitoring': ['processing_times', 'memory_usage', 'model_performance']
+                },
+                'intelligent_selection': {
+                    'enabled': True,
+                    'modes': ['cascading_escalation', 'optimal_comparison'],
+                    'features': ['quality_based_selection', 'performance_memory', 'cost_efficiency_optimization'],
+                    'description': 'NEW: Data-driven model selection based on actual performance metrics'
                 }
             },
+            'guitar_terminology_evaluation': {
+                'enabled': True,
+                'features': ['ai_powered_evaluation', 'confidence_boosting_to_100%', 'original_score_preservation'],
+                'description': 'AI-powered guitar terminology evaluator that boosts musical terms to 100% confidence',
+                'fallback_dictionary': 'Comprehensive guitar terms for offline operation'
+            },
             'api_endpoints': {
-                'transcription': ['/process', '/transcribe'],
+                'transcription': ['/process', '/transcribe', '/test-optimal-selection', '/test-enhancement-modes', '/test-guitar-term-evaluator'],
                 'management': ['/health', '/models/info', '/models/clear-cache'],
                 'monitoring': ['/performance/metrics', '/connectivity-test'],
                 'information': ['/presets/info', '/features/capabilities']
@@ -1972,7 +2078,524 @@ def get_service_capabilities():
             'timestamp': datetime.now().isoformat()
         }), 500
 
-def transcribe_with_enhanced_features(whisperx_model, audio_file, base_params, initial_prompt, hotwords, language):
+@app.route('/test-optimal-selection', methods=['POST'])
+def test_optimal_model_selection():
+    """
+    Test endpoint for optimal model selection.
+    
+    This endpoint demonstrates the new capability to compare multiple models
+    and select the best performer based on comprehensive quality metrics.
+    
+    Expected JSON payload:
+    {
+        "audio_path": "path_to_audio_file",
+        "models_to_test": ["small", "medium", "large-v3"],  // optional
+        "preset": "balanced"  // optional
+    }
+    """
+    data = request.json
+    
+    if not data or 'audio_path' not in data:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid request data. audio_path is required.'
+        }), 400
+    
+    audio_path = data['audio_path']
+    models_to_test = data.get('models_to_test', ['small', 'medium', 'large-v3'])
+    preset_name = data.get('preset', 'balanced')
+    
+    logger.info(f"Testing optimal model selection for: {audio_path}")
+    logger.info(f"Models to test: {models_to_test}")
+    
+    try:
+        # Check if audio file exists
+        if not os.path.exists(audio_path):
+            error_msg = f"Audio file not found: {audio_path}"
+            logger.error(error_msg)
+            return jsonify({
+                'success': False,
+                'message': error_msg,
+                'error': 'file_not_found'
+            }), 404
+        
+        # Get preset configuration
+        preset_config = get_preset_config(preset_name)
+        
+        # Create intelligent selector with optimal selection enabled
+        from intelligent_selector import create_intelligent_selector
+        config = {
+            'enable_model_comparison': True,
+            'enable_pre_selection': True,
+            'max_escalations': 0  # Not used in comparison mode
+        }
+        selector = create_intelligent_selector(config)
+        
+        # Create wrapper function for core processing
+        def core_processor(path, **processing_kwargs):
+            effective_model_name = processing_kwargs.get('model_name', 'small')
+            effective_preset_config = processing_kwargs.get('preset_config', preset_config.copy())
+            effective_preset_config['model_name'] = effective_model_name
+            
+            return _process_audio_core(
+                path, 
+                model_name=effective_model_name,
+                preset_config=effective_preset_config,
+                course_id=data.get('course_id'),
+                segment_id=data.get('segment_id'),
+                preset_name=preset_name
+            )
+        
+        # Perform direct model comparison
+        comparison_result = selector.decision_matrix.compare_multiple_models(
+            audio_path, 
+            core_processor, 
+            models_to_test,
+            preset_config=preset_config,
+            preset_name=preset_name
+        )
+        
+        # Format response with detailed comparison results
+        response_data = {
+            'success': True,
+            'message': 'Optimal model selection completed',
+            'service_timestamp': datetime.now().isoformat(),
+            'comparison_results': {
+                'best_model': comparison_result.best_model,
+                'decision_reason': comparison_result.decision_reason,
+                'total_comparison_time': comparison_result.total_comparison_time,
+                'models_tested': len(comparison_result.all_results)
+            },
+            'performance_ranking': comparison_result.performance_ranking,
+            'detailed_results': []
+        }
+        
+        # Add detailed results for each model
+        for result in comparison_result.all_results:
+            if result.success:
+                model_detail = {
+                    'model_name': result.model_name,
+                    'performance_score': result.performance_score,
+                    'quality_metrics': {
+                        'overall_quality_score': result.quality_metrics.overall_quality_score,
+                        'confidence_score': result.quality_metrics.confidence_score,
+                        'speech_activity_score': result.quality_metrics.speech_activity_score,
+                        'content_quality_score': result.quality_metrics.content_quality_score,
+                        'temporal_quality_score': result.quality_metrics.temporal_quality_score,
+                        'model_performance_score': result.quality_metrics.model_performance_score,
+                        'processing_time': result.quality_metrics.processing_time,
+                        'cost_efficiency': result.quality_metrics.cost_efficiency
+                    },
+                    'transcript_sample': result.transcription_result.get('text', '')[:200] + '...' if len(result.transcription_result.get('text', '')) > 200 else result.transcription_result.get('text', ''),
+                    'confidence_score': result.transcription_result.get('confidence_score', 0.0),
+                    'segment_count': len(result.transcription_result.get('segments', [])),
+                    'word_count': len(result.transcription_result.get('word_segments', []))
+                }
+            else:
+                model_detail = {
+                    'model_name': result.model_name,
+                    'performance_score': 0.0,
+                    'error': result.error_message,
+                    'success': False
+                }
+            
+            response_data['detailed_results'].append(model_detail)
+        
+        # Add best result transcript
+        best_result = comparison_result.get_model_result(comparison_result.best_model)
+        if best_result and best_result.success:
+            response_data['best_result'] = {
+                'model': comparison_result.best_model,
+                'transcript_text': best_result.transcription_result.get('text', ''),
+                'confidence_score': best_result.transcription_result.get('confidence_score', 0.0),
+                'segments': best_result.transcription_result.get('segments', []),
+                'word_segments': best_result.transcription_result.get('word_segments', [])
+            }
+        
+        logger.info(f"Optimal model selection completed: {comparison_result.best_model} selected")
+        logger.info(f"Performance ranking: {comparison_result.performance_ranking}")
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"Error in optimal model selection test ({error_type}): {error_msg}")
+        
+        return jsonify({
+            'success': False,
+            'message': f'Optimal model selection test failed: {error_msg}',
+            'error': error_msg,
+            'error_type': error_type,
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/test-guitar-term-evaluator', methods=['POST'])
+def test_guitar_term_evaluator():
+    """
+    Test the guitar terminology evaluator with sample transcription data.
+    
+    Expected JSON payload:
+    {
+        "audio_path": "path/to/audio.wav",  # Optional - will use mock data if not provided
+        "llm_endpoint": "http://localhost:11434/api/generate",  # Optional
+        "model_name": "llama2"  # Optional
+    }
+    """
+    data = request.json or {}
+    
+    audio_path = data.get('audio_path')
+    llm_endpoint = data.get('llm_endpoint', 'http://localhost:11434/api/generate')
+    model_name = data.get('model_name', 'llama2')
+    
+    try:
+        if audio_path and os.path.exists(audio_path):
+            # Process real audio file
+            logger.info(f"Testing guitar term evaluator with real audio: {audio_path}")
+            
+            # Use balanced preset for testing
+            preset_config = get_preset_config('balanced')
+            
+            # Process audio normally first
+            result = _process_audio_core(
+                audio_path, 
+                preset_config=preset_config,
+                preset_name='balanced'
+            )
+            
+            logger.info(f"Transcription completed, testing guitar term enhancement...")
+            
+        else:
+            # Use mock transcription data with musical terms
+            logger.info("Testing guitar term evaluator with mock transcription data...")
+            
+            result = {
+                "text": "Let's play a C major chord on the fretboard. Use your pick to strum the strings and practice the hammer-on technique.",
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 5.2,
+                        "text": "Let's play a C major chord on the fretboard.",
+                        "words": [
+                            {"word": "Let's", "start": 0.0, "end": 0.3, "score": 0.95},
+                            {"word": "play", "start": 0.4, "end": 0.6, "score": 0.88},
+                            {"word": "a", "start": 0.7, "end": 0.8, "score": 0.92},
+                            {"word": "C", "start": 0.9, "end": 1.0, "score": 0.45},  # Musical note - low confidence
+                            {"word": "major", "start": 1.1, "end": 1.4, "score": 0.52},  # Musical term - low confidence
+                            {"word": "chord", "start": 1.5, "end": 1.8, "score": 0.38},  # Musical term - low confidence
+                            {"word": "on", "start": 1.9, "end": 2.0, "score": 0.93},
+                            {"word": "the", "start": 2.1, "end": 2.3, "score": 0.96},
+                            {"word": "fretboard", "start": 2.4, "end": 2.9, "score": 0.41}  # Guitar term - low confidence
+                        ]
+                    },
+                    {
+                        "start": 5.3,
+                        "end": 10.1,
+                        "text": "Use your pick to strum the strings and practice the hammer-on technique.",
+                        "words": [
+                            {"word": "Use", "start": 5.3, "end": 5.5, "score": 0.91},
+                            {"word": "your", "start": 5.6, "end": 5.8, "score": 0.94},
+                            {"word": "pick", "start": 5.9, "end": 6.1, "score": 0.47},  # Guitar term - low confidence
+                            {"word": "to", "start": 6.2, "end": 6.3, "score": 0.97},
+                            {"word": "strum", "start": 6.4, "end": 6.7, "score": 0.43},  # Guitar term - low confidence
+                            {"word": "the", "start": 6.8, "end": 6.9, "score": 0.95},
+                            {"word": "strings", "start": 7.0, "end": 7.3, "score": 0.49},  # Guitar term - low confidence
+                            {"word": "and", "start": 7.4, "end": 7.5, "score": 0.92},
+                            {"word": "practice", "start": 7.6, "end": 8.0, "score": 0.89},
+                            {"word": "the", "start": 8.1, "end": 8.2, "score": 0.93},
+                            {"word": "hammer-on", "start": 8.3, "end": 8.8, "score": 0.35},  # Guitar technique - low confidence
+                            {"word": "technique", "start": 8.9, "end": 9.4, "score": 0.72}
+                        ]
+                    }
+                ],
+                "word_segments": [
+                    {"word": "Let's", "start": 0.0, "end": 0.3, "score": 0.95},
+                    {"word": "play", "start": 0.4, "end": 0.6, "score": 0.88},
+                    {"word": "a", "start": 0.7, "end": 0.8, "score": 0.92},
+                    {"word": "C", "start": 0.9, "end": 1.0, "score": 0.45},
+                    {"word": "major", "start": 1.1, "end": 1.4, "score": 0.52},
+                    {"word": "chord", "start": 1.5, "end": 1.8, "score": 0.38},
+                    {"word": "on", "start": 1.9, "end": 2.0, "score": 0.93},
+                    {"word": "the", "start": 2.1, "end": 2.3, "score": 0.96},
+                    {"word": "fretboard", "start": 2.4, "end": 2.9, "score": 0.41},
+                    {"word": "Use", "start": 5.3, "end": 5.5, "score": 0.91},
+                    {"word": "your", "start": 5.6, "end": 5.8, "score": 0.94},
+                    {"word": "pick", "start": 5.9, "end": 6.1, "score": 0.47},
+                    {"word": "to", "start": 6.2, "end": 6.3, "score": 0.97},
+                    {"word": "strum", "start": 6.4, "end": 6.7, "score": 0.43},
+                    {"word": "the", "start": 6.8, "end": 6.9, "score": 0.95},
+                    {"word": "strings", "start": 7.0, "end": 7.3, "score": 0.49},
+                    {"word": "and", "start": 7.4, "end": 7.5, "score": 0.92},
+                    {"word": "practice", "start": 7.6, "end": 8.0, "score": 0.89},
+                    {"word": "the", "start": 8.1, "end": 8.2, "score": 0.93},
+                    {"word": "hammer-on", "start": 8.3, "end": 8.8, "score": 0.35},
+                    {"word": "technique", "start": 8.9, "end": 9.4, "score": 0.72}
+                ],
+                "confidence_score": 0.67
+            }
+        
+        # Test guitar terminology enhancement
+        from guitar_term_evaluator import enhance_guitar_terminology
+        
+        # Store original scores for comparison
+        original_scores = {}
+        if 'word_segments' in result:
+            for word in result['word_segments']:
+                original_scores[word['word']] = word.get('score', word.get('confidence', 0))
+        
+        # Apply enhancement
+        enhanced_result = enhance_guitar_terminology(result, llm_endpoint, model_name)
+        
+        # Prepare comparison data
+        enhancement_comparison = []
+        if 'word_segments' in enhanced_result:
+            for word in enhanced_result['word_segments']:
+                word_text = word['word']
+                original_score = original_scores.get(word_text, 0)
+                new_score = word.get('score', word.get('confidence', 0))
+                
+                if original_score != new_score:
+                    enhancement_comparison.append({
+                        'word': word_text,
+                        'original_confidence': original_score,
+                        'enhanced_confidence': new_score,
+                        'improvement': new_score - original_score,
+                        'start': word.get('start', 0),
+                        'end': word.get('end', 0)
+                    })
+        
+        return jsonify({
+            'success': True,
+            'message': 'Guitar terminology evaluator test completed',
+            'test_type': 'real_audio' if audio_path and os.path.exists(audio_path) else 'mock_data',
+            'original_result': {
+                'text': result.get('text', ''),
+                'total_words': len(result.get('word_segments', [])),
+                'average_confidence': sum(w.get('score', w.get('confidence', 0)) for w in result.get('word_segments', [])) / max(1, len(result.get('word_segments', [])))
+            },
+            'enhanced_result': {
+                'text': enhanced_result.get('text', ''),
+                'total_words': len(enhanced_result.get('word_segments', [])),
+                'average_confidence': sum(w.get('score', w.get('confidence', 0)) for w in enhanced_result.get('word_segments', [])) / max(1, len(enhanced_result.get('word_segments', [])))
+            },
+            'guitar_term_evaluation': enhanced_result.get('guitar_term_evaluation', {}),
+            'enhancement_comparison': enhancement_comparison,
+            'settings': {
+                'llm_endpoint': llm_endpoint,
+                'model_name': model_name,
+                'audio_path': audio_path if audio_path else 'mock_data'
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"Guitar term evaluator test failed ({error_type}): {error_msg}")
+        
+        return jsonify({
+            'success': False,
+            'error_type': error_type,
+            'error_message': error_msg,
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/test-enhancement-modes', methods=['POST'])
+def test_enhancement_modes():
+    """
+    Test endpoint to compare different enhancement modes (hotwords vs initial_prompt vs hybrid).
+    
+    This helps determine whether hotwords are interfering with initial_prompt effectiveness.
+    
+    Expected JSON payload:
+    {
+        "audio_path": "path_to_audio_file",
+        "preset": "balanced",  // optional
+        "modes_to_test": ["prompt_only", "hotwords_only", "hybrid", "adaptive"]  // optional
+    }
+    """
+    data = request.json
+    
+    if not data or 'audio_path' not in data:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid request data. audio_path is required.'
+        }), 400
+    
+    audio_path = data['audio_path']
+    preset_name = data.get('preset', 'balanced')
+    modes_to_test = data.get('modes_to_test', ['prompt_only', 'hotwords_only', 'hybrid', 'adaptive'])
+    
+    logger.info(f"Testing enhancement modes for: {audio_path}")
+    logger.info(f"Modes to test: {modes_to_test}")
+    
+    try:
+        # Check if audio file exists
+        if not os.path.exists(audio_path):
+            error_msg = f"Audio file not found: {audio_path}"
+            logger.error(error_msg)
+            return jsonify({
+                'success': False,
+                'message': error_msg,
+                'error': 'file_not_found'
+            }), 404
+        
+        # Get preset configuration
+        preset_config = get_preset_config(preset_name)
+        
+        # Load model and audio
+        model, model_metadata = load_whisperx_model(preset_config['model_name'], preset_config['language'])
+        audio_file = whisperx.load_audio(str(audio_path))
+        
+        # Convert PyTorch Tensor to NumPy array for compatibility
+        if hasattr(audio_file, 'numpy'):
+            audio_file = audio_file.numpy()
+        elif torch.is_tensor(audio_file):
+            audio_file = audio_file.detach().cpu().numpy()
+        
+        # Prepare base parameters and context
+        base_params = {
+            'batch_size': preset_config.get('batch_size', 16),
+            'language': preset_config.get('language', 'en'),
+            'chunk_size': preset_config.get('chunk_size', 30)
+        }
+        
+        effective_initial_prompt = preset_config.get('initial_prompt', '')
+        musical_hotwords = [
+            "chord", "C major chord", "D minor chord", "C sharp", "D flat", "fretboard", 
+            "fingerpicking", "capo", "hammer-on", "pull-off", "pentatonic", "major scale",
+            "pickup", "tremolo", "vibrato", "palm muting", "harmonics", "slide", 
+            "legato", "staccato", "tapping", "Dorian", "Mixolydian", "Ionian", "Aeolian"
+        ]
+        
+        results = {}
+        overall_start_time = time.time()
+        
+        # Test each enhancement mode
+        for mode in modes_to_test:
+            logger.info(f"Testing enhancement mode: {mode}")
+            mode_start_time = time.time()
+            
+            try:
+                result = transcribe_with_enhanced_features(
+                    model, audio_file, base_params,
+                    effective_initial_prompt, musical_hotwords, 
+                    preset_config.get('language', 'en'), mode
+                )
+                
+                mode_duration = time.time() - mode_start_time
+                
+                # Calculate basic quality metrics for comparison
+                segments = result.get('segments', [])
+                word_segments = []
+                for segment in segments:
+                    for word in segment.get('words', []):
+                        word_segments.append(word)
+                
+                # Count musical terms found
+                text = result.get('text', '').lower()
+                musical_terms_found = []
+                for term in ['chord', 'fret', 'string', 'pick', 'capo', 'sharp', 'flat', 'scale']:
+                    if term in text:
+                        musical_terms_found.append(term)
+                
+                # Calculate average confidence
+                word_confidences = [w.get('probability', 0) for w in word_segments if 'probability' in w]
+                avg_confidence = sum(word_confidences) / len(word_confidences) if word_confidences else 0
+                
+                results[mode] = {
+                    'success': True,
+                    'processing_time': mode_duration,
+                    'transcript_preview': result.get('text', '')[:200] + '...' if len(result.get('text', '')) > 200 else result.get('text', ''),
+                    'segment_count': len(segments),
+                    'word_count': len(word_segments),
+                    'average_confidence': avg_confidence,
+                    'musical_terms_found': musical_terms_found,
+                    'musical_terms_count': len(musical_terms_found),
+                    'enhancement_info': {
+                        'mode_used': result.get('enhancement_mode_used', mode),
+                        'parameters_applied': result.get('parameters_applied', [])
+                    }
+                }
+                
+                logger.info(f"Mode '{mode}' completed in {mode_duration:.2f}s - Confidence: {avg_confidence:.3f}, Musical terms: {len(musical_terms_found)}")
+                
+            except Exception as mode_error:
+                logger.error(f"Mode '{mode}' failed: {mode_error}")
+                results[mode] = {
+                    'success': False,
+                    'error': str(mode_error),
+                    'processing_time': time.time() - mode_start_time
+                }
+        
+        total_duration = time.time() - overall_start_time
+        
+        # Analyze results to determine best mode
+        successful_results = {k: v for k, v in results.items() if v.get('success', False)}
+        
+        best_mode = None
+        best_score = 0
+        
+        for mode, result in successful_results.items():
+            # Simple scoring: average confidence * musical terms count * (1 / processing time)
+            confidence_score = result.get('average_confidence', 0)
+            musical_score = result.get('musical_terms_count', 0) / 10.0  # Normalize
+            speed_score = 1.0 / max(0.1, result.get('processing_time', 1))  # Favor faster processing
+            
+            combined_score = (confidence_score * 0.5) + (musical_score * 0.3) + (speed_score * 0.2)
+            
+            if combined_score > best_score:
+                best_score = combined_score
+                best_mode = mode
+        
+        response_data = {
+            'success': True,
+            'message': 'Enhancement mode comparison completed',
+            'service_timestamp': datetime.now().isoformat(),
+            'comparison_summary': {
+                'audio_path': audio_path,
+                'preset_used': preset_name,
+                'total_processing_time': total_duration,
+                'modes_tested': len(modes_to_test),
+                'successful_modes': len(successful_results),
+                'recommended_mode': best_mode,
+                'recommendation_reason': f'Best balance of confidence ({successful_results.get(best_mode, {}).get("average_confidence", 0):.3f}), musical terms ({successful_results.get(best_mode, {}).get("musical_terms_count", 0)}), and speed'
+            },
+            'detailed_results': results,
+            'analysis': {
+                'prompt_effectiveness': {
+                    'prompt_only_confidence': results.get('prompt_only', {}).get('average_confidence', 0),
+                    'hotwords_only_confidence': results.get('hotwords_only', {}).get('average_confidence', 0),
+                    'hybrid_confidence': results.get('hybrid', {}).get('average_confidence', 0),
+                    'conclusion': 'Prompt appears more effective' if results.get('prompt_only', {}).get('average_confidence', 0) > results.get('hotwords_only', {}).get('average_confidence', 0) else 'Hotwords appear more effective'
+                },
+                'musical_term_recognition': {
+                    'prompt_only_terms': results.get('prompt_only', {}).get('musical_terms_count', 0),
+                    'hotwords_only_terms': results.get('hotwords_only', {}).get('musical_terms_count', 0),
+                    'hybrid_terms': results.get('hybrid', {}).get('musical_terms_count', 0),
+                    'best_for_music': max(results.items(), key=lambda x: x[1].get('musical_terms_count', 0) if x[1].get('success') else 0)[0] if successful_results else None
+                }
+            }
+        }
+        
+        logger.info(f"Enhancement mode comparison completed. Recommended: {best_mode}")
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"Error in enhancement mode comparison ({error_type}): {error_msg}")
+        
+        return jsonify({
+            'success': False,
+            'message': f'Enhancement mode comparison failed: {error_msg}',
+            'error': error_msg,
+            'error_type': error_type,
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+def transcribe_with_enhanced_features(whisperx_model, audio_file, base_params, initial_prompt, hotwords, language, enhancement_mode='adaptive'):
     """
     Enhanced transcription using direct WhisperModel access for hotwords + initial_prompt support.
     
@@ -1986,11 +2609,12 @@ def transcribe_with_enhanced_features(whisperx_model, audio_file, base_params, i
         initial_prompt: Context prompt for domain-specific terminology
         hotwords: List of words to boost recognition for
         language: Target language code
+        enhancement_mode: 'adaptive', 'prompt_only', 'hotwords_only', or 'hybrid'
     
     Returns:
         Compatible result object for WhisperX post-processing
     """
-    logger.info("Accessing underlying WhisperModel for enhanced features")
+    logger.info(f"Accessing underlying WhisperModel for enhanced features (mode: {enhancement_mode})")
     
     # Access the underlying WhisperModel from FasterWhisperPipeline
     # The WhisperModel is stored in the 'model' attribute of FasterWhisperPipeline
@@ -2015,24 +2639,74 @@ def transcribe_with_enhanced_features(whisperx_model, audio_file, base_params, i
     if not underlying_model:
         raise Exception("Could not access underlying WhisperModel with hotwords support")
     
-    # Prepare enhanced parameters with both hotwords and initial_prompt
+    # Prepare enhanced parameters with different enhancement strategies
     enhanced_params = {
         'language': language,
         'word_timestamps': True,  # Required for WhisperX compatibility
         'log_progress': True,
     }
     
-    # Add hotwords if provided (comma-separated string format)
-    if hotwords and len(hotwords) > 0:
-        # Convert list to comma-separated string as expected by faster-whisper
-        hotwords_str = ', '.join(hotwords)
-        enhanced_params['hotwords'] = hotwords_str
-        logger.info(f"Using hotwords: {hotwords_str[:100]}{'...' if len(hotwords_str) > 100 else ''}")
+    # Apply enhancement strategy based on mode
+    if enhancement_mode == 'hybrid':
+        # Use both hotwords and initial_prompt (original approach)
+        if hotwords and len(hotwords) > 0:
+            hotwords_str = ', '.join(hotwords)
+            enhanced_params['hotwords'] = hotwords_str
+            logger.info(f"HYBRID MODE: Using {len(hotwords)} hotwords: {hotwords_str[:100]}{'...' if len(hotwords_str) > 100 else ''}")
+        
+        if initial_prompt:
+            enhanced_params['initial_prompt'] = initial_prompt
+            logger.info(f"HYBRID MODE: Using initial_prompt: {initial_prompt[:150]}{'...' if len(initial_prompt) > 150 else ''}")
     
-    # Add initial_prompt if provided
-    if initial_prompt:
-        enhanced_params['initial_prompt'] = initial_prompt
-        logger.info(f"Using initial_prompt: {initial_prompt[:100]}{'...' if len(initial_prompt) > 100 else ''}")
+    elif enhancement_mode == 'prompt_only':
+        # Use only initial_prompt for maximum context utilization
+        if initial_prompt:
+            enhanced_params['initial_prompt'] = initial_prompt
+            logger.info(f"PROMPT-ONLY MODE: Using full initial_prompt: {len(initial_prompt)} characters")
+            logger.info(f"PROMPT-ONLY MODE: Initial prompt preview: '{initial_prompt[:200]}{'...' if len(initial_prompt) > 200 else ''}'")
+        else:
+            logger.warning("PROMPT-ONLY MODE: No initial_prompt provided!")
+        logger.info("PROMPT-ONLY MODE: Hotwords disabled to maximize context effectiveness")
+    
+    elif enhancement_mode == 'hotwords_only':
+        # Use only hotwords for targeted term boosting
+        if hotwords and len(hotwords) > 0:
+            hotwords_str = ', '.join(hotwords)
+            enhanced_params['hotwords'] = hotwords_str
+            logger.info(f"HOTWORDS-ONLY MODE: Using {len(hotwords)} targeted terms: {hotwords_str}")
+        logger.info("HOTWORDS-ONLY MODE: Initial prompt disabled to maximize hotword effectiveness")
+    
+    elif enhancement_mode == 'adaptive':
+        # Adaptive mode: choose strategy based on content characteristics
+        prompt_length = len(initial_prompt) if initial_prompt else 0
+        hotwords_count = len(hotwords) if hotwords else 0
+        
+        if prompt_length > 800 and hotwords_count > 20:
+            # Long prompt + many hotwords: prefer prompt for comprehensive context
+            enhanced_params['initial_prompt'] = initial_prompt
+            logger.info(f"ADAPTIVE MODE: Using prompt-only (prompt:{prompt_length} chars, hotwords:{hotwords_count} terms)")
+        elif hotwords_count > 0 and prompt_length < 400:
+            # Short prompt + focused hotwords: prefer hotwords
+            hotwords_str = ', '.join(hotwords)
+            enhanced_params['hotwords'] = hotwords_str
+            logger.info(f"ADAPTIVE MODE: Using hotwords-only (prompt:{prompt_length} chars, hotwords:{hotwords_count} terms)")
+        else:
+            # Balanced: use both
+            if hotwords and len(hotwords) > 0:
+                hotwords_str = ', '.join(hotwords)
+                enhanced_params['hotwords'] = hotwords_str
+            if initial_prompt:
+                enhanced_params['initial_prompt'] = initial_prompt
+            logger.info(f"ADAPTIVE MODE: Using hybrid approach (prompt:{prompt_length} chars, hotwords:{hotwords_count} terms)")
+    
+    # Log final parameters for transparency
+    param_summary = []
+    if 'hotwords' in enhanced_params:
+        param_summary.append(f"hotwords({len(enhanced_params['hotwords'].split(','))} terms)")
+    if 'initial_prompt' in enhanced_params:
+        param_summary.append(f"initial_prompt({len(enhanced_params['initial_prompt'])} chars)")
+    
+    logger.info(f"Final enhancement parameters: {', '.join(param_summary) if param_summary else 'none'}")
     
     # Perform enhanced transcription with underlying model
     logger.info("Performing direct WhisperModel transcription with enhanced features")
@@ -2046,6 +2720,8 @@ def transcribe_with_enhanced_features(whisperx_model, audio_file, base_params, i
         'segments': [],
         'language': transcription_info.language,
         'language_probability': transcription_info.language_probability,
+        'enhancement_mode_used': enhancement_mode,
+        'parameters_applied': param_summary
     }
     
     # Convert segments to WhisperX format

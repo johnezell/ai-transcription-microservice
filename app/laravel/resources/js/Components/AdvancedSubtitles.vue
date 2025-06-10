@@ -120,7 +120,7 @@
     
     <!-- Loading message when transcript is being fetched -->
     <div 
-      v-else-if="!transcriptData && (transcriptJsonUrl || transcriptJsonApiUrl)"
+      v-else-if="isLoading || (!transcriptData && (transcriptJsonUrl || transcriptJsonApiUrl))"
       class="inline-subtitles mt-4 p-3 bg-gray-100 text-gray-600 rounded-md text-center"
     >
       <svg class="inline-block w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -322,22 +322,30 @@ export default {
   props: {
     videoRef: {
       type: Object,
-      required: false,
       default: null
     },
     transcriptJsonUrl: {
       type: String,
-      default: null
+      default: ''
     },
     transcriptJsonApiUrl: {
       type: String,
+      default: ''
+    },
+    // Add prop to receive transcript data from parent
+    transcriptData: {
+      type: Object,
       default: null
+    },
+    // Add prop to show loading state
+    isLoading: {
+      type: Boolean,
+      default: false
     }
   },
   
   data() {
     return {
-      transcriptData: null,
       segments: [],
       currentSegmentIndex: -1,
       activeWordIndices: [], // Track all words active at current time
@@ -382,19 +390,12 @@ export default {
   },
   
   watch: {
-    transcriptJsonUrl: {
+    // Watch for transcript data changes from parent
+    transcriptData: {
       immediate: true,
-      handler(url) {
-        if (url) {
-          this.fetchTranscriptData();
-        }
-      }
-    },
-    transcriptJsonApiUrl: {
-      immediate: true,
-      handler(url) {
-        if (url) {
-          this.fetchTranscriptData();
+      handler(newData) {
+        if (newData) {
+          this.processTranscriptData(newData);
         }
       }
     },
@@ -412,9 +413,9 @@ export default {
     // Set up video listeners
     this.setupVideoListeners();
     
-    // Always auto-load transcript data if URL is available
-    if (this.transcriptJsonUrl || this.transcriptJsonApiUrl) {
-      this.fetchTranscriptData();
+    // Process transcript data if available from props
+    if (this.transcriptData) {
+      this.processTranscriptData(this.transcriptData);
     }
   },
   
@@ -424,9 +425,9 @@ export default {
       this.setupVideoListeners();
     }
     
-    // Re-fetch transcript data if the URL changes
-    if (this.transcriptJsonUrl && !this.transcriptData) {
-      this.fetchTranscriptData();
+    // Process transcript data if it's now available from props
+    if (this.transcriptData && this.segments.length === 0) {
+      this.processTranscriptData(this.transcriptData);
     }
   },
   
@@ -482,58 +483,15 @@ export default {
       this.setupDone = false;
     },
     
-    async fetchTranscriptData() {
-      // Prefer the API URL if available
-      if (!this.transcriptJsonApiUrl && !this.transcriptJsonUrl) {
-        return;
-      }
+        processTranscriptData(data = null) {
+      const transcriptData = data || this.transcriptData;
       
-      try {
-        let urlToFetch;
-        
-        // First try the API URL if available
-        if (this.transcriptJsonApiUrl) {
-          urlToFetch = this.transcriptJsonApiUrl;
-        } else {
-          // Fallback to file URL
-          urlToFetch = this.transcriptJsonUrl;
-          
-          // If it's an absolute URL, convert to a relative path
-          if (urlToFetch.startsWith('http')) {
-            try {
-              const url = new URL(urlToFetch);
-              const pathMatch = url.pathname.match(/\/storage\/(.+)/);
-              if (pathMatch && pathMatch[1]) {
-                urlToFetch = `/storage/${pathMatch[1]}`;
-              }
-            } catch (e) {
-              // Silently handle URL parsing errors
-            }
-          }
-        }
-        
-        const response = await fetch(urlToFetch);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch transcript: ${response.status} ${response.statusText}`);
-        }
-        
-        this.transcriptData = await response.json();
-        
-        this.processTranscriptData();
-        this.loadError = null;
-      } catch (error) {
-        this.loadError = error.message;
-      }
-    },
-    
-    processTranscriptData() {
-      if (!this.transcriptData || !this.transcriptData.segments) {
+      if (!transcriptData || !transcriptData.segments) {
         return;
       }
       
       // Process segments and add confidence-related properties
-      this.segments = this.transcriptData.segments.map(segment => {
+      this.segments = transcriptData.segments.map(segment => {
         // Check if the segment has words property and its format
         let words = [];
         
@@ -739,48 +697,7 @@ export default {
       this.closeWordEditor();
     },
     
-    testTranscriptUrl() {
-      // Test the transcript URL directly
-      if (!this.transcriptJsonUrl) {
-        this.loadError = "No transcript URL provided";
-        return;
-      }
-      
-      this.loadError = "Testing URL...";
-      
-      // Get just the path part of the URL to avoid CORS issues
-      let urlToFetch = this.transcriptJsonUrl;
-      
-      // If it's an absolute URL, convert to a relative path
-      if (urlToFetch.startsWith('http')) {
-        try {
-          const url = new URL(urlToFetch);
-          const pathMatch = url.pathname.match(/\/storage\/(.+)/);
-          if (pathMatch && pathMatch[1]) {
-            urlToFetch = `/storage/${pathMatch[1]}`;
-          }
-        } catch (e) {
-          // Handle URL parsing errors
-        }
-      }
-      
-      fetch(urlToFetch)
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-          }
-          return response.json();
-        })
-        .then(data => {
-          this.loadError = `Success! Found ${data.segments?.length || 0} segments`;
-          // Try to process this data
-          this.transcriptData = data;
-          this.processTranscriptData();
-        })
-        .catch(error => {
-          this.loadError = `Error: ${error.message}`;
-        });
-    },
+
     
     closeWordEditor() {
       this.showWordEditor = false;

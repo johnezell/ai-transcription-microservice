@@ -135,8 +135,10 @@ async function fetchStatus() {
                     const oldUrl = segmentData.value.transcript_json_url;
                     segmentData.value.transcript_json_url = data.segment.transcript_json_url;
                     
-                    // If transcript_json_url is new or changed, fetch the data
-                    if (!oldUrl || oldUrl !== data.segment.transcript_json_url) {
+                    // Only fetch if transcript_json_api_url is new or changed (not just transcript_json_url)
+                    const newApiUrl = `/api/truefire-courses/${props.course.id}/segments/${segmentData.value.id}/transcript-json`;
+                    if (newApiUrl !== lastFetchedUrl.value) {
+                        segmentData.value.transcript_json_api_url = newApiUrl;
                         fetchTranscriptData();
                     }
                 }
@@ -230,22 +232,35 @@ function getAudioUrl() {
 }
 
 // Add a function to fetch and process transcript JSON data
+const lastFetchedUrl = ref(null);
+const isTranscriptLoading = ref(false);
+
 async function fetchTranscriptData() {
-    if (!segmentData.value.transcript_json_api_url) {
+    const currentUrl = segmentData.value.transcript_json_api_url;
+    
+    // Skip if no URL or same URL already fetched or currently loading
+    if (!currentUrl || currentUrl === lastFetchedUrl.value || isTranscriptLoading.value) {
         return;
     }
     
+    isTranscriptLoading.value = true;
+    
     try {
-        const response = await fetch(segmentData.value.transcript_json_api_url);
+        const response = await fetch(currentUrl);
         
         if (!response.ok) {
             throw new Error('Failed to fetch transcript data');
         }
         
         transcriptData.value = await response.json();
+        lastFetchedUrl.value = currentUrl;
         calculateOverallConfidence();
+        console.log('Transcript data loaded successfully');
     } catch (error) {
         console.error('Error fetching transcript data:', error);
+        transcriptData.value = null;
+    } finally {
+        isTranscriptLoading.value = false;
     }
 }
 
@@ -715,6 +730,8 @@ function forceComponentRefresh() {
                                         :video-ref="videoElement"
                                         :transcript-json-url="segmentData.transcript_json_url"
                                         :transcript-json-api-url="segmentData.transcript_json_api_url"
+                                        :transcript-data="transcriptData"
+                                        :is-loading="isTranscriptLoading"
                                         :key="`advanced-${componentKey}`"
                                     />
                                     <div class="mt-2 text-xs text-gray-500 italic">

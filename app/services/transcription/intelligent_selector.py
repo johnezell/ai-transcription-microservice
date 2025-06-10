@@ -1,42 +1,111 @@
 #!/usr/bin/env python3
 """
-Intelligent Model Selection Engine for AI Transcription Microservice
+Enhanced Intelligent Model Selection Engine for AI Transcription Microservice
 
-This module implements a cascading model selection system that starts with the smallest
-Whisper model (tiny) and escalates to larger models based on quality metrics.
+This module implements a sophisticated model selection system that uses comprehensive
+quality metrics to choose the best performing model, not just the largest one.
 
 Key Features:
-- Cascading model selection (tiny → small → medium → large-v3)
-- Multi-metric decision matrix for escalation
-- Content-aware pre-selection
-- Performance tracking and optimization
-- Seamless integration with existing transcription service
+- Quality-based model selection using comprehensive metrics
+- Model performance comparison and ranking
+- Performance memory for content-specific optimization
+- Integration with AdvancedQualityAnalyzer
+- Best-model selection regardless of size
 """
 
 import logging
 import time
+import pickle
+import os
 from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from enum import Enum
 import json
+import numpy as np
+
+# Import the advanced quality analyzer
+try:
+    from quality_metrics import AdvancedQualityAnalyzer
+except ImportError:
+    import sys
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from quality_metrics import AdvancedQualityAnalyzer
 
 logger = logging.getLogger(__name__)
 
 class ModelSize(Enum):
-    """Available Whisper model sizes in escalation order."""
+    """Available Whisper model sizes."""
     TINY = "tiny"
     SMALL = "small" 
     MEDIUM = "medium"
     LARGE_V3 = "large-v3"
 
 @dataclass
-class QualityMetrics:
-    """Quality metrics for transcription evaluation."""
-    avg_confidence: float
-    segment_consistency: float
-    duration_coverage: float
-    low_confidence_penalty: float
-    overall_score: float
+class ComprehensiveQualityMetrics:
+    """Enhanced quality metrics using AdvancedQualityAnalyzer."""
+    overall_quality_score: float
+    confidence_score: float
+    speech_activity_score: float
+    content_quality_score: float
+    temporal_quality_score: float
+    model_performance_score: float
+    processing_time: float
+    cost_efficiency: float
+    
+    def get_weighted_score(self, weights: Optional[Dict] = None) -> float:
+        """Calculate weighted quality score."""
+        if weights is None:
+            weights = {
+                'overall_quality': 0.25,
+                'confidence': 0.20,
+                'speech_activity': 0.15,
+                'content_quality': 0.15,
+                'temporal_quality': 0.10,
+                'model_performance': 0.10,
+                'cost_efficiency': 0.05
+            }
+        
+        return (
+            self.overall_quality_score * weights['overall_quality'] +
+            self.confidence_score * weights['confidence'] +
+            self.speech_activity_score * weights['speech_activity'] +
+            self.content_quality_score * weights['content_quality'] +
+            self.temporal_quality_score * weights['temporal_quality'] +
+            self.model_performance_score * weights['model_performance'] +
+            self.cost_efficiency * weights['cost_efficiency']
+        )
+
+@dataclass
+class ModelPerformanceResult:
+    """Complete performance result for a single model."""
+    model_name: str
+    quality_metrics: ComprehensiveQualityMetrics
+    transcription_result: Dict[str, Any]
+    success: bool
+    error_message: Optional[str] = None
+    
+    @property
+    def performance_score(self) -> float:
+        """Get the overall performance score for ranking."""
+        if not self.success:
+            return 0.0
+        return self.quality_metrics.get_weighted_score()
+
+@dataclass
+class ModelComparisonResult:
+    """Result of comparing multiple models."""
+    best_model: str
+    all_results: List[ModelPerformanceResult]
+    performance_ranking: List[Tuple[str, float]]
+    decision_reason: str
+    total_comparison_time: float
+    
+    def get_model_result(self, model_name: str) -> Optional[ModelPerformanceResult]:
+        """Get result for specific model."""
+        for result in self.all_results:
+            if result.model_name == model_name:
+                return result
+        return None
 
 @dataclass
 class SelectionDecision:
@@ -46,7 +115,7 @@ class SelectionDecision:
     escalation_reason: Optional[str]
     processing_time: float
     confidence_achieved: float
-    metrics: QualityMetrics
+    metrics: ComprehensiveQualityMetrics
 
 @dataclass
 class IntelligentSelectionResult:
@@ -60,111 +129,16 @@ class IntelligentSelectionResult:
     quality_achieved: float
     transcription_result: Dict[str, Any]
 
-class MultiMetricDecisionMatrix:
-    """
-    Multi-metric decision matrix for intelligent model escalation.
+@dataclass 
+class ContentProfile:
+    """Profile of content characteristics for performance memory."""
+    duration_category: str  # 'short', 'medium', 'long'
+    complexity_category: str  # 'low', 'medium', 'high'
+    content_type: str  # 'musical', 'speech', 'mixed'
     
-    Uses weighted scoring algorithm to determine if model escalation is needed
-    based on confidence, consistency, coverage, and penalty metrics.
-    """
-    
-    def __init__(self, config: Optional[Dict] = None):
-        """Initialize decision matrix with configurable weights."""
-        self.config = config or {}
-        self.confidence_weight = self.config.get('confidence_weight', 0.4)
-        self.consistency_weight = self.config.get('consistency_weight', 0.3)
-        self.coverage_weight = self.config.get('coverage_weight', 0.2)
-        self.penalty_weight = self.config.get('penalty_weight', 0.1)
-        
-        # Quality thresholds for escalation decisions
-        self.escalation_thresholds = {
-            'tiny': 0.75,
-            'small': 0.80,
-            'medium': 0.85,
-            'large-v3': 0.90
-        }
-        
-        # Minimum confidence threshold for acceptable quality
-        self.min_acceptable_confidence = 0.8
-        
-    def extract_quality_metrics(self, transcription_result: Dict) -> QualityMetrics:
-        """Extract quality metrics from transcription result."""
-        segments = transcription_result.get('segments', [])
-        word_segments = transcription_result.get('word_segments', [])
-        
-        # Calculate average confidence
-        confidence_scores = []
-        for segment in segments:
-            if 'confidence' in segment:
-                confidence_scores.append(segment['confidence'])
-            elif 'words' in segment:
-                word_scores = [w.get('score', 0) for w in segment['words'] if 'score' in w]
-                if word_scores:
-                    confidence_scores.append(sum(word_scores) / len(word_scores))
-        
-        avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
-        
-        # Calculate segment consistency (variation in confidence)
-        if len(confidence_scores) > 1:
-            variance = sum((x - avg_confidence) ** 2 for x in confidence_scores) / len(confidence_scores)
-            segment_consistency = max(0.0, 1.0 - variance)
-        else:
-            segment_consistency = 1.0 if confidence_scores else 0.0
-        
-        # Calculate duration coverage
-        if segments:
-            total_duration = max(seg.get('end', 0) for seg in segments)
-            speech_duration = sum(seg.get('end', 0) - seg.get('start', 0) for seg in segments)
-            duration_coverage = speech_duration / total_duration if total_duration > 0 else 0.0
-        else:
-            duration_coverage = 0.0
-        
-        # Calculate low confidence penalty
-        low_confidence_count = sum(1 for score in confidence_scores if score < 0.7)
-        low_confidence_penalty = low_confidence_count / len(confidence_scores) if confidence_scores else 0.0
-        
-        # Calculate overall quality score
-        overall_score = (
-            avg_confidence * self.confidence_weight +
-            segment_consistency * self.consistency_weight +
-            duration_coverage * self.coverage_weight -
-            low_confidence_penalty * self.penalty_weight
-        )
-        overall_score = max(0.0, min(1.0, overall_score))
-        
-        return QualityMetrics(
-            avg_confidence=avg_confidence,
-            segment_consistency=segment_consistency,
-            duration_coverage=duration_coverage,
-            low_confidence_penalty=low_confidence_penalty,
-            overall_score=overall_score
-        )
-    
-    def should_escalate(self, metrics: QualityMetrics, current_model: str) -> Tuple[bool, str]:
-        """
-        Determine if model escalation is needed based on quality metrics.
-        
-        Returns:
-            Tuple of (should_escalate: bool, reason: str)
-        """
-        threshold = self.escalation_thresholds.get(current_model, 0.95)
-        
-        # Primary escalation criteria
-        if metrics.overall_score < threshold:
-            return True, f"overall_quality_score_{metrics.overall_score:.3f}_below_threshold_{threshold}"
-        
-        # Secondary escalation criteria
-        if metrics.avg_confidence < self.min_acceptable_confidence:
-            return True, f"avg_confidence_{metrics.avg_confidence:.3f}_below_minimum_{self.min_acceptable_confidence}"
-        
-        # Tertiary escalation criteria for edge cases
-        if metrics.segment_consistency < 0.6 and current_model in ['tiny', 'small']:
-            return True, f"poor_segment_consistency_{metrics.segment_consistency:.3f}"
-        
-        if metrics.low_confidence_penalty > 0.3 and current_model == 'tiny':
-            return True, f"high_low_confidence_penalty_{metrics.low_confidence_penalty:.3f}"
-        
-        return False, "quality_threshold_met"
+    def to_key(self) -> str:
+        """Convert to string key for storage."""
+        return f"{self.duration_category}_{self.complexity_category}_{self.content_type}"
 
 class ContentAwarePreSelector:
     """
@@ -323,6 +297,332 @@ class ContentAwarePreSelector:
             'analysis_method': 'basic_duration_only'
         }
 
+class PerformanceMemory:
+    """Memory system for tracking model performance across different content types."""
+    
+    def __init__(self, memory_file: str = None):
+        self.memory_file = memory_file or "model_performance_memory.pkl"
+        self.performance_history: Dict[str, List[Dict]] = {}
+        self.load_memory()
+    
+    def record_performance(self, content_profile: ContentProfile, model_results: List[ModelPerformanceResult]):
+        """Record performance results for content profile."""
+        profile_key = content_profile.to_key()
+        
+        if profile_key not in self.performance_history:
+            self.performance_history[profile_key] = []
+        
+        # Record each model's performance
+        performance_record = {
+            'timestamp': time.time(),
+            'content_profile': asdict(content_profile),
+            'model_performances': {}
+        }
+        
+        for result in model_results:
+            if result.success:
+                performance_record['model_performances'][result.model_name] = {
+                    'performance_score': result.performance_score,
+                    'quality_score': result.quality_metrics.overall_quality_score,
+                    'confidence_score': result.quality_metrics.confidence_score,
+                    'processing_time': result.quality_metrics.processing_time,
+                    'cost_efficiency': result.quality_metrics.cost_efficiency
+                }
+        
+        self.performance_history[profile_key].append(performance_record)
+        
+        # Keep only recent history (last 100 records per profile)
+        if len(self.performance_history[profile_key]) > 100:
+            self.performance_history[profile_key] = self.performance_history[profile_key][-100:]
+        
+        self.save_memory()
+    
+    def get_recommended_models(self, content_profile: ContentProfile, top_k: int = 2) -> List[Tuple[str, float]]:
+        """Get recommended models for content profile based on historical performance."""
+        profile_key = content_profile.to_key()
+        
+        if profile_key not in self.performance_history or not self.performance_history[profile_key]:
+            # No history, return default ordering
+            return [('small', 0.8), ('medium', 0.75)]
+        
+        # Aggregate performance scores for each model
+        model_scores = {}
+        for record in self.performance_history[profile_key][-20:]:  # Use recent 20 records
+            for model_name, performance in record['model_performances'].items():
+                if model_name not in model_scores:
+                    model_scores[model_name] = []
+                model_scores[model_name].append(performance['performance_score'])
+        
+        # Calculate average performance for each model
+        model_averages = {}
+        for model_name, scores in model_scores.items():
+            if scores:
+                model_averages[model_name] = np.mean(scores)
+        
+        # Sort by performance
+        ranked_models = sorted(model_averages.items(), key=lambda x: x[1], reverse=True)
+        
+        return ranked_models[:top_k]
+    
+    def save_memory(self):
+        """Save performance memory to disk."""
+        try:
+            with open(self.memory_file, 'wb') as f:
+                pickle.dump(self.performance_history, f)
+        except Exception as e:
+            logger.warning(f"Failed to save performance memory: {e}")
+    
+    def load_memory(self):
+        """Load performance memory from disk."""
+        try:
+            if os.path.exists(self.memory_file):
+                with open(self.memory_file, 'rb') as f:
+                    self.performance_history = pickle.load(f)
+                logger.info(f"Loaded performance memory with {len(self.performance_history)} content profiles")
+        except Exception as e:
+            logger.warning(f"Failed to load performance memory: {e}")
+            self.performance_history = {}
+
+class EnhancedMultiMetricDecisionMatrix:
+    """
+    Enhanced decision matrix using comprehensive quality metrics from quality_metrics.py.
+    Makes intelligent decisions about which model performs best regardless of size.
+    """
+    
+    def __init__(self, config: Optional[Dict] = None):
+        """Initialize enhanced decision matrix."""
+        self.config = config or {}
+        self.quality_analyzer = AdvancedQualityAnalyzer()
+        
+        # Model processing cost factors (relative to tiny)
+        self.model_cost_factors = {
+            'tiny': 1.0,
+            'small': 2.5,
+            'medium': 6.0,
+            'large-v3': 12.0
+        }
+    
+    def extract_comprehensive_metrics(self, transcription_result: Dict, model_name: str, 
+                                    processing_time: float, audio_path: str = None) -> ComprehensiveQualityMetrics:
+        """Extract comprehensive quality metrics using AdvancedQualityAnalyzer."""
+        try:
+            # Use the advanced quality analyzer
+            quality_metrics = self.quality_analyzer.analyze_comprehensive_quality(
+                transcription_result, audio_path
+            )
+            
+            # Extract scores from different categories
+            overall_quality_score = quality_metrics.get('overall_quality_score', 0.0)
+            confidence_score = transcription_result.get('confidence_score', 0.0)
+            
+            # Speech activity metrics
+            speech_activity = quality_metrics.get('speech_activity', {})
+            speech_activity_score = speech_activity.get('speech_activity_ratio', 0.0)
+            
+            # Content quality metrics  
+            content_quality = quality_metrics.get('content_quality', {})
+            content_quality_score = (
+                content_quality.get('vocabulary_richness', 0.0) * 0.4 +
+                (1.0 - content_quality.get('filler_word_ratio', 0.0)) * 0.3 +
+                content_quality.get('technical_content_density', 0.0) * 0.3
+            )
+            
+            # Temporal quality metrics
+            temporal_quality = quality_metrics.get('temporal_quality', {})
+            temporal_quality_score = temporal_quality.get('timing_consistency_score', 0.0)
+            
+            # Model performance metrics
+            model_performance = quality_metrics.get('model_performance', {})
+            processing_efficiency = model_performance.get('processing_efficiency', {})
+            model_performance_score = processing_efficiency.get('time_efficiency_score', 0.0)
+            
+            # Calculate cost efficiency (quality per computational cost)
+            cost_factor = self.model_cost_factors.get(model_name, 1.0)
+            cost_efficiency = overall_quality_score / cost_factor
+            
+            return ComprehensiveQualityMetrics(
+                overall_quality_score=overall_quality_score,
+                confidence_score=confidence_score,
+                speech_activity_score=speech_activity_score,
+                content_quality_score=content_quality_score,
+                temporal_quality_score=temporal_quality_score,
+                model_performance_score=model_performance_score,
+                processing_time=processing_time,
+                cost_efficiency=cost_efficiency
+            )
+            
+        except Exception as e:
+            logger.error(f"Error extracting comprehensive metrics: {e}")
+            # Fallback to basic metrics
+            return ComprehensiveQualityMetrics(
+                overall_quality_score=transcription_result.get('confidence_score', 0.0),
+                confidence_score=transcription_result.get('confidence_score', 0.0),
+                speech_activity_score=0.5,
+                content_quality_score=0.5,
+                temporal_quality_score=0.5,
+                model_performance_score=0.5,
+                processing_time=processing_time,
+                cost_efficiency=0.5
+            )
+    
+    def compare_model_performance(self, model_results: List[ModelPerformanceResult]) -> ModelComparisonResult:
+        """
+        Compare multiple model results and select the best performer.
+        
+        This is the key improvement: we compare actual performance rather than assuming bigger is better.
+        """
+        if not model_results:
+            raise ValueError("No model results to compare")
+        
+        # Filter successful results
+        successful_results = [r for r in model_results if r.success]
+        if not successful_results:
+            raise ValueError("No successful model results to compare")
+        
+        # Calculate performance scores and rank models
+        performance_ranking = []
+        for result in successful_results:
+            score = result.performance_score
+            performance_ranking.append((result.model_name, score))
+        
+        # Sort by performance score (descending)
+        performance_ranking.sort(key=lambda x: x[1], reverse=True)
+        
+        # Select best model
+        best_model_name = performance_ranking[0][0]
+        best_result = next(r for r in successful_results if r.model_name == best_model_name)
+        
+        # Generate decision reason
+        decision_reason = self._generate_decision_reason(best_result, performance_ranking)
+        
+        # Calculate total comparison time
+        total_time = sum(r.quality_metrics.processing_time for r in model_results)
+        
+        return ModelComparisonResult(
+            best_model=best_model_name,
+            all_results=model_results,
+            performance_ranking=performance_ranking,
+            decision_reason=decision_reason,
+            total_comparison_time=total_time
+        )
+    
+    def _generate_decision_reason(self, best_result: ModelPerformanceResult, 
+                                ranking: List[Tuple[str, float]]) -> str:
+        """Generate human-readable decision reason."""
+        best_model = best_result.model_name
+        best_score = ranking[0][1]
+        
+        # Find if a smaller model performed competitively
+        smaller_models = []
+        model_sizes = {'tiny': 0, 'small': 1, 'medium': 2, 'large-v3': 3}
+        best_size = model_sizes.get(best_model, 0)
+        
+        for model_name, score in ranking[1:]:
+            model_size = model_sizes.get(model_name, 0)
+            if model_size < best_size and score > best_score * 0.95:  # Within 5%
+                smaller_models.append((model_name, score))
+        
+        if smaller_models:
+            return f"Selected {best_model} (score: {best_score:.3f}) despite competitive performance from smaller models {smaller_models}"
+        elif best_model in ['medium', 'small'] and any(model == 'large-v3' for model, _ in ranking):
+            return f"Selected {best_model} (score: {best_score:.3f}) - outperformed larger models through better optimization"
+        else:
+            return f"Selected {best_model} (score: {best_score:.3f}) - highest quality metrics across all categories"
+    
+    def should_escalate(self, metrics: ComprehensiveQualityMetrics, current_model: str) -> Tuple[bool, str]:
+        """
+        Enhanced escalation decision using comprehensive quality metrics.
+        
+        This method now considers multiple factors, not just simple thresholds.
+        """
+        # Define quality targets for each model
+        quality_targets = {
+            'tiny': 0.75,
+            'small': 0.80,
+            'medium': 0.85,
+            'large-v3': 0.90
+        }
+        
+        current_target = quality_targets.get(current_model, 0.85)
+        
+        # Primary check: overall quality score
+        if metrics.overall_quality_score < current_target:
+            return True, f"overall_quality_{metrics.overall_quality_score:.3f}_below_target_{current_target}"
+        
+        # Secondary check: confidence score
+        if metrics.confidence_score < 0.80:
+            return True, f"confidence_{metrics.confidence_score:.3f}_below_minimum"
+        
+        # Tertiary check: cost efficiency for smaller models
+        # If we're using a small model but getting poor cost efficiency, try medium
+        if current_model == 'tiny' and metrics.cost_efficiency < 0.6:
+            return True, f"poor_cost_efficiency_{metrics.cost_efficiency:.3f}_for_tiny_model"
+        
+        # Special case: temporal quality issues that bigger models might solve
+        if metrics.temporal_quality_score < 0.6 and current_model in ['tiny', 'small']:
+            return True, f"temporal_quality_issues_{metrics.temporal_quality_score:.3f}"
+        
+        # Content quality check - complex content may need larger models
+        if metrics.content_quality_score < 0.7 and current_model == 'tiny':
+            return True, f"content_complexity_{metrics.content_quality_score:.3f}_needs_larger_model"
+        
+        return False, "quality_thresholds_met"
+    
+    def compare_multiple_models(self, audio_path: str, process_audio_func, 
+                              models_to_test: List[str], **kwargs) -> ModelComparisonResult:
+        """
+        Test multiple models and select the best performer.
+        
+        This is the key new functionality: direct model comparison based on actual performance.
+        """
+        logger.info(f"Comparing models {models_to_test} for optimal performance selection")
+        model_results = []
+        
+        for model_name in models_to_test:
+            logger.info(f"Testing model: {model_name}")
+            start_time = time.time()
+            
+            try:
+                # Update preset config to use current model
+                test_kwargs = kwargs.copy()
+                if 'preset_config' in test_kwargs and test_kwargs['preset_config']:
+                    test_kwargs['preset_config']['model_name'] = model_name
+                
+                # Process audio with this model
+                result = process_audio_func(audio_path, model_name=model_name, **test_kwargs)
+                processing_time = time.time() - start_time
+                
+                # Extract comprehensive metrics
+                metrics = self.extract_comprehensive_metrics(result, model_name, processing_time, audio_path)
+                
+                # Create performance result
+                model_result = ModelPerformanceResult(
+                    model_name=model_name,
+                    quality_metrics=metrics,
+                    transcription_result=result,
+                    success=True
+                )
+                
+                logger.info(f"Model {model_name}: score={model_result.performance_score:.3f}, "
+                           f"quality={metrics.overall_quality_score:.3f}, "
+                           f"confidence={metrics.confidence_score:.3f}, "
+                           f"time={processing_time:.1f}s")
+                
+            except Exception as e:
+                logger.error(f"Model {model_name} failed: {str(e)}")
+                model_result = ModelPerformanceResult(
+                    model_name=model_name,
+                    quality_metrics=ComprehensiveQualityMetrics(0, 0, 0, 0, 0, 0, 0, 0),
+                    transcription_result={},
+                    success=False,
+                    error_message=str(e)
+                )
+            
+            model_results.append(model_result)
+        
+        # Compare and select best model
+        return self.compare_model_performance(model_results)
+
 class IntelligentModelSelector:
     """
     Core intelligent model selection engine.
@@ -334,7 +634,7 @@ class IntelligentModelSelector:
     def __init__(self, config: Optional[Dict] = None):
         """Initialize intelligent selector with configuration."""
         self.config = config or {}
-        self.decision_matrix = MultiMetricDecisionMatrix(self.config)
+        self.decision_matrix = EnhancedMultiMetricDecisionMatrix(self.config)
         self.pre_selector = ContentAwarePreSelector()
         
         # Model escalation sequence
@@ -355,6 +655,8 @@ class IntelligentModelSelector:
         
         self.enable_pre_selection = self.config.get('enable_pre_selection', True)
         self.max_escalations = self.config.get('max_escalations', 3)
+        self.enable_model_comparison = self.config.get('enable_model_comparison', False)
+        self.performance_memory = PerformanceMemory()
         
     def select_and_process(self, audio_path: str, process_audio_func, **kwargs) -> IntelligentSelectionResult:
         """
@@ -399,22 +701,22 @@ class IntelligentModelSelector:
                 model_processing_time = time.time() - model_start_time
                 
                 # Step 3: Evaluate quality and decide escalation
-                metrics = self.decision_matrix.extract_quality_metrics(result)
+                metrics = self.decision_matrix.extract_comprehensive_metrics(result, current_model, model_processing_time)
                 should_escalate, escalation_reason = self.decision_matrix.should_escalate(metrics, current_model)
                 
                 # Record decision
                 decision = SelectionDecision(
                     model_used=current_model,
-                    quality_score=metrics.overall_score,
+                    quality_score=metrics.overall_quality_score,
                     escalation_reason=escalation_reason if should_escalate else None,
                     processing_time=model_processing_time,
-                    confidence_achieved=metrics.avg_confidence,
+                    confidence_achieved=metrics.confidence_score,
                     metrics=metrics
                 )
                 decisions.append(decision)
                 
-                logger.info(f"Model {current_model}: quality={metrics.overall_score:.3f}, "
-                           f"confidence={metrics.avg_confidence:.3f}, time={model_processing_time:.1f}s")
+                logger.info(f"Model {current_model}: quality={metrics.overall_quality_score:.3f}, "
+                           f"confidence={metrics.confidence_score:.3f}, time={model_processing_time:.1f}s")
                 
                 # Step 4: Check escalation
                 if should_escalate:
@@ -443,7 +745,7 @@ class IntelligentModelSelector:
                         escalation_reason=f"model_failure_{str(e)[:50]}",
                         processing_time=0.0,
                         confidence_achieved=0.0,
-                        metrics=QualityMetrics(0, 0, 0, 1.0, 0)
+                        metrics=ComprehensiveQualityMetrics(0, 0, 0, 0, 0, 0, 0, 0)
                     ))
                     current_model = fallback_model
                     escalation_count += 1
@@ -493,6 +795,144 @@ class IntelligentModelSelector:
         
         return selection_result
     
+    def select_optimal_model(self, audio_path: str, process_audio_func, **kwargs) -> IntelligentSelectionResult:
+        """
+        NEW: Direct model comparison to find the optimal performer.
+        
+        This method tests multiple models and selects the best one based on 
+        comprehensive quality metrics, not just size assumptions.
+        """
+        start_time = time.time()
+        
+        # Step 1: Content analysis for smart model selection
+        content_analysis = self.pre_selector.analyze_audio_content(audio_path)
+        content_profile = self._create_content_profile(content_analysis)
+        
+        # Step 2: Get recommended models from performance memory
+        recommended_models = self.performance_memory.get_recommended_models(content_profile, top_k=3)
+        
+        if recommended_models:
+            # Use historical performance to guide model selection
+            models_to_test = [model for model, score in recommended_models] + ['small', 'medium']
+            # Remove duplicates while preserving order
+            models_to_test = list(dict.fromkeys(models_to_test))
+            logger.info(f"Using performance memory recommendations: {models_to_test}")
+        else:
+            # Default comprehensive test for new content types
+            models_to_test = ['small', 'medium', 'large-v3']
+            logger.info(f"No performance history, testing default models: {models_to_test}")
+        
+        # Limit to first 3 models for efficiency
+        models_to_test = models_to_test[:3]
+        
+        # Step 3: Compare models directly
+        logger.info(f"OPTIMAL MODEL SELECTION: Testing {models_to_test} to find best performer")
+        comparison_result = self.decision_matrix.compare_multiple_models(
+            audio_path, process_audio_func, models_to_test, **kwargs
+        )
+        
+        # Step 4: Record performance in memory for future optimization
+        model_results = [ModelPerformanceResult(
+            model_name=result.model_name,
+            quality_metrics=self.decision_matrix.extract_comprehensive_metrics(
+                result.transcription_result, result.model_name, 
+                result.quality_metrics.processing_time, audio_path
+            ),
+            transcription_result=result.transcription_result,
+            success=result.success,
+            error_message=result.error_message
+        ) for result in comparison_result.all_results]
+        
+        self.performance_memory.record_performance(content_profile, model_results)
+        
+        # Step 5: Create comprehensive result
+        best_result = comparison_result.get_model_result(comparison_result.best_model)
+        total_processing_time = time.time() - start_time
+        
+        # Convert to IntelligentSelectionResult format
+        decisions = [SelectionDecision(
+            model_used=result.model_name,
+            quality_score=result.quality_metrics.overall_quality_score,
+            escalation_reason=None,
+            processing_time=result.quality_metrics.processing_time,
+            confidence_achieved=result.quality_metrics.confidence_score,
+            metrics=result.quality_metrics
+        ) for result in comparison_result.all_results if result.success]
+        
+        # Calculate time saved vs. always using largest model
+        time_saved = self._calculate_time_saved('large-v3', comparison_result.best_model, total_processing_time)
+        
+        # Create result with enhanced metadata
+        selection_result = IntelligentSelectionResult(
+            initial_model='comparison_mode',
+            final_model=comparison_result.best_model,
+            escalation_count=0,  # Not applicable in comparison mode
+            decisions=decisions,
+            total_processing_time=total_processing_time,
+            time_saved_percentage=time_saved,
+            quality_achieved=best_result.quality_metrics.overall_quality_score,
+            transcription_result=best_result.transcription_result
+        )
+        
+        # Add enhanced metadata to transcription result
+        best_result.transcription_result['optimal_model_selection'] = {
+            'selection_mode': 'direct_comparison',
+            'models_tested': models_to_test,
+            'best_model': comparison_result.best_model,
+            'decision_reason': comparison_result.decision_reason,
+            'performance_ranking': comparison_result.performance_ranking,
+            'total_comparison_time': total_processing_time,
+            'time_saved_percentage': time_saved,
+            'content_profile': asdict(content_profile),
+            'used_performance_memory': bool(recommended_models),
+            'model_performances': [
+                {
+                    'model': d.model_used,
+                    'quality_score': d.quality_score,
+                    'confidence': d.confidence_achieved,
+                    'processing_time': d.processing_time,
+                    'cost_efficiency': d.metrics.cost_efficiency
+                }
+                for d in decisions
+            ]
+        }
+        
+        logger.info(f"OPTIMAL SELECTION COMPLETED: {comparison_result.best_model} selected from {models_to_test}")
+        logger.info(f"Decision: {comparison_result.decision_reason}")
+        logger.info(f"Performance ranking: {comparison_result.performance_ranking}")
+        
+        return selection_result
+    
+    def _create_content_profile(self, content_analysis: Dict) -> ContentProfile:
+        """Create content profile for performance memory."""
+        duration = content_analysis.get('duration_seconds', 0)
+        complexity = content_analysis.get('complexity_score', 0.5)
+        
+        # Categorize duration
+        if duration < 60:
+            duration_category = 'short'
+        elif duration < 300:
+            duration_category = 'medium'
+        else:
+            duration_category = 'long'
+        
+        # Categorize complexity
+        if complexity < 0.3:
+            complexity_category = 'low'
+        elif complexity < 0.7:
+            complexity_category = 'medium'
+        else:
+            complexity_category = 'high'
+        
+        # Determine content type (this could be enhanced with more sophisticated analysis)
+        content_type = 'musical'  # Default for guitar lessons
+        
+        return ContentProfile(
+            duration_category=duration_category,
+            complexity_category=complexity_category,
+            content_type=content_type
+        )
+    
     def _get_next_model(self, current_model: str) -> Optional[str]:
         """Get the next model in escalation sequence."""
         try:
@@ -521,7 +961,8 @@ def create_intelligent_selector(config: Optional[Dict] = None) -> IntelligentMod
     return IntelligentModelSelector(config)
 
 # Quick integration function
-def intelligent_process_audio(audio_path: str, process_audio_func, enable_intelligent_selection: bool = True, **kwargs) -> Dict:
+def intelligent_process_audio(audio_path: str, process_audio_func, enable_intelligent_selection: bool = True, 
+                            enable_optimal_selection: bool = False, **kwargs) -> Dict:
     """
     Process audio with intelligent model selection.
     
@@ -529,6 +970,7 @@ def intelligent_process_audio(audio_path: str, process_audio_func, enable_intell
         audio_path: Path to audio file
         process_audio_func: Original process_audio function
         enable_intelligent_selection: Whether to use intelligent selection
+        enable_optimal_selection: Whether to use direct model comparison for optimal selection
         **kwargs: Additional arguments for processing
         
     Returns:
@@ -538,9 +980,23 @@ def intelligent_process_audio(audio_path: str, process_audio_func, enable_intell
         # Fallback to original processing
         return process_audio_func(audio_path, **kwargs)
     
-    # Use intelligent selection
-    selector = create_intelligent_selector()
-    result = selector.select_and_process(audio_path, process_audio_func, **kwargs)
+    # Create intelligent selector
+    config = {
+        'enable_model_comparison': enable_optimal_selection,
+        'enable_pre_selection': True,
+        'max_escalations': 2  # Reduced since we're using smarter selection
+    }
+    selector = create_intelligent_selector(config)
+    
+    if enable_optimal_selection:
+        # Use direct model comparison for best results
+        logger.info("Using OPTIMAL MODEL SELECTION mode - comparing multiple models")
+        result = selector.select_optimal_model(audio_path, process_audio_func, **kwargs)
+    else:
+        # Use cascading escalation (faster)
+        logger.info("Using cascading escalation mode")
+        result = selector.select_and_process(audio_path, process_audio_func, **kwargs)
+    
     return result.transcription_result
 
 if __name__ == "__main__":
@@ -548,13 +1004,16 @@ if __name__ == "__main__":
     print("Intelligent Model Selection Engine - Test Mode")
     
     # Test decision matrix
-    matrix = MultiMetricDecisionMatrix()
-    test_metrics = QualityMetrics(
-        avg_confidence=0.73,
-        segment_consistency=0.82,
-        duration_coverage=0.95,
-        low_confidence_penalty=0.15,
-        overall_score=0.75
+    matrix = EnhancedMultiMetricDecisionMatrix()
+    test_metrics = ComprehensiveQualityMetrics(
+        overall_quality_score=0.73,
+        confidence_score=0.82,
+        speech_activity_score=0.95,
+        content_quality_score=0.85,
+        temporal_quality_score=0.90,
+        model_performance_score=0.88,
+        processing_time=120,
+        cost_efficiency=0.87
     )
     
     should_escalate, reason = matrix.should_escalate(test_metrics, 'tiny')

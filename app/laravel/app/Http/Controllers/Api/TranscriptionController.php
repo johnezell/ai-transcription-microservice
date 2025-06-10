@@ -687,12 +687,47 @@ class TranscriptionController extends Controller
         }
 
         // Store transcript JSON in database if available
-        if ($transcriptJsonPath && file_exists($transcriptJsonPath)) {
-            try {
-                $jsonContent = json_decode(file_get_contents($transcriptJsonPath), true);
-                $processing->update(['transcript_json' => $jsonContent]);
-            } catch (\Exception $e) {
-                Log::error('Failed to read TrueFire transcript JSON: ' . $e->getMessage());
+        // First try the provided JSON path, then try to derive it from transcript path
+        $jsonFilePaths = [];
+        
+        if ($transcriptJsonPath) {
+            $jsonFilePaths[] = $transcriptJsonPath;
+        }
+        
+        // Fallback: derive JSON path from transcript path
+        if ($transcriptPath) {
+            $dir = dirname($transcriptPath);
+            $basename = basename($transcriptPath, '.txt');
+            $jsonFilePaths[] = $dir . '/' . $basename . '.json';
+            $jsonFilePaths[] = $dir . '/transcript.json';
+        }
+        
+        foreach ($jsonFilePaths as $jsonPath) {
+            if (file_exists($jsonPath)) {
+                try {
+                    Log::info('Reading TrueFire transcript JSON from file', [
+                        'segment_id' => $processing->segment_id,
+                        'json_path' => $jsonPath
+                    ]);
+                    
+                    $jsonContent = json_decode(file_get_contents($jsonPath), true);
+                    if ($jsonContent && isset($jsonContent['segments'])) {
+                        $processing->update(['transcript_json' => $jsonContent]);
+                        
+                        Log::info('Successfully stored TrueFire transcript JSON in database', [
+                            'segment_id' => $processing->segment_id,
+                            'segments_count' => count($jsonContent['segments']),
+                            'first_word_timing' => $jsonContent['segments'][0]['words'][0]['start'] ?? 'N/A'
+                        ]);
+                        break; // Successfully processed, exit loop
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Failed to read TrueFire transcript JSON', [
+                        'segment_id' => $processing->segment_id,
+                        'json_path' => $jsonPath,
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
         }
 

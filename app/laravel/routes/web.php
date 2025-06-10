@@ -131,6 +131,24 @@ Route::post('/truefire-courses/{truefireCourse}/process-all-videos', [TruefireCo
 Route::get('/truefire-courses/{truefireCourse}/audio-extraction-progress', [TruefireCourseController::class, 'getCourseAudioExtractionProgress'])
     ->name('truefire-courses.audio-extraction-progress');
 
+// Course audio extraction batch processing routes
+Route::post('/truefire-courses/{truefireCourse}/process-all-audio-extractions', [TruefireCourseController::class, 'processAllAudioExtractions'])
+    ->name('truefire-courses.process-all-audio-extractions');
+
+// Course transcription batch processing routes
+Route::post('/truefire-courses/{truefireCourse}/process-all-transcriptions', [TruefireCourseController::class, 'processAllTranscriptions'])
+    ->name('truefire-courses.process-all-transcriptions');
+Route::post('/truefire-courses/{truefireCourse}/restart-transcription', [TruefireCourseController::class, 'restartCourseTranscription'])
+    ->name('truefire-courses.restart-transcription');
+Route::get('/truefire-courses/{truefireCourse}/processing-stats', [TruefireCourseController::class, 'getCourseProcessingStats'])
+    ->name('truefire-courses.processing-stats');
+
+// Course restart processing routes
+Route::post('/truefire-courses/{truefireCourse}/restart-audio-extraction', [TruefireCourseController::class, 'restartCourseAudioExtraction'])
+    ->name('truefire-courses.restart-audio-extraction');
+Route::post('/truefire-courses/{truefireCourse}/restart-entire-processing', [TruefireCourseController::class, 'restartEntireCourseProcessing'])
+    ->name('truefire-courses.restart-entire-processing');
+
 // Global batch management routes
 Route::get('/batch-tests', [BatchTestController::class, 'index'])
     ->name('batch-tests.index');

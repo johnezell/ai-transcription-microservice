@@ -130,7 +130,10 @@ class WhisperXModelManager:
         Returns:
             Tuple of (alignment_model, metadata)
         """
-        cache_key = f"align_{language}_{self.device}"
+        # OPTIMIZED: Always use CPU for alignment models to eliminate device mismatch issues
+        # Transcription uses GPU for speed, alignment uses CPU for reliability
+        alignment_device = "cpu"
+        cache_key = f"align_{language}_{alignment_device}"
         
         if cache_key in self._alignment_models:
             logger.info(f"Using cached alignment model: {cache_key}")
@@ -140,17 +143,18 @@ class WhisperXModelManager:
         start_time = time.time()
         
         try:
-            # Load alignment model with explicit device placement
+            # Load alignment model on CPU for consistent, reliable processing
+            logger.info(f"Loading alignment model with device={alignment_device}, language={language}")
+            model_dir = "/app/models"
+            logger.info(f"Using alignment model directory: {model_dir}")
             model, metadata = whisperx.load_align_model(
                 language_code=language,
-                device=self.device,
-                model_dir=str(self.cache_dir)
+                device=alignment_device,
+                model_dir=model_dir
             )
             
-            # Ensure the model is properly placed on the target device
-            if hasattr(model, 'to'):
-                model = model.to(self.device)
-            logger.info(f"Alignment model placed on device: {self.device}")
+            logger.info(f"Loaded alignment model type: {type(model)}")
+            logger.info(f"Alignment model loaded on {alignment_device} for reliable processing")
             
             load_time = time.time() - start_time
             memory_usage = self.get_memory_usage()

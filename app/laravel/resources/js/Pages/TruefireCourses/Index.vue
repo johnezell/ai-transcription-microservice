@@ -4,7 +4,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 import { debounce } from 'lodash';
 import axios from 'axios';
-import AudioTestHistory from '@/Components/AudioTestHistory.vue';
+
 
 const props = defineProps({
     courses: Object,
@@ -16,9 +16,6 @@ const isLoading = ref(false);
 let currentRequest = null;
 
 const notifications = ref([]); // For toast notifications
-
-// Audio testing state
-const showAudioTestHistory = ref(false);
 
 // Debounced search function to avoid excessive API calls
 const debouncedSearch = debounce((searchTerm) => {
@@ -117,24 +114,7 @@ const removeNotification = (id) => {
 };
 
 
-// Audio testing methods
-const openAudioTestHistory = () => {
-    showAudioTestHistory.value = true;
-};
 
-const closeAudioTestHistory = () => {
-    showAudioTestHistory.value = false;
-};
-
-const onViewResults = (resultData) => {
-    // Navigate to the specific course page to view results
-    router.visit(route('truefire-courses.show', resultData.courseId));
-};
-
-const onRetryTest = (testData) => {
-    // Navigate to the specific course page to retry test
-    router.visit(route('truefire-courses.show', testData.courseId));
-};
 </script>
 
 <template>
@@ -142,20 +122,9 @@ const onRetryTest = (testData) => {
 
     <AuthenticatedLayout>
         <template #header>
-            <div class="flex items-center justify-between">
-                <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                    TrueFire Courses
-                </h2>
-                <button
-                    @click="openAudioTestHistory"
-                    class="inline-flex items-center px-4 py-2 bg-purple-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-purple-700 focus:bg-purple-700 active:bg-purple-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition ease-in-out duration-150"
-                >
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    Audio Test History
-                </button>
-            </div>
+            <h2 class="text-xl font-semibold leading-tight text-gray-800">
+                TrueFire Courses
+            </h2>
         </template>
 
         <div class="py-12">
@@ -227,9 +196,6 @@ const onRetryTest = (testData) => {
                                             Segments
                                         </th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Audio Preset
-                                        </th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Duration
                                         </th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -256,20 +222,6 @@ const onRetryTest = (testData) => {
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                                 {{ course.segments_count || 0 }} segments
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <span
-                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                                                :class="{
-                                                    'bg-green-100 text-green-800': course.audio_extraction_preset === 'fast',
-                                                    'bg-blue-100 text-blue-800': course.audio_extraction_preset === 'balanced',
-                                                    'bg-purple-100 text-purple-800': course.audio_extraction_preset === 'high',
-                                                    'bg-amber-100 text-amber-800': course.audio_extraction_preset === 'premium',
-                                                    'bg-gray-100 text-gray-800': !course.audio_extraction_preset
-                                                }"
-                                            >
-                                                {{ course.audio_extraction_preset || 'Not Set' }}
                                             </span>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -448,12 +400,6 @@ const onRetryTest = (testData) => {
             </div>
         </div>
 
-        <!-- Audio Test History Component -->
-        <AudioTestHistory
-            :show="showAudioTestHistory"
-            @close="closeAudioTestHistory"
-            @view-results="onViewResults"
-            @retry-test="onRetryTest"
-        />
+
     </AuthenticatedLayout>
 </template>

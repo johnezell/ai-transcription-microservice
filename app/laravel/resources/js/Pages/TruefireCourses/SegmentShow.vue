@@ -31,17 +31,8 @@ const overallConfidence = ref(null);
 const processingTerminology = ref(false);
 const showSynchronizedTranscript = ref(false); // Hidden by default
 
-// Redo processing options
-const showRedoOptions = ref(false);
-const selectedAudioQuality = ref('balanced');
-const selectedTranscriptionPreset = ref('balanced');
-const enhancedPresetOptions = ref([]);
-const templateVariables = ref({});
-const templatePreview = ref('');
-const showTemplatePreview = ref(false);
-const showVariablesList = ref(false);
-const isLoadingPresets = ref(false);
-const presetsError = ref(null);
+// Simple restart options
+const showRestartConfirm = ref(false);
 
 // Check if this is a newly started processing that needs monitoring
 const isNewProcessing = computed(() => {
@@ -415,126 +406,11 @@ async function abortProcessing() {
     }
 }
 
-// Fetch preset configurations
-async function fetchPresetConfigurations() {
-    isLoadingPresets.value = true;
-    presetsError.value = null;
-    
-    try {
-        const response = await fetch('/api/transcription-presets');
-        const data = await response.json();
-        
-        if (data.success && data.presets) {
-            enhancedPresetOptions.value = Object.entries(data.presets).map(([key, preset]) => ({
-                value: key,
-                label: preset.name || key,
-                name: preset.name || key,
-                description: preset.description || `${key} transcription preset`,
-                model: preset.model || 'whisper-1',
-                whisper_model: preset.model || 'whisper-1',
-                temperature: preset.temperature || 0,
-                initial_prompt: preset.initial_prompt || '',
-                word_timestamps: preset.word_timestamps || false,
-                estimatedTime: getEstimatedTime(key)
-            }));
-            
-            console.log('Loaded preset configurations:', enhancedPresetOptions.value);
-        } else {
-            throw new Error(data.message || 'Failed to load presets');
-        }
-    } catch (error) {
-        console.error('Error fetching presets:', error);
-        presetsError.value = error.message;
-        // Fallback to static presets
-        enhancedPresetOptions.value = [
-            { value: 'fast', label: 'Fast', description: 'Quick transcription', estimatedTime: 30 },
-            { value: 'balanced', label: 'Balanced', description: 'Good accuracy and speed', estimatedTime: 60 },
-            { value: 'high', label: 'High Quality', description: 'High accuracy transcription', estimatedTime: 120 },
-            { value: 'premium', label: 'Premium', description: 'Maximum accuracy', estimatedTime: 180 }
-        ];
-    } finally {
-        isLoadingPresets.value = false;
-    }
-}
 
-// Get estimated processing time
-function getEstimatedTime(preset) {
-    const times = { fast: 30, balanced: 60, high: 120, premium: 180 };
-    return times[preset] || 60;
-}
 
-// Get preset configuration
-function getPresetInfo(presetValue) {
-    return enhancedPresetOptions.value.find(p => p.value === presetValue) || {};
-}
-
-// Get category color for template variables
-function getCategoryColor(category) {
-    const colors = {
-        course: 'text-blue-600 bg-blue-100',
-        instructor: 'text-green-600 bg-green-100',
-        lesson: 'text-purple-600 bg-purple-100',
-        musical: 'text-red-600 bg-red-100',
-        educational: 'text-yellow-600 bg-yellow-100',
-        contextual: 'text-gray-600 bg-gray-100'
-    };
-    return colors[category] || 'text-gray-600 bg-gray-100';
-}
-
-// Toggle template preview
-async function toggleTemplatePreview() {
-    showTemplatePreview.value = !showTemplatePreview.value;
-    if (showTemplatePreview.value && !templatePreview.value) {
-        await fetchTemplatePreview();
-    }
-}
-
-// Toggle variables list
-async function toggleVariablesList() {
-    showVariablesList.value = !showVariablesList.value;
-    if (showVariablesList.value && Object.keys(templateVariables.value).length === 0) {
-        await fetchTemplateVariables();
-    }
-}
-
-// Fetch template variables
-async function fetchTemplateVariables() {
-    try {
-        const response = await fetch('/api/transcription-presets/template/variables');
-        const data = await response.json();
-        
-        if (data.success && data.variables) {
-            templateVariables.value = data.variables;
-        }
-    } catch (error) {
-        console.error('Error fetching template variables:', error);
-    }
-}
-
-// Fetch template preview
-async function fetchTemplatePreview() {
-    try {
-        const response = await fetch(`/api/transcription-presets/${selectedTranscriptionPreset.value}/preview`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                course_id: props.course.id,
-                segment_id: segmentData.value.id
-            })
-        });
-        const data = await response.json();
-        
-        if (data.success && data.preview) {
-            templatePreview.value = data.preview;
-        }
-    } catch (error) {
-        console.error('Error fetching template preview:', error);
-    }
-}
-
-// Add redo processing method
-async function redoProcessing() {
-    if (!confirm('Are you sure you want to redo the entire processing? This will overwrite all existing audio, transcript, and terminology data for this segment.')) {
+// Simplified restart processing method using intelligent detection
+async function restartProcessing() {
+    if (!confirm('Are you sure you want to restart the entire processing? This will overwrite all existing audio, transcript, and terminology data for this segment using intelligent detection for optimal settings.')) {
         return;
     }
     
@@ -549,15 +425,14 @@ async function redoProcessing() {
             body: JSON.stringify({
                 force_reextraction: true,
                 overwrite_existing: true,
-                audio_quality: selectedAudioQuality.value,
-                transcription_preset: selectedTranscriptionPreset.value
+                use_intelligent_detection: true
             })
         });
         
         const data = await response.json();
         
         if (response.ok && data.success) {
-            console.log('Processing redo started successfully');
+            console.log('Processing restart started successfully with intelligent detection');
             // Update status to processing and start polling
             segmentData.value.status = 'processing';
             segmentData.value.error_message = null;
@@ -568,27 +443,24 @@ async function redoProcessing() {
             segmentData.value.transcript_json_api_url = null;
             segmentData.value.has_terminology = false;
             segmentData.value.terminology_url = null;
-            showRedoOptions.value = false; // Hide options after starting
+            showRestartConfirm.value = false;
             startPolling();
         } else {
-            console.error('Failed to start redo processing:', data.message);
-            alert('Failed to start redo processing: ' + (data.message || 'Unknown error'));
+            console.error('Failed to start restart processing:', data.message);
+            alert('Failed to start restart processing: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
-        console.error('Error starting redo processing:', error);
+        console.error('Error starting restart processing:', error);
         alert('Error: ' + (error.message || 'Failed to communicate with server'));
     }
 }
 
-onMounted(async () => {
+onMounted(() => {
     // Get initial status immediately
     fetchStatus();
     
     // Fetch transcript data if available
     fetchTranscriptData();
-    
-    // Load preset configurations for redo processing
-    await fetchPresetConfigurations();
     
     // Then start polling after a short delay to ensure backend has time to update
     setTimeout(() => {
@@ -601,19 +473,7 @@ onMounted(async () => {
     });
 });
 
-// Computed properties
-const audioQualityOptions = computed(() => [
-    { value: 'fast', label: 'Fast', description: 'Quick extraction with good quality', estimatedTime: 15 },
-    { value: 'balanced', label: 'Balanced', description: 'Good balance of speed and quality', estimatedTime: 30 },
-    { value: 'high', label: 'High Quality', description: 'High quality audio extraction', estimatedTime: 60 },
-    { value: 'premium', label: 'Premium', description: 'Maximum quality extraction', estimatedTime: 120 }
-]);
 
-const selectedTranscriptionConfig = computed(() => {
-    return getPresetInfo(selectedTranscriptionPreset.value);
-});
-
-const mustacheExample = computed(() => '{{variable_name}}');
 
 onBeforeUnmount(() => {
     stopPolling();
@@ -693,29 +553,7 @@ function forceComponentRefresh() {
                                     </div>
                                 </div>
                                 
-                                <!-- Audio player for WAV file (for accurate subtitle timing) -->
-                                <div v-if="segmentData.audio_path" class="bg-gray-100 rounded-lg p-4 shadow-sm">
-                                    <div class="flex items-center justify-between mb-2">
-                                        <h4 class="text-sm font-medium text-gray-700 flex items-center">
-                                            <svg class="w-4 h-4 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 14.142M9 9a3 3 0 006 0v6a3 3 0 11-6 0V9z"></path>
-                                            </svg>
-                                            Extracted Audio (For Subtitle Timing)
-                                        </h4>
-                                        <span class="text-xs text-gray-500">{{ segmentData.formatted_duration || '~3:28' }}</span>
-                                    </div>
-                                    <audio 
-                                        ref="audioElement"
-                                        :src="getAudioUrl()"
-                                        controls
-                                        class="w-full"
-                                        preload="metadata"
-                                        @error="handleAudioError"
-                                    ></audio>
-                                    <p class="text-xs text-gray-500 mt-2">
-                                        ⚠️ Use this audio player for accurate subtitle synchronization. The video and audio may have different durations.
-                                    </p>
-                                </div>
+
                                 
                                 <!-- Advanced Subtitles component with proper heading -->
                                 <div v-if="segmentData.transcript_json_api_url" class="mt-6">
@@ -728,13 +566,13 @@ function forceComponentRefresh() {
                                         </h3>
                                     </div>
                                     <AdvancedSubtitles
-                                        :video-ref="audioElement || videoElement"
+                                        :video-ref="videoElement"
                                         :transcript-json-url="segmentData.transcript_json_url"
                                         :transcript-json-api-url="segmentData.transcript_json_api_url"
                                         :key="`advanced-${componentKey}`"
                                     />
-                                    <div v-if="segmentData.audio_path" class="mt-2 text-xs text-gray-500 italic">
-                                        🎯 Subtitles synchronized with extracted audio for precision
+                                    <div class="mt-2 text-xs text-gray-500 italic">
+                                        🎯 Interactive transcript synchronized with video playback
                                     </div>
                                 </div>
                                 
@@ -782,232 +620,28 @@ function forceComponentRefresh() {
                                     />
                                 </div>
                                 
-                                <!-- Redo Processing for Completed Segments -->
+                                <!-- Simple Restart Processing for Completed Segments -->
                                 <div v-if="segmentData.status === 'completed'" class="mt-8">
                                     <div class="bg-orange-50 rounded-lg p-5 shadow-sm border border-orange-200">
                                         <h3 class="text-lg font-medium mb-4 flex items-center">
                                             <svg class="w-5 h-5 mr-2 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                                             </svg>
-                                            Redo Processing
+                                            Restart Processing
                                         </h3>
                                         <p class="text-gray-600 mb-4">
-                                            Re-run the entire processing pipeline to regenerate audio extraction, transcription, and terminology analysis. This will overwrite all existing results.
+                                            Re-run the entire processing pipeline using intelligent detection for optimal audio extraction and transcription settings. This will overwrite all existing results.
                                         </p>
                                         
-                                        <!-- Configuration Options (when expanded) -->
-                                        <div v-if="showRedoOptions" class="mb-4 space-y-6">
-                                            <!-- Audio Quality Selection -->
-                                            <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-3">
-                                                    Audio Extraction Quality
-                                                </label>
-                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                    <div
-                                                        v-for="quality in audioQualityOptions"
-                                                        :key="quality.value"
-                                                        class="relative"
-                                                    >
-                                                        <label
-                                                            :for="`audio-quality-${quality.value}`"
-                                                            class="flex items-start p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors duration-200"
-                                                            :class="selectedAudioQuality === quality.value ? 'border-teal-500 bg-teal-50' : 'border-gray-200'"
-                                                        >
-                                                            <input
-                                                                :id="`audio-quality-${quality.value}`"
-                                                                v-model="selectedAudioQuality"
-                                                                :value="quality.value"
-                                                                type="radio"
-                                                                name="audio-quality"
-                                                                class="mt-1 text-teal-600 focus:ring-teal-500"
-                                                            />
-                                                            <div class="ml-3 flex-1">
-                                                                <div class="text-sm font-medium text-gray-900">
-                                                                    {{ quality.label }}
-                                                                </div>
-                                                                <div class="text-xs text-gray-500 mt-1">
-                                                                    {{ quality.description }}
-                                                                </div>
-                                                                <div class="text-xs text-gray-400 mt-2">
-                                                                    Est. ~{{ quality.estimatedTime }}s
-                                                                </div>
-                                                            </div>
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <!-- Transcription Preset Selection -->
-                                            <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-3">
-                                                    Transcription Preset
-                                                </label>
-                                                
-                                                <!-- Loading presets -->
-                                                <div v-if="isLoadingPresets" class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                                    <div class="flex items-center space-x-2 text-sm text-gray-600">
-                                                        <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                        </svg>
-                                                        <span>Loading preset configurations...</span>
-                                                    </div>
-                                                </div>
-                                                
-                                                <!-- Preset options -->
-                                                <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                    <div
-                                                        v-for="preset in enhancedPresetOptions"
-                                                        :key="preset.value"
-                                                        class="relative"
-                                                    >
-                                                        <label
-                                                            :for="`transcription-preset-${preset.value}`"
-                                                            class="flex items-start p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors duration-200"
-                                                            :class="selectedTranscriptionPreset === preset.value ? 'border-teal-500 bg-teal-50' : 'border-gray-200'"
-                                                        >
-                                                            <input
-                                                                :id="`transcription-preset-${preset.value}`"
-                                                                v-model="selectedTranscriptionPreset"
-                                                                :value="preset.value"
-                                                                type="radio"
-                                                                name="transcription-preset"
-                                                                class="mt-1 text-teal-600 focus:ring-teal-500"
-                                                            />
-                                                            <div class="ml-3 flex-1">
-                                                                <div class="flex items-center justify-between">
-                                                                    <div class="text-sm font-medium text-gray-900">
-                                                                        {{ preset.name || preset.label }}
-                                                                    </div>
-                                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                                        {{ preset.whisper_model || preset.model || 'whisper-1' }}
-                                                                    </span>
-                                                                </div>
-                                                                <div class="text-xs text-gray-500 mt-1">
-                                                                    {{ preset.description }}
-                                                                </div>
-                                                                <div class="text-xs text-gray-400 mt-2 flex items-center justify-between">
-                                                                    <span>Est. ~{{ preset.estimatedTime }}s</span>
-                                                                    <span v-if="preset.temperature !== undefined">Temp: {{ preset.temperature }}</span>
-                                                                </div>
-                                                            </div>
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                                
-                                                <!-- Whisper Prompt Preview -->
-                                                <div v-if="selectedTranscriptionConfig?.initial_prompt" class="mt-4">
-                                                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                        <div class="flex items-start space-x-3">
-                                                            <div class="flex-shrink-0">
-                                                                <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                                </svg>
-                                                            </div>
-                                                            <div class="flex-1">
-                                                                <div class="flex items-center justify-between mb-2">
-                                                                    <h4 class="text-sm font-medium text-blue-900">
-                                                                        WhisperX Prompt - {{ selectedTranscriptionConfig.name }} Preset
-                                                                    </h4>
-                                                                    <div class="flex space-x-2">
-                                                                        <button
-                                                                            @click="toggleTemplatePreview"
-                                                                            class="text-xs text-blue-600 hover:text-blue-800 font-medium underline"
-                                                                        >
-                                                                            {{ showTemplatePreview ? 'Hide Preview' : 'Show Preview' }}
-                                                                        </button>
-                                                                        <button
-                                                                            @click="toggleVariablesList"
-                                                                            class="text-xs text-blue-600 hover:text-blue-800 font-medium underline"
-                                                                        >
-                                                                            {{ showVariablesList ? 'Hide Variables' : 'Show Variables' }}
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                                
-                                                                <!-- Template (with mustache syntax) -->
-                                                                <div class="bg-white border border-blue-100 rounded-md p-3 mb-3">
-                                                                    <div class="text-xs text-blue-800 font-medium mb-1">Template (with variables)</div>
-                                                                    <p class="text-sm text-gray-700 font-mono leading-relaxed">
-                                                                        "{{ selectedTranscriptionConfig.initial_prompt }}"
-                                                                    </p>
-                                                                </div>
-                                                                
-                                                                <!-- Template Preview (rendered) -->
-                                                                <div v-if="showTemplatePreview" class="bg-green-50 border border-green-100 rounded-md p-3 mb-3">
-                                                                    <div class="text-xs text-green-800 font-medium mb-1">Preview (with sample data)</div>
-                                                                    <p class="text-sm text-gray-700 leading-relaxed">
-                                                                        "{{ templatePreview || 'Loading preview...' }}"
-                                                                    </p>
-                                                                </div>
-                                                                
-                                                                <div class="mt-2 text-xs text-blue-700">
-                                                                    <div class="grid grid-cols-2 gap-2">
-                                                                        <div>
-                                                                            <span class="font-medium">Temperature:</span> {{ selectedTranscriptionConfig.temperature }}
-                                                                        </div>
-                                                                        <div>
-                                                                            <span class="font-medium">Word Timestamps:</span> {{ selectedTranscriptionConfig.word_timestamps ? 'Yes' : 'No' }}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                
-                                                <!-- Template Variables Display -->
-                                                <div v-if="showVariablesList && Object.keys(templateVariables).length > 0" class="mt-4">
-                                                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                                        <div class="flex items-start space-x-3">
-                                                            <div class="flex-shrink-0">
-                                                                <svg class="w-5 h-5 text-gray-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
-                                                                </svg>
-                                                            </div>
-                                                            <div class="flex-1">
-                                                                <h4 class="text-sm font-medium text-gray-900 mb-3">Available Template Variables</h4>
-                                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-40 overflow-y-auto">
-                                                                    <div 
-                                                                        v-for="(variable, key) in templateVariables" 
-                                                                        :key="key"
-                                                                        class="bg-white border border-gray-100 rounded-md p-2"
-                                                                    >
-                                                                        <div class="flex items-center justify-between mb-1">
-                                                                            <span class="text-xs font-medium text-gray-800">{{key}}</span>
-                                                                            <span 
-                                                                                class="text-xs px-1.5 py-0.5 rounded-full"
-                                                                                :class="getCategoryColor(variable.category)"
-                                                                            >
-                                                                                {{ variable.category }}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div class="text-xs text-gray-600 mb-1">{{ variable.description }}</div>
-                                                                        <div class="text-xs text-gray-500 font-mono">
-                                                                            Example: "{{ variable.example }}"
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <div class="mt-3 text-xs text-gray-500">
-                                                                    Variables are automatically populated from course and segment data when available.
-                                                                    Use mustache syntax: <code class="bg-gray-100 px-1 rounded" v-text="mustacheExample"></code>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            
-                                            <!-- Estimated Total Time -->
-                                            <div class="bg-gray-50 rounded-lg p-3">
-                                                <div class="flex items-center justify-between text-sm">
-                                                    <span class="text-gray-600">Total Estimated Duration:</span>
-                                                    <span class="font-medium text-gray-900">
-                                                        ~{{ Math.floor(((audioQualityOptions.find(q => q.value === selectedAudioQuality)?.estimatedTime || 30) + (selectedTranscriptionConfig?.estimatedTime || 60)) / 60) }}m {{ ((audioQualityOptions.find(q => q.value === selectedAudioQuality)?.estimatedTime || 30) + (selectedTranscriptionConfig?.estimatedTime || 60)) % 60 }}s
-                                                    </span>
-                                                </div>
-                                                <div class="text-xs text-gray-500 mt-1">
-                                                    Audio extraction + transcription with selected presets
+                                        <!-- Intelligent Detection Info -->
+                                        <div class="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                                            <div class="flex items-start">
+                                                <svg class="w-5 h-5 mr-2 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                                <div class="text-sm text-blue-800">
+                                                    <div class="font-medium">Intelligent Detection Enabled</div>
+                                                    <div>The system will automatically select optimal audio extraction and transcription settings based on content analysis, audio quality, and segment characteristics.</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1025,37 +659,16 @@ function forceComponentRefresh() {
                                             </div>
                                         </div>
                                         
-                                        <!-- Action Buttons -->
-                                        <div class="flex space-x-3">
-                                            <button 
-                                                v-if="!showRedoOptions"
-                                                @click="showRedoOptions = true" 
-                                                class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition shadow-sm flex items-center"
-                                            >
-                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                                </svg>
-                                                Configure & Redo Processing
-                                            </button>
-                                            <div v-else class="flex space-x-3">
-                                                <button 
-                                                    @click="redoProcessing" 
-                                                    class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition shadow-sm flex items-center"
-                                                >
-                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                                    </svg>
-                                                    Start Redo Processing
-                                                </button>
-                                                <button 
-                                                    @click="showRedoOptions = false" 
-                                                    class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition shadow-sm"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </div>
+                                        <!-- Action Button -->
+                                        <button 
+                                            @click="restartProcessing" 
+                                            class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition shadow-sm flex items-center"
+                                        >
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                            </svg>
+                                            Restart Processing with Intelligent Detection
+                                        </button>
                                     </div>
                                 </div>
                                 

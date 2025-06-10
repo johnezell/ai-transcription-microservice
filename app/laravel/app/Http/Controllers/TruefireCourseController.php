@@ -3710,4 +3710,839 @@ class TruefireCourseController extends Controller
             abort(500, 'Error serving audio file');
         }
     }
+
+    /**
+     * Process all audio extractions for a course using intelligent selection
+     */
+    public function processAllAudioExtractions(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'enable_intelligent_extraction' => 'sometimes|boolean',
+                'force_restart' => 'sometimes|boolean',
+                'continue_existing' => 'sometimes|boolean',
+                'settings' => 'sometimes|array'
+            ]);
+
+            $enableIntelligentExtraction = $validated['enable_intelligent_extraction'] ?? true;
+            $forceRestart = $validated['force_restart'] ?? false;
+            $continueExisting = $validated['continue_existing'] ?? false;
+            $settings = $validated['settings'] ?? [];
+
+            // Load course with segments that have video files available
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
+
+            // Collect all segments from channels
+            $allSegments = collect();
+            foreach ($course->channels as $channel) {
+                $allSegments = $allSegments->merge($channel->segments);
+            }
+
+            if ($allSegments->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No segments found for this course.',
+                    'missing_segments' => [],
+                    'total_segments' => 0,
+                    'available_segments' => 0
+                ], 422);
+            }
+
+            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $disk = 'd_drive';
+            $availableSegments = 0;
+            $alreadyProcessed = 0;
+            $missingVideoFiles = [];
+            $segmentsToProcess = [];
+
+            // Check which segments have video files and which already have audio files
+            foreach ($allSegments as $segment) {
+                $videoFilename = "{$segment->id}.mp4";
+                $videoFilePath = "{$courseDir}/{$videoFilename}";
+                $audioFilename = "{$segment->id}.wav";
+                $audioFilePath = "{$courseDir}/{$audioFilename}";
+
+                if (Storage::disk($disk)->exists($videoFilePath)) {
+                    $availableSegments++;
+                    
+                    $hasAudioFile = Storage::disk($disk)->exists($audioFilePath);
+                    
+                    if ($hasAudioFile && !$forceRestart && $continueExisting) {
+                        $alreadyProcessed++;
+                    } else {
+                        $segmentsToProcess[] = $segment->id;
+                    }
+                } else {
+                    $missingVideoFiles[] = $segment->id;
+                }
+            }
+
+            if ($availableSegments === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No video files found for audio extraction. Please download videos first.',
+                    'missing_video_files' => $missingVideoFiles,
+                    'total_segments' => $allSegments->count(),
+                    'available_segments' => $availableSegments,
+                    'required_action' => 'Download course videos first'
+                ], 422);
+            }
+
+            $segmentsToProcessCount = count($segmentsToProcess);
+            
+            if ($segmentsToProcessCount === 0 && !$forceRestart) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'All segments already have audio files. Use force_restart to reprocess.',
+                    'data' => [
+                        'course_id' => $truefireCourse->id,
+                        'total_segments' => $allSegments->count(),
+                        'available_segments' => $availableSegments,
+                        'already_processed' => $alreadyProcessed,
+                        'segments_to_process' => 0,
+                        'action_taken' => 'none'
+                    ]
+                ]);
+            }
+
+            // Dispatch job with only the segments that need processing (intelligent continuation)
+            \App\Jobs\ProcessCourseAudioExtractionJob::dispatch(
+                $truefireCourse,
+                true, // for_transcription
+                array_merge($settings, [
+                    'enable_intelligent_extraction' => $enableIntelligentExtraction,
+                    'force_restart' => $forceRestart,
+                    'continue_existing' => $continueExisting
+                ]),
+                $segmentsToProcess // Only process segments that need work
+            );
+
+            $jobId = 'course_intelligent_audio_' . $truefireCourse->id . '_' . time() . '_' . uniqid();
+
+            Log::info('Course intelligent audio extraction started', [
+                'course_id' => $truefireCourse->id,
+                'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                'intelligent_extraction' => $enableIntelligentExtraction,
+                'force_restart' => $forceRestart,
+                'continue_existing' => $continueExisting,
+                'total_segments' => $allSegments->count(),
+                'available_segments' => $availableSegments,
+                'already_processed' => $alreadyProcessed,
+                'segments_to_process' => $segmentsToProcessCount,
+                'missing_video_files' => count($missingVideoFiles),
+                'job_id' => $jobId,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $enableIntelligentExtraction 
+                    ? 'Intelligent audio extraction started successfully'
+                    : 'Audio extraction started successfully',
+                'data' => [
+                    'job_id' => $jobId,
+                    'course_id' => $truefireCourse->id,
+                    'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                    'intelligent_extraction_enabled' => $enableIntelligentExtraction,
+                    'total_segments' => $allSegments->count(),
+                    'available_segments' => $availableSegments,
+                    'already_processed' => $alreadyProcessed,
+                    'segments_to_process' => $segmentsToProcessCount,
+                    'missing_video_files' => count($missingVideoFiles),
+                    'force_restart' => $forceRestart,
+                    'continue_existing' => $continueExisting,
+                    'estimated_duration_minutes' => ceil($segmentsToProcessCount * 1.5),
+                    'started_at' => now()->toISOString(),
+                    'processing_mode' => $enableIntelligentExtraction ? 'intelligent_cascading' : 'fixed_quality'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error starting course intelligent audio extraction', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error starting course audio extraction',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Process all segments in a course for transcription workflow
+     */
+    public function processAllTranscriptions(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'force_restart' => 'sometimes|boolean',
+                'preset' => 'sometimes|string|in:fast,balanced,high,premium',
+                'settings' => 'sometimes|array'
+            ]);
+
+            $forceRestart = $validated['force_restart'] ?? false;
+            $preset = $validated['preset'] ?? $truefireCourse->getTranscriptionPreset();
+            $settings = $validated['settings'] ?? [];
+
+            // Load course with segments that have audio files available
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo(); // Only load segments with valid video fields
+            }]);
+
+            // Collect all segments from channels
+            $allSegments = collect();
+            foreach ($course->channels as $channel) {
+                $allSegments = $allSegments->merge($channel->segments);
+            }
+
+            if ($allSegments->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No segments found for this course.',
+                    'missing_segments' => [],
+                    'total_segments' => 0,
+                    'available_segments' => 0
+                ], 422);
+            }
+
+            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $disk = 'd_drive';
+            $availableSegments = 0;
+            $missingAudioFiles = [];
+
+            // Check which segments have audio files available
+            foreach ($allSegments as $segment) {
+                $audioFilename = "{$segment->id}.wav";
+                $audioFilePath = "{$courseDir}/{$audioFilename}";
+
+                if (Storage::disk($disk)->exists($audioFilePath)) {
+                    $availableSegments++;
+                } else {
+                    $missingAudioFiles[] = $segment->id;
+                }
+            }
+
+            if ($availableSegments === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No audio files found for transcription. Please run audio extraction first.',
+                    'missing_audio_files' => $missingAudioFiles,
+                    'total_segments' => $allSegments->count(),
+                    'available_segments' => $availableSegments,
+                    'required_action' => 'Run audio extraction batch processing first'
+                ], 422);
+            }
+
+            // Dispatch the course transcription processing job
+            \App\Jobs\ProcessCourseTranscriptionJob::dispatch(
+                $truefireCourse,
+                $preset,
+                $settings,
+                $forceRestart
+            );
+
+            $jobId = 'course_transcription_' . $truefireCourse->id . '_' . time() . '_' . uniqid();
+
+            Log::info('Course transcription processing started', [
+                'course_id' => $truefireCourse->id,
+                'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                'preset' => $preset,
+                'total_segments' => $allSegments->count(),
+                'available_segments' => $availableSegments,
+                'missing_audio_files' => count($missingAudioFiles),
+                'force_restart' => $forceRestart,
+                'job_id' => $jobId,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Course transcription processing started successfully',
+                'data' => [
+                    'job_id' => $jobId,
+                    'course_id' => $truefireCourse->id,
+                    'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                    'preset' => $preset,
+                    'total_segments' => $allSegments->count(),
+                    'available_segments' => $availableSegments,
+                    'missing_audio_files' => count($missingAudioFiles),
+                    'force_restart' => $forceRestart,
+                    'estimated_duration_minutes' => ceil($availableSegments * 1.5), // Rough estimate
+                    'started_at' => now()->toISOString()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error starting course transcription processing', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error starting course transcription processing',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get comprehensive course processing statistics
+     */
+    public function getCourseProcessingStats(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            // Load course with segments
+            $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                $query->withVideo();
+            }]);
+
+            // Collect all segments
+            $allSegments = collect();
+            foreach ($course->channels as $channel) {
+                $allSegments = $allSegments->merge($channel->segments);
+            }
+
+            $totalSegments = $allSegments->count();
+            $courseDir = "truefire-courses/{$truefireCourse->id}";
+            $disk = 'd_drive';
+
+            // Count audio extraction completion
+            $audioExtracted = 0;
+            $audioFilesSizes = [];
+            foreach ($allSegments as $segment) {
+                $audioFilePath = "{$courseDir}/{$segment->id}.wav";
+                if (Storage::disk($disk)->exists($audioFilePath)) {
+                    $audioExtracted++;
+                    $audioFilesSizes[] = Storage::disk($disk)->size($audioFilePath);
+                }
+            }
+
+            // Count transcription completion
+            $transcribed = 0;
+            $transcriptionLogs = collect();
+            foreach ($allSegments as $segment) {
+                $transcriptPath = "{$courseDir}/{$segment->id}_transcript.txt";
+                if (Storage::disk($disk)->exists($transcriptPath)) {
+                    $transcribed++;
+                }
+
+                // Collect transcription logs for this segment
+                $logs = TranscriptionLog::where('extraction_settings->segment_id', $segment->id)
+                    ->where('extraction_settings->course_id', $truefireCourse->id)
+                    ->get();
+                $transcriptionLogs = $transcriptionLogs->merge($logs);
+            }
+
+            // Calculate quality metrics from transcription logs
+            $qualityScores = $transcriptionLogs
+                ->where('status', 'completed')
+                ->whereNotNull('transcription_confidence_score')
+                ->pluck('transcription_confidence_score')
+                ->filter(function ($score) {
+                    return is_numeric($score) && $score > 0;
+                });
+
+            $avgQualityScore = $qualityScores->isNotEmpty() ? $qualityScores->avg() : null;
+
+            // Calculate processing times from transcription logs
+            $processingTimes = $transcriptionLogs
+                ->where('status', 'completed')
+                ->whereNotNull('total_processing_duration_seconds')
+                ->pluck('total_processing_duration_seconds')
+                ->filter(function ($time) {
+                    return is_numeric($time) && $time > 0;
+                });
+
+            $avgProcessingTime = $processingTimes->isNotEmpty() ? $processingTimes->avg() : null;
+            $totalProcessingTime = $processingTimes->sum();
+
+            // Get recent batch processing jobs
+            $recentJobs = TranscriptionLog::where('extraction_settings->course_id', $truefireCourse->id)
+                ->where('extraction_settings->batch_processing', true)
+                ->where('file_name', 'like', "Course #{$truefireCourse->id}%")
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get()
+                ->map(function ($log) {
+                    return [
+                        'job_id' => $log->job_id,
+                        'status' => $log->status,
+                        'started_at' => $log->started_at,
+                        'completed_at' => $log->completed_at,
+                        'duration_minutes' => $log->total_processing_duration_seconds ? round($log->total_processing_duration_seconds / 60, 1) : null,
+                        'processed_segments' => $log->extraction_settings['processed_segments'] ?? 0,
+                        'error_message' => $log->error_message
+                    ];
+                });
+
+            // Calculate completion percentages
+            $audioCompletionPercentage = $totalSegments > 0 ? round(($audioExtracted / $totalSegments) * 100, 1) : 0;
+            $transcriptionCompletionPercentage = $totalSegments > 0 ? round(($transcribed / $totalSegments) * 100, 1) : 0;
+
+            // Calculate total audio size
+            $totalAudioSizeMB = array_sum($audioFilesSizes) / (1024 * 1024);
+
+            $stats = [
+                'course_info' => [
+                    'id' => $truefireCourse->id,
+                    'title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
+                    'total_segments' => $totalSegments
+                ],
+                'audio_extraction' => [
+                    'completed_segments' => $audioExtracted,
+                    'total_segments' => $totalSegments,
+                    'completion_percentage' => $audioCompletionPercentage,
+                    'total_audio_size_mb' => round($totalAudioSizeMB, 2),
+                    'avg_file_size_mb' => $audioExtracted > 0 ? round($totalAudioSizeMB / $audioExtracted, 2) : 0
+                ],
+                'transcription' => [
+                    'completed_segments' => $transcribed,
+                    'total_segments' => $totalSegments,
+                    'completion_percentage' => $transcriptionCompletionPercentage,
+                    'avg_quality_score' => $avgQualityScore ? round($avgQualityScore, 3) : null,
+                    'total_processing_time_minutes' => $totalProcessingTime > 0 ? round($totalProcessingTime / 60, 1) : null,
+                    'avg_processing_time_seconds' => $avgProcessingTime ? round($avgProcessingTime, 1) : null
+                ],
+                'recent_batch_jobs' => $recentJobs->toArray(),
+                'summary' => [
+                    'overall_completion_percentage' => round((($audioExtracted + $transcribed) / ($totalSegments * 2)) * 100, 1),
+                    'ready_for_transcription' => $audioExtracted - $transcribed,
+                    'total_processing_time_hours' => $totalProcessingTime > 0 ? round($totalProcessingTime / 3600, 2) : null,
+                    'estimated_remaining_time_minutes' => ($audioExtracted - $transcribed > 0 && $avgProcessingTime) 
+                        ? round((($audioExtracted - $transcribed) * $avgProcessingTime) / 60, 1) 
+                        : null
+                ],
+                'updated_at' => now()->toISOString()
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $stats
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting course processing statistics', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error getting course processing statistics',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Restart course transcription processing
+     */
+    public function restartCourseTranscription(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'preset' => 'sometimes|string|in:fast,balanced,high,premium',
+                'clear_existing' => 'sometimes|boolean',
+                'segments_only' => 'sometimes|array',
+                'segments_only.*' => 'integer'
+            ]);
+
+            $preset = $validated['preset'] ?? $truefireCourse->getTranscriptionPreset();
+            $clearExisting = $validated['clear_existing'] ?? false;
+            $segmentsOnly = $validated['segments_only'] ?? null;
+
+            // If clearing existing transcriptions, remove transcript files
+            if ($clearExisting) {
+                $courseDir = "truefire-courses/{$truefireCourse->id}";
+                $disk = 'd_drive';
+
+                // Get segments to clear
+                $segmentsToClear = $segmentsOnly ?? $truefireCourse->segments->pluck('id')->toArray();
+
+                $clearedCount = 0;
+                $preservedSourceFiles = 0;
+                
+                foreach ($segmentsToClear as $segmentId) {
+                    // SAFETY: Only delete transcription files - NEVER source MP4 files
+                    $transcriptFilesToDelete = [
+                        "{$courseDir}/{$segmentId}_transcript.txt",
+                        "{$courseDir}/{$segmentId}_transcript.srt",
+                        "{$courseDir}/{$segmentId}_transcript.json"
+                    ];
+
+                    // SAFETY CHECK: Verify source MP4 file is preserved
+                    $sourceVideoFile = "{$courseDir}/{$segmentId}.mp4";
+                    if (Storage::disk($disk)->exists($sourceVideoFile)) {
+                        $preservedSourceFiles++;
+                    }
+
+                    // Only delete transcript files (never audio or video)
+                    foreach ($transcriptFilesToDelete as $filePath) {
+                        // SAFETY: Double-check we're not deleting source files
+                        if (str_ends_with($filePath, '.mp4')) {
+                            Log::error('SAFETY VIOLATION: Attempted to delete source MP4 file', [
+                                'file_path' => $filePath,
+                                'course_id' => $truefireCourse->id,
+                                'segment_id' => $segmentId
+                            ]);
+                            throw new \Exception("Safety violation: Cannot delete source MP4 files");
+                        }
+
+                        if (Storage::disk($disk)->exists($filePath)) {
+                            Storage::disk($disk)->delete($filePath);
+                            $clearedCount++;
+                        }
+                    }
+                }
+
+                // Clear transcription logs for restarted segments
+                TranscriptionLog::where('extraction_settings->course_id', $truefireCourse->id)
+                    ->when($segmentsOnly, function ($query) use ($segmentsOnly) {
+                        return $query->whereIn('extraction_settings->segment_id', $segmentsOnly);
+                    })
+                    ->where('status', '!=', 'processing') // Don't clear currently processing jobs
+                    ->update([
+                        'status' => 'cancelled',
+                        'error_message' => 'Cleared for restart',
+                        'completed_at' => now()
+                    ]);
+
+                Log::info('Cleared existing transcriptions for restart', [
+                    'course_id' => $truefireCourse->id,
+                    'cleared_transcript_files' => $clearedCount,
+                    'preserved_source_mp4_files' => $preservedSourceFiles,
+                    'segments_processed' => $segmentsOnly ? count($segmentsOnly) : 'all',
+                    'safety_check' => 'Source MP4 files preserved',
+                    'user_id' => Auth::id()
+                ]);
+            }
+
+            // Start fresh transcription processing
+            $response = $this->processAllTranscriptions($truefireCourse, new Request([
+                'force_restart' => true,
+                'preset' => $preset,
+                'settings' => [
+                    'restart_operation' => true,
+                    'cleared_existing' => $clearExisting,
+                    'segments_filter' => $segmentsOnly
+                ]
+            ]));
+
+            if ($response->getStatusCode() === 200) {
+                $responseData = json_decode($response->getContent(), true);
+                $responseData['message'] = 'Course transcription restarted successfully';
+                $responseData['data']['restart_operation'] = true;
+                $responseData['data']['cleared_existing'] = $clearExisting;
+
+                return response()->json($responseData);
+            }
+
+            return $response;
+
+        } catch (\Exception $e) {
+            Log::error('Error restarting course transcription', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error restarting course transcription',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Restart course audio extraction processing
+     */
+    public function restartCourseAudioExtraction(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'preset' => 'sometimes|string|in:low,medium,high,premium',
+                'clear_existing' => 'sometimes|boolean',
+                'segments_only' => 'sometimes|array',
+                'segments_only.*' => 'integer'
+            ]);
+
+            $preset = $validated['preset'] ?? $truefireCourse->getAudioExtractionPreset();
+            $clearExisting = $validated['clear_existing'] ?? false;
+            $segmentsOnly = $validated['segments_only'] ?? null;
+
+            // If clearing existing audio files, remove them
+            if ($clearExisting) {
+                $courseDir = "truefire-courses/{$truefireCourse->id}";
+                $disk = 'd_drive';
+
+                // Load course with segments to clear
+                $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                    $query->withVideo();
+                }]);
+
+                $allSegments = collect();
+                foreach ($course->channels as $channel) {
+                    $allSegments = $allSegments->merge($channel->segments);
+                }
+
+                $segmentsToClear = $segmentsOnly ?? $allSegments->pluck('id')->toArray();
+
+                $clearedCount = 0;
+                $preservedSourceFiles = 0;
+                
+                foreach ($segmentsToClear as $segmentId) {
+                    // SAFETY: Only delete processed audio files - NEVER source MP4 files
+                    $audioFilesToDelete = [
+                        "{$courseDir}/{$segmentId}.wav",
+                        "{$courseDir}/{$segmentId}.mp3"
+                    ];
+
+                    // SAFETY CHECK: Verify source MP4 file is preserved
+                    $sourceVideoFile = "{$courseDir}/{$segmentId}.mp4";
+                    if (Storage::disk($disk)->exists($sourceVideoFile)) {
+                        $preservedSourceFiles++;
+                    }
+
+                    // Only delete processed audio files (never source video files)
+                    foreach ($audioFilesToDelete as $filePath) {
+                        // SAFETY: Double-check we're not deleting source files
+                        if (str_ends_with($filePath, '.mp4')) {
+                            Log::error('SAFETY VIOLATION: Attempted to delete source MP4 file', [
+                                'file_path' => $filePath,
+                                'course_id' => $truefireCourse->id,
+                                'segment_id' => $segmentId
+                            ]);
+                            throw new \Exception("Safety violation: Cannot delete source MP4 files");
+                        }
+
+                        if (Storage::disk($disk)->exists($filePath)) {
+                            Storage::disk($disk)->delete($filePath);
+                            $clearedCount++;
+                        }
+                    }
+                }
+
+                // Clear audio extraction logs for restarted segments
+                TranscriptionLog::where('extraction_settings->course_id', $truefireCourse->id)
+                    ->where('is_test_extraction', true) // Audio extraction logs
+                    ->when($segmentsOnly, function ($query) use ($segmentsOnly) {
+                        return $query->whereIn('extraction_settings->segment_id', $segmentsOnly);
+                    })
+                    ->where('status', '!=', 'processing') // Don't clear currently processing jobs
+                    ->update([
+                        'status' => 'cancelled',
+                        'error_message' => 'Cleared for restart',
+                        'completed_at' => now()
+                    ]);
+
+                Log::info('Cleared existing audio files for restart', [
+                    'course_id' => $truefireCourse->id,
+                    'cleared_audio_files' => $clearedCount,
+                    'preserved_source_mp4_files' => $preservedSourceFiles,
+                    'segments_processed' => $segmentsOnly ? count($segmentsOnly) : 'all',
+                    'safety_check' => 'Source MP4 files preserved',
+                    'user_id' => Auth::id()
+                ]);
+            }
+
+            // Start fresh audio extraction processing
+            $response = $this->processAllVideos($truefireCourse, new Request([
+                'force_restart' => true,
+                'preset' => $preset,
+                'settings' => [
+                    'restart_operation' => true,
+                    'cleared_existing' => $clearExisting,
+                    'segments_filter' => $segmentsOnly
+                ]
+            ]));
+
+            if ($response->getStatusCode() === 200) {
+                $responseData = json_decode($response->getContent(), true);
+                $responseData['message'] = 'Course audio extraction restarted successfully';
+                $responseData['data']['restart_operation'] = true;
+                $responseData['data']['cleared_existing'] = $clearExisting;
+
+                return response()->json($responseData);
+            }
+
+            return $response;
+
+        } catch (\Exception $e) {
+            Log::error('Error restarting course audio extraction', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error restarting course audio extraction',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Restart entire course processing pipeline (audio extraction + transcription)
+     */
+    public function restartEntireCourseProcessing(LocalTruefireCourse $truefireCourse, Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'audio_preset' => 'sometimes|string|in:low,medium,high,premium',
+                'transcription_preset' => 'sometimes|string|in:fast,balanced,high,premium',
+                'clear_existing' => 'sometimes|boolean',
+                'segments_only' => 'sometimes|array',
+                'segments_only.*' => 'integer'
+            ]);
+
+            $audioPreset = $validated['audio_preset'] ?? $truefireCourse->getAudioExtractionPreset();
+            $transcriptionPreset = $validated['transcription_preset'] ?? $truefireCourse->getTranscriptionPreset();
+            $clearExisting = $validated['clear_existing'] ?? false;
+            $segmentsOnly = $validated['segments_only'] ?? null;
+
+            // If clearing existing files, remove both audio and transcription files
+            if ($clearExisting) {
+                $courseDir = "truefire-courses/{$truefireCourse->id}";
+                $disk = 'd_drive';
+
+                // Load course with segments to clear
+                $course = $truefireCourse->load(['channels.segments' => function ($query) {
+                    $query->withVideo();
+                }]);
+
+                $allSegments = collect();
+                foreach ($course->channels as $channel) {
+                    $allSegments = $allSegments->merge($channel->segments);
+                }
+
+                $segmentsToClear = $segmentsOnly ?? $allSegments->pluck('id')->toArray();
+
+                $clearedCount = 0;
+                $preservedSourceFiles = 0;
+                
+                foreach ($segmentsToClear as $segmentId) {
+                    // SAFETY: Only delete processed files - NEVER source MP4 files
+                    $filesToDelete = [
+                        // Processed audio files only
+                        "{$courseDir}/{$segmentId}.wav",
+                        "{$courseDir}/{$segmentId}.mp3",
+                        // Transcription files only
+                        "{$courseDir}/{$segmentId}_transcript.txt",
+                        "{$courseDir}/{$segmentId}_transcript.srt",
+                        "{$courseDir}/{$segmentId}_transcript.json"
+                    ];
+
+                    // SAFETY CHECK: Verify source MP4 file is preserved
+                    $sourceVideoFile = "{$courseDir}/{$segmentId}.mp4";
+                    if (Storage::disk($disk)->exists($sourceVideoFile)) {
+                        $preservedSourceFiles++;
+                    }
+
+                    // Only delete processed files (never source video files)
+                    foreach ($filesToDelete as $filePath) {
+                        // SAFETY: Double-check we're not deleting source files
+                        if (str_ends_with($filePath, '.mp4')) {
+                            Log::error('SAFETY VIOLATION: Attempted to delete source MP4 file', [
+                                'file_path' => $filePath,
+                                'course_id' => $truefireCourse->id,
+                                'segment_id' => $segmentId
+                            ]);
+                            throw new \Exception("Safety violation: Cannot delete source MP4 files");
+                        }
+
+                        if (Storage::disk($disk)->exists($filePath)) {
+                            Storage::disk($disk)->delete($filePath);
+                            $clearedCount++;
+                        }
+                    }
+                }
+
+                // Clear all processing logs for restarted segments
+                TranscriptionLog::where('extraction_settings->course_id', $truefireCourse->id)
+                    ->when($segmentsOnly, function ($query) use ($segmentsOnly) {
+                        return $query->whereIn('extraction_settings->segment_id', $segmentsOnly);
+                    })
+                    ->where('status', '!=', 'processing') // Don't clear currently processing jobs
+                    ->update([
+                        'status' => 'cancelled',
+                        'error_message' => 'Cleared for complete restart',
+                        'completed_at' => now()
+                    ]);
+
+                Log::info('Cleared all existing processed files for complete course restart', [
+                    'course_id' => $truefireCourse->id,
+                    'cleared_processed_files' => $clearedCount,
+                    'preserved_source_mp4_files' => $preservedSourceFiles,
+                    'segments_processed' => $segmentsOnly ? count($segmentsOnly) : 'all',
+                    'audio_preset' => $audioPreset,
+                    'transcription_preset' => $transcriptionPreset,
+                    'safety_check' => 'Source MP4 files preserved',
+                    'user_id' => Auth::id()
+                ]);
+            }
+
+            // Start fresh audio extraction first (transcription will follow once audio is ready)
+            $audioResponse = $this->processAllVideos($truefireCourse, new Request([
+                'force_restart' => true,
+                'preset' => $audioPreset,
+                'settings' => [
+                    'restart_operation' => true,
+                    'complete_pipeline_restart' => true,
+                    'cleared_existing' => $clearExisting,
+                    'segments_filter' => $segmentsOnly,
+                    'follow_with_transcription' => true,
+                    'transcription_preset' => $transcriptionPreset
+                ]
+            ]));
+
+            if ($audioResponse->getStatusCode() === 200) {
+                $audioData = json_decode($audioResponse->getContent(), true);
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Complete course processing pipeline restarted successfully',
+                    'data' => [
+                        'restart_type' => 'complete_pipeline',
+                        'audio_processing' => $audioData['data'] ?? [],
+                        'transcription_preset' => $transcriptionPreset,
+                        'cleared_existing' => $clearExisting,
+                        'pipeline_stages' => [
+                            '1_audio_extraction' => 'started',
+                            '2_transcription' => 'will_follow_audio_completion'
+                        ],
+                        'estimated_total_duration_minutes' => ($audioData['data']['estimated_duration_minutes'] ?? 0) * 2, // Rough estimate for both stages
+                        'course_id' => $truefireCourse->id,
+                        'started_at' => now()->toISOString()
+                    ]
+                ]);
+            }
+
+            return $audioResponse;
+
+        } catch (\Exception $e) {
+            Log::error('Error restarting entire course processing', [
+                'course_id' => $truefireCourse->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error restarting complete course processing',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
 }

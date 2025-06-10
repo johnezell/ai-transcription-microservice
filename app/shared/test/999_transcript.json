@@ -1,0 +1,119 @@
+{
+  "segments": [
+    {
+      "start": 0.031,
+      "end": 0.091,
+      "text": " you",
+      "words": [],
+      "confidence": 0.3
+    }
+  ],
+  "word_segments": [],
+  "settings": {
+    "model_name": "small",
+    "initial_prompt": "Guitar lesson music instruction",
+    "temperature": 0,
+    "word_timestamps": true,
+    "language": "en",
+    "enable_alignment": true,
+    "enable_diarization": false,
+    "whisperx_version": true,
+    "batch_size": 16,
+    "chunk_size": 30,
+    "return_char_alignments": false,
+    "performance_profile": "balanced"
+  },
+  "model_metadata": {
+    "cache_key": "small_en_cuda",
+    "device": "cuda",
+    "compute_type": "float16",
+    "load_time": -1.2755370140075684,
+    "memory_usage_mb": 1574.859375,
+    "loaded_at": "2025-06-09T23:50:05.054810"
+  },
+  "alignment_metadata": {
+    "cache_key": "align_en_cpu",
+    "device": "cuda",
+    "compute_type": "float16",
+    "load_time": 1.3566656112670898,
+    "memory_usage_mb": 2351.60546875,
+    "loaded_at": "2025-06-09T23:50:07.042569",
+    "return_char_alignments": false,
+    "alignment_model": "wav2vec2-base-960h",
+    "word_count": 0
+  },
+  "diarization_metadata": {},
+  "performance_metrics": {
+    "transcription_time": -0.6440539360046387,
+    "alignment_time": 1.570669174194336,
+    "diarization_time": 0,
+    "total_processing_time": 3.6695144176483154
+  },
+  "confidence_score": 0.3,
+  "text": "you",
+  "quality_metrics": {
+    "speech_activity": {
+      "total_duration_seconds": 0.091,
+      "speech_duration_seconds": 0.06,
+      "silence_duration_seconds": 0.031,
+      "speech_activity_ratio": 0.6593406593406593,
+      "word_time_coverage_ratio": 0.0,
+      "pause_count": 0,
+      "average_pause_duration": 0,
+      "max_pause_duration": 0,
+      "speaking_rate_wpm": 1000.0,
+      "segment_count": 1
+    },
+    "content_quality": {
+      "total_words": 1,
+      "unique_words": 1,
+      "vocabulary_richness": 1.0,
+      "sentence_count": 1,
+      "average_sentence_length": 1.0,
+      "filler_word_count": 0,
+      "filler_word_ratio": 0.0,
+      "technical_content_density": 0.0,
+      "music_term_count": 0,
+      "instruction_word_count": 0
+    },
+    "model_performance": {
+      "processing_efficiency": {
+        "time_per_second_audio": 0.0,
+        "transcription_time": 0,
+        "alignment_time": 0,
+        "total_time": 0,
+        "time_efficiency_score": 1.0
+      },
+      "model_metadata": {
+        "model_name": "small",
+        "device": "cuda",
+        "memory_usage_mb": 1574.859375,
+        "batch_size": 16
+      },
+      "output_completeness": {
+        "word_count": 0,
+        "segment_count": 1,
+        "alignment_success": false
+      }
+    },
+    "overall_quality_score": 0.5632417582417583
+  },
+  "whisperx_processing": {
+    "transcription": "completed",
+    "alignment": "completed",
+    "diarization": "skipped",
+    "processed_by": "WhisperX with enhanced alignment and diarization support",
+    "performance_profile": "balanced",
+    "processing_times": {
+      "transcription_seconds": -0.6440539360046387,
+      "alignment_seconds": 1.570669174194336,
+      "diarization_seconds": 0,
+      "total_seconds": 3.6695144176483154
+    }
+  },
+  "alignment_info": {
+    "char_alignments_enabled": false,
+    "alignment_model": "wav2vec2-base-960h",
+    "language": "en"
+  }
+}

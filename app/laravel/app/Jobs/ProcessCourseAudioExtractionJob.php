@@ -39,17 +39,26 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
     protected array $settings;
 
     /**
+     * Specific segment IDs to process (null = process all)
+     *
+     * @var array|null
+     */
+    protected ?array $segmentIds;
+
+    /**
      * Create a new job instance.
      *
      * @param LocalTruefireCourse $course
      * @param bool $forTranscription
      * @param array $settings
+     * @param array|null $segmentIds Optional array of specific segment IDs to process
      */
-    public function __construct(LocalTruefireCourse $course, bool $forTranscription = true, array $settings = [])
+    public function __construct(LocalTruefireCourse $course, bool $forTranscription = true, array $settings = [], ?array $segmentIds = null)
     {
         $this->course = $course;
         $this->forTranscription = $forTranscription;
         $this->settings = $settings;
+        $this->segmentIds = $segmentIds;
 
         Log::info('ProcessCourseAudioExtractionJob created', [
             'course_id' => $course->id,
@@ -57,6 +66,8 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
             'for_transcription' => $forTranscription,
             'preset' => $course->getAudioExtractionPreset(),
             'settings' => $settings,
+            'specific_segments' => $segmentIds ? count($segmentIds) : 'all',
+            'segment_ids' => $segmentIds,
             'workflow_step' => 'course_job_creation'
         ]);
     }
@@ -96,6 +107,30 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                 return;
             }
 
+            // Filter segments if specific segment IDs were provided
+            if ($this->segmentIds !== null) {
+                $allSegments = $allSegments->filter(function ($segment) {
+                    return in_array($segment->id, $this->segmentIds);
+                });
+
+                if ($allSegments->isEmpty()) {
+                    Log::warning('No matching segments found for specified segment IDs', [
+                        'course_id' => $this->course->id,
+                        'requested_segment_ids' => $this->segmentIds,
+                        'workflow_step' => 'no_matching_segments_found'
+                    ]);
+                    return;
+                }
+
+                Log::info('Filtered segments for processing', [
+                    'course_id' => $this->course->id,
+                    'total_course_segments' => $course->channels->flatMap->segments->count(),
+                    'segments_to_process' => $allSegments->count(),
+                    'segment_ids' => $allSegments->pluck('id')->toArray(),
+                    'workflow_step' => 'segments_filtered'
+                ]);
+            }
+
             $courseDir = "truefire-courses/{$this->course->id}";
             $disk = 'd_drive'; // Always use d_drive for TrueFire courses
             $processedCount = 0;
@@ -115,6 +150,8 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                 'extraction_settings' => array_merge($this->settings, [
                     'course_id' => $this->course->id,
                     'total_segments' => $allSegments->count(),
+                    'segments_to_process' => $allSegments->pluck('id')->toArray(),
+                    'intelligent_filtering' => $this->segmentIds !== null,
                     'for_transcription' => $this->forTranscription,
                     'batch_processing' => true,
                     'initiated_at' => now()->toISOString()
@@ -124,7 +161,8 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
             Log::info('Course-level transcription log created', [
                 'course_id' => $this->course->id,
                 'master_log_id' => $masterLog->id,
-                'total_segments' => $allSegments->count(),
+                'segments_to_process' => $allSegments->count(),
+                'intelligent_filtering' => $this->segmentIds !== null,
                 'workflow_step' => 'master_log_created'
             ]);
 
@@ -157,7 +195,11 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                         'simple_naming' => $this->forTranscription, // Use simple naming for transcription
                         'sample_rate' => $this->forTranscription ? 16000 : 44100,
                         'channels' => $this->forTranscription ? 1 : 2,
-                        'bit_rate' => $this->forTranscription ? '128k' : '192k'
+                        'bit_rate' => $this->forTranscription ? '128k' : '192k',
+                        // Pass through pipeline flags for automatic transcription triggering
+                        'follow_with_transcription' => $this->settings['follow_with_transcription'] ?? $this->forTranscription,
+                        'transcription_preset' => $this->settings['transcription_preset'] ?? 'balanced',
+                        'complete_pipeline_restart' => $this->settings['complete_pipeline_restart'] ?? false
                     ]);
 
                     // Dispatch individual audio extraction job
@@ -212,7 +254,8 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                 'processed_segments' => $processedCount,
                 'skipped_segments' => $skippedCount,
                 'error_segments' => $errorCount,
-                'total_segments' => $allSegments->count(),
+                'segments_to_process' => $allSegments->count(),
+                'intelligent_filtering_used' => $this->segmentIds !== null,
                 'for_transcription' => $this->forTranscription,
                 'preset' => $this->course->getAudioExtractionPreset(),
                 'workflow_step' => 'course_job_completed'

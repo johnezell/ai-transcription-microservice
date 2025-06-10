@@ -1,7 +1,7 @@
 flask==2.3.3
 requests==2.31.0
-whisperx>=3.1.1
-faster-whisper>=0.9.0
+whisperx>=3.3.4
+faster-whisper>=1.1.0
 torch>=2.1.0,<2.8.0
 torchaudio>=2.0.1,<2.8.0
 transformers>=4.35.0
@@ -10,11 +10,13 @@ librosa>=0.10.0
 speechbrain>=0.5.15
 omegaconf>=2.3.0
 asteroid-filterbanks>=0.4.0
-numpy==1.24.3
-pydub==0.25.1
-pathlib==1.0.1
-python-dotenv==1.0.0
-boto3==1.28.64
-werkzeug==2.3.7
+numpy>=2.0.2
+pydub>=0.25.1
+pathlib>=1.0.1
+python-dotenv>=1.0.0
+boto3>=1.28.64
+werkzeug>=2.3.7
 psutil>=5.9.0
-# Note: Removed explicit NVIDIA packages to avoid version conflicts with base image cuDNN 8
+# Updated numpy to >=2.0.2 for WhisperX 3.3.4 compatibility
+# Updated other packages to use >= for better dependency resolution
+# Updated WhisperX to v3.3.4 for hotwords support and CUDNN fixes

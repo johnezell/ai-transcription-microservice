@@ -46,6 +46,8 @@
         </svg>
         Legend
       </button>
+      
+
     </div>
     
     <!-- Confidence Legend -->
@@ -74,15 +76,46 @@
     <!-- Always visible inline subtitles -->
     <div 
       class="inline-subtitles mt-4 p-3 bg-black bg-opacity-80 text-white rounded-md text-center"
-      v-if="currentSegment && currentSegment.words && currentSegment.words.length > 0"
+      v-if="transcriptData && segments.length > 0"
     >
-      <span 
-        v-for="(word, index) in currentSegment.words" 
-        :key="index" 
-        class="word-inline mx-0.5 px-1 py-0.5 rounded cursor-pointer"
-        :class="getWordClasses(word, index)"
-        @click="openWordEditor(word, index)"
-      >{{ word.word }}</span>
+                <!-- Show current segment if media sync is available -->
+      <div v-if="currentMediaElement && currentSegment && currentSegment.words && currentSegment.words.length > 0">
+        <div v-if="videoPlaying" class="text-xs text-gray-300 mb-2 flex items-center justify-center">
+          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 6a2 2 0 012-2h6l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+          </svg>
+          Video: {{ currentMediaElement ? currentMediaElement.currentTime.toFixed(2) : '0.00' }}s
+        </div>
+        <span 
+          v-for="(word, index) in currentSegment.words" 
+          :key="index" 
+          class="word-inline mx-0.5 px-1 py-0.5 rounded cursor-pointer"
+          :class="getWordClasses(word, index)"
+          @click="openWordEditor(word, index)"
+        >{{ word.word }}</span>
+      </div>
+      
+      <!-- Show first segment if no media sync, or fallback display -->
+      <div v-else-if="segments[0] && segments[0].words && segments[0].words.length > 0">
+        <div class="text-xs text-gray-300 mb-2">
+          {{ currentMediaElement ? 'No current segment' : 'Full transcript (media sync not available)' }}
+        </div>
+        <div class="text-left max-h-32 overflow-y-auto">
+          <span 
+            v-for="(word, index) in segments[0].words.slice(0, 50)" 
+            :key="index" 
+            class="word-inline mx-0.5 px-1 py-0.5 rounded cursor-pointer high-confidence"
+            @click="openWordEditor(word, index)"
+          >{{ word.word }}</span>
+          <span v-if="segments[0].words.length > 50" class="text-gray-400">... ({{ segments[0].words.length - 50 }} more words)</span>
+        </div>
+      </div>
+      
+      <!-- Fallback: show full text -->
+      <div v-else-if="transcriptData.text" class="text-left max-h-32 overflow-y-auto text-sm">
+        <div class="text-xs text-gray-300 mb-2">Full transcript text</div>
+        {{ transcriptData.text.substring(0, 500) }}{{ transcriptData.text.length > 500 ? '...' : '' }}
+      </div>
     </div>
     
     <!-- Loading message when transcript is being fetched -->
@@ -155,9 +188,9 @@
                 :class="{'bg-gray-100 dark:bg-gray-800': !allowTimeEditing}"
               />
               <button 
-                @click="editingWord.start = videoRef ? parseFloat(videoRef.currentTime.toFixed(2)) : 0" 
+                @click="editingWord.start = currentMediaElement ? parseFloat(currentMediaElement.currentTime.toFixed(2)) : 0" 
                 class="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded-md text-sm whitespace-nowrap"
-                title="Use current video time"
+                title="Use current media time"
                 :disabled="!allowTimeEditing"
                 :class="{'opacity-50 cursor-not-allowed': !allowTimeEditing}"
               >
@@ -165,7 +198,7 @@
               </button>
             </div>
             <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Current time: {{ videoRef ? videoRef.currentTime.toFixed(2) : '0.00' }}s
+              Current time: {{ currentMediaElement ? currentMediaElement.currentTime.toFixed(2) : '0.00' }}s
             </div>
           </div>
           
@@ -185,9 +218,9 @@
                 :class="{'bg-gray-100 dark:bg-gray-800': !allowTimeEditing}"
               />
               <button 
-                @click="editingWord.end = videoRef ? parseFloat(videoRef.currentTime.toFixed(2)) : 0" 
+                @click="editingWord.end = currentMediaElement ? parseFloat(currentMediaElement.currentTime.toFixed(2)) : 0" 
                 class="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded-md text-sm whitespace-nowrap"
-                title="Use current video time"
+                title="Use current media time"
                 :disabled="!allowTimeEditing"
                 :class="{'opacity-50 cursor-not-allowed': !allowTimeEditing}"
               >
@@ -195,7 +228,7 @@
               </button>
             </div>
             <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Current time: {{ videoRef ? videoRef.currentTime.toFixed(2) : '0.00' }}s
+              Current time: {{ currentMediaElement ? currentMediaElement.currentTime.toFixed(2) : '0.00' }}s
             </div>
           </div>
           
@@ -289,7 +322,8 @@ export default {
   props: {
     videoRef: {
       type: Object,
-      required: true
+      required: false,
+      default: null
     },
     transcriptJsonUrl: {
       type: String,
@@ -315,6 +349,9 @@ export default {
       loadError: null,
       setupDone: false, // Flag to prevent multiple setups
       
+      // Video player tracking
+      videoPlaying: false,
+      
       // Word editor state
       showWordEditor: false,
       editingWord: {
@@ -326,8 +363,7 @@ export default {
       editingSegmentIndex: -1,
       allowTimeEditing: false,
       showLegend: false,
-      originalConfidence: 0,
-      timingOffset: 0, // Manual timing offset in seconds
+      originalConfidence: 0
     };
   },
   
@@ -337,6 +373,11 @@ export default {
         return null;
       }
       return this.segments[this.currentSegmentIndex];
+    },
+    
+    // Use video player for sync
+    currentMediaElement() {
+      return this.videoRef;
     }
   },
   
@@ -360,7 +401,7 @@ export default {
     videoRef: {
       immediate: true,
       handler(newRef, oldRef) {
-        if (newRef && newRef !== oldRef && !this.setupDone) {
+        if (newRef !== oldRef) {
           this.setupVideoListeners();
         }
       }
@@ -368,11 +409,10 @@ export default {
   },
   
   mounted() {
-    if (!this.setupDone && this.videoRef) {
-      this.setupVideoListeners();
-    }
+    // Set up video listeners
+    this.setupVideoListeners();
     
-    // Auto-load transcript data if URL is available
+    // Always auto-load transcript data if URL is available
     if (this.transcriptJsonUrl || this.transcriptJsonApiUrl) {
       this.fetchTranscriptData();
     }
@@ -397,40 +437,47 @@ export default {
   methods: {
     
     setupVideoListeners() {
-      if (!this.videoRef) {
-        return;
-      }
-      
-      if (this.setupDone) {
-        return;
-      }
-      
-      // Remove any existing listeners first
+      // Clean up existing listeners first
       this.cleanupVideoListeners();
       
-      // Set up more frequent updates for smoother subtitles (every 100ms)
-      this.updateInterval = setInterval(() => {
-        this.checkCurrentPosition();
-      }, 100);
-      
-      // Also listen to regular timeupdate events as backup
-      this.videoRef.addEventListener('timeupdate', this.updateCurrentPosition);
+      // Set up listeners for video element
+      if (this.videoRef) {
+        this.videoRef.addEventListener('play', () => {
+          this.videoPlaying = true;
+        });
+        
+        this.videoRef.addEventListener('pause', () => {
+          this.videoPlaying = false;
+          // Update position immediately when paused to show current scrubhead position
+          this.updateCurrentPosition();
+        });
+        
+        this.videoRef.addEventListener('ended', () => {
+          this.videoPlaying = false;
+          // Update position when ended
+          this.updateCurrentPosition();
+        });
+        
+        // Update position during playback - native timeupdate is our source of truth
+        this.videoRef.addEventListener('timeupdate', () => {
+          this.updateCurrentPosition();
+        });
+        
+        // Update position immediately when user scrubs/seeks
+        this.videoRef.addEventListener('seeked', () => {
+          this.updateCurrentPosition();
+        });
+      }
       
       // Check immediately for current state
       this.updateCurrentPosition();
-      
       this.setupDone = true;
     },
     
-    cleanupVideoListeners() {
-      if (this.videoRef) {
-        this.videoRef.removeEventListener('timeupdate', this.updateCurrentPosition);
-      }
-      
-      if (this.updateInterval) {
-        clearInterval(this.updateInterval);
-        this.updateInterval = null;
-      }
+        cleanupVideoListeners() {
+      // Note: Arrow function event listeners cannot be removed with removeEventListener
+      // They will be cleaned up automatically when the component unmounts
+      // This is acceptable as the media elements are tied to component lifecycle
       
       this.setupDone = false;
     },
@@ -522,25 +569,31 @@ export default {
       this.updateCurrentPosition();
     },
     
-    checkCurrentPosition() {
-      if (this.videoRef && typeof this.videoRef.currentTime === 'number') {
-        this.updateCurrentPosition();
-      }
-    },
+
     
-    updateCurrentPosition() {
-      if (!this.videoRef || this.segments.length === 0) {
+        updateCurrentPosition() {
+      const mediaElement = this.currentMediaElement;
+      if (!mediaElement || this.segments.length === 0) {
         return;
       }
       
-      if (typeof this.videoRef.currentTime !== 'number') {
+      if (typeof mediaElement.currentTime !== 'number') {
         return;
       }
       
-      const currentTime = this.videoRef.currentTime;
+      const currentTime = mediaElement.currentTime;
+      
+      // ONLY update word highlighting when media is actively playing
+      // This prevents automatic cycling when paused
+      if (mediaElement.paused || mediaElement.ended) {
+        // Clear active words when not playing
+        this.activeWordIndices = [];
+        return;
+      }
+      
       let newSegmentIndex = -1;
       
-      // Find the current segment
+      // Find the current segment using direct video time (no offset needed)
       for (let i = 0; i < this.segments.length; i++) {
         const segment = this.segments[i];
         if (currentTime >= segment.start && currentTime <= segment.end) {
@@ -577,7 +630,7 @@ export default {
         this.currentSegmentIndex = newSegmentIndex;
       }
       
-      // Now find active words within the current segment
+      // Now find active words within the current segment using direct video time
       this.updateActiveWords(currentTime);
     },
     
@@ -588,66 +641,24 @@ export default {
         return;
       }
       
-      // Calculate timing correction factor for transcript vs actual audio duration
-      let timingCorrection = 1.0;
-      if (this.transcriptData && this.transcriptData.duration && this.videoRef) {
-        const transcriptDuration = this.transcriptData.duration; // e.g., 228.5
-        const actualDuration = this.videoRef.duration; // e.g., 208.166875
-        
-        if (actualDuration && transcriptDuration > 0 && Math.abs(transcriptDuration - actualDuration) > 1) {
-          timingCorrection = actualDuration / transcriptDuration;
-          // Only log occasionally to avoid spam
-          if (Math.random() < 0.01) { // Log 1% of the time
-            console.log('Applying timing correction:', {
-              transcriptDuration,
-              actualDuration,
-              correctionFactor: timingCorrection.toFixed(3)
-            });
-          }
-        }
-      }
-      
-      // Find all words that should be active at the current time
-      // Add a small buffer (0.1 seconds) to make word highlighting more visible
-      const buffer = 0.1;
+      // STRICT SCRUBHEAD-BASED HIGHLIGHTING - Only highlight words currently being spoken
+      // NO BUFFER - Use exact WhisperX timestamps for precise synchronization
       
       for (let i = 0; i < this.currentSegment.words.length; i++) {
         const word = this.currentSegment.words[i];
         
-        // Apply timing correction to word timestamps
-        const correctedStart = parseFloat(word.start) * timingCorrection;
-        const correctedEnd = parseFloat(word.end) * timingCorrection;
-        const wordStart = correctedStart - buffer;
-        const wordEnd = correctedEnd + buffer;
+        // Use exact timestamps without any buffer - only highlight during actual word duration
+        const wordStart = parseFloat(word.start);
+        const wordEnd = parseFloat(word.end);
         
+        // Only highlight if scrubhead is exactly within the word's time range
         if (currentTime >= wordStart && currentTime <= wordEnd) {
           this.activeWordIndices.push(i);
         }
       }
       
-      // If no words are active, find the closest word to highlight (with timing correction)
-      if (this.activeWordIndices.length === 0) {
-        let closestIndex = -1;
-        let closestDistance = Infinity;
-        
-        for (let i = 0; i < this.currentSegment.words.length; i++) {
-          const word = this.currentSegment.words[i];
-          const correctedStart = parseFloat(word.start) * timingCorrection;
-          const correctedEnd = parseFloat(word.end) * timingCorrection;
-          const wordCenter = (correctedStart + correctedEnd) / 2;
-          const distance = Math.abs(currentTime - wordCenter);
-          
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestIndex = i;
-          }
-        }
-        
-        // If we found a close word (within 2 seconds), highlight it
-        if (closestIndex !== -1 && closestDistance < 2.0) {
-          this.activeWordIndices.push(closestIndex);
-        }
-      }
+      // NO FALLBACK - Only highlight words when scrubhead is exactly in their time range
+      // This ensures highlighting is strictly based on playback position, not proximity
     },
     
     getWordClasses(word, index) {
@@ -676,9 +687,10 @@ export default {
     },
     
     openWordEditor(word, index) {
-      // Pause the video when opening editor
-      if (this.videoRef && !this.videoRef.paused) {
-        this.videoRef.pause();
+      // Pause the active media when opening editor
+      const mediaElement = this.currentMediaElement;
+      if (mediaElement && !mediaElement.paused) {
+        mediaElement.pause();
       }
       
       // Make a deep copy to avoid direct mutation

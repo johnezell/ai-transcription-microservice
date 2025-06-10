@@ -19,13 +19,15 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
     public $tries = 3;
 
     protected $processing;
+    protected $transcriptionPreset;
 
     /**
      * Create a new job instance.
      */
-    public function __construct(TruefireSegmentProcessing $processing)
+    public function __construct(TruefireSegmentProcessing $processing, string $transcriptionPreset = 'balanced')
     {
         $this->processing = $processing;
+        $this->transcriptionPreset = $transcriptionPreset;
     }
 
     /**
@@ -37,6 +39,7 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
             Log::info('Starting TrueFire segment transcription', [
                 'segment_id' => $this->processing->segment_id,
                 'course_id' => $this->processing->course_id,
+                'transcription_preset' => $this->transcriptionPreset,
                 'job_id' => $this->job->getJobId()
             ]);
 
@@ -68,25 +71,21 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
                 $audioUrl = Storage::url($this->processing->audio_path);
             }
 
-            // Transcription settings (use course preset or default)
-            $settings = [
-                'model' => 'whisper-1',
-                'language' => 'en',
-                'response_format' => 'verbose_json',
-                'temperature' => 0.0,
-                'timestamp_granularities' => ['segment', 'word']
-            ];
-
-            // The service will automatically callback to /api/transcription/{job_id}/status
+            // The transcription service expects 'preset' parameter and will load preset configuration internally
             $requestData = [
                 'job_id' => "truefire_segment_{$this->processing->segment_id}",
                 'audio_path' => $this->processing->audio_path,
-                'settings' => $settings
+                'preset' => $this->transcriptionPreset,  // Send preset name, not transcription_preset
+                'segment_id' => $this->processing->segment_id,
+                'course_id' => $this->processing->course_id,
+                'enable_intelligent_selection' => true  // Enable intelligent model selection
             ];
 
             Log::info('Sending TrueFire segment transcription request', [
                 'url' => $transcriptionServiceUrl . '/process',
-                'segment_id' => $this->processing->segment_id
+                'segment_id' => $this->processing->segment_id,
+                'preset' => $this->transcriptionPreset,
+                'audio_path' => $this->processing->audio_path
             ]);
 
             // Send request to transcription service (same endpoint as existing TranscriptionJob)

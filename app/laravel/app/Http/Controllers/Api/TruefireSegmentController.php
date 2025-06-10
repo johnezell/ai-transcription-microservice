@@ -332,8 +332,11 @@ class TruefireSegmentController extends Controller
         
         // Last resort: generate mock confidence data from transcript text
         if (!empty($processing->transcript_text)) {
-            \Log::info('Generating mock confidence data from transcript text', [
-                'segment_id' => $segmentId
+            \Log::warning('Using mock confidence data fallback - real transcript JSON not found', [
+                'segment_id' => $segmentId,
+                'transcript_path' => $processing->transcript_path,
+                'database_has_json' => !empty($processing->transcript_json),
+                'reason' => 'Real transcript JSON file not found, generating mock data with estimated timing'
             ]);
             
             $mockData = $this->generateMockConfidenceData($processing->transcript_text);
@@ -345,6 +348,8 @@ class TruefireSegmentController extends Controller
             'message' => 'Transcript JSON data not available'
         ], 404);
     }
+
+
     
     /**
      * Get terminology JSON data for a TrueFire course segment
@@ -606,6 +611,9 @@ class TruefireSegmentController extends Controller
                 $audioDuration = $responseData['duration'] ?? null;
                 $audioSize = $responseData['file_size'] ?? null;
                 $hasAudio = isset($responseData['has_audio']) ? (bool)$responseData['has_audio'] : ($audioPath ? true : false);
+                
+                // Get settings from the request (passed from audio extraction job)
+                $extractionSettings = $request->input('extraction_settings', []);
 
                 $processing->update([
                     'status' => 'audio_extracted',
@@ -628,12 +636,30 @@ class TruefireSegmentController extends Controller
                 Log::info('TrueFire segment audio extraction completed', [
                     'segment_id' => $segmentId,
                     'audio_path' => $audioPath,
-                    'duration' => $audioDuration
+                    'duration' => $audioDuration,
+                    'extraction_settings' => $extractionSettings
                 ]);
 
-                // Auto-start transcription (or wait for approval based on settings)
-                $processing->startTranscription();
-                \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing);
+                // Check if automatic transcription should be triggered
+                $followWithTranscription = $extractionSettings['follow_with_transcription'] ?? true;
+                $transcriptionPreset = $extractionSettings['transcription_preset'] ?? 'balanced';
+                
+                if ($followWithTranscription) {
+                    Log::info('Auto-starting transcription for TrueFire segment', [
+                        'segment_id' => $segmentId,
+                        'transcription_preset' => $transcriptionPreset,
+                        'pipeline_mode' => 'automatic'
+                    ]);
+                    
+                    // Auto-start transcription with the specified preset
+                    $processing->startTranscription();
+                    \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing, $transcriptionPreset);
+                } else {
+                    Log::info('TrueFire segment audio extraction completed - waiting for manual transcription trigger', [
+                        'segment_id' => $segmentId,
+                        'audio_path' => $audioPath
+                    ]);
+                }
 
             } elseif ($status === 'failed') {
                 $errorMessage = $responseData['error'] ?? 'Audio extraction failed';
@@ -722,6 +748,51 @@ class TruefireSegmentController extends Controller
                 if ($subtitlesPath) {
                     $relativePath = str_replace(storage_path('app/public/'), '', $subtitlesPath);
                     $processing->update(['subtitles_url' => asset('storage/' . $relativePath)]);
+                }
+
+                // Store transcript JSON in database if available
+                // First try the provided JSON path, then try to derive it from transcript path
+                $jsonFilePaths = [];
+                
+                if ($transcriptJsonPath) {
+                    $jsonFilePaths[] = $transcriptJsonPath;
+                }
+                
+                // Fallback: derive JSON path from transcript path
+                if ($transcriptPath) {
+                    $dir = dirname($transcriptPath);
+                    $basename = basename($transcriptPath, '.txt');
+                    $jsonFilePaths[] = $dir . '/' . $basename . '.json';
+                    $jsonFilePaths[] = $dir . '/transcript.json';
+                }
+                
+                foreach ($jsonFilePaths as $jsonPath) {
+                    if (file_exists($jsonPath)) {
+                        try {
+                            Log::info('Reading TrueFire transcript JSON from file', [
+                                'segment_id' => $segmentId,
+                                'json_path' => $jsonPath
+                            ]);
+                            
+                            $jsonContent = json_decode(file_get_contents($jsonPath), true);
+                            if ($jsonContent && isset($jsonContent['segments'])) {
+                                $processing->update(['transcript_json' => $jsonContent]);
+                                
+                                Log::info('Successfully stored TrueFire transcript JSON in database', [
+                                    'segment_id' => $segmentId,
+                                    'segments_count' => count($jsonContent['segments']),
+                                    'first_word_timing' => $jsonContent['segments'][0]['words'][0]['start'] ?? 'N/A'
+                                ]);
+                                break; // Successfully processed, exit loop
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Failed to read TrueFire transcript JSON', [
+                                'segment_id' => $segmentId,
+                                'json_path' => $jsonPath,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    }
                 }
 
                 Log::info('TrueFire segment transcription completed', [
@@ -859,12 +930,13 @@ class TruefireSegmentController extends Controller
 
     /**
      * Generate mock confidence data from transcript text for demonstration purposes
+     * NOTE: This should not be needed if the transcription process is working correctly
      */
     protected function generateMockConfidenceData($transcriptText)
     {
         $words = preg_split('/\s+/', trim($transcriptText));
         $mockSegments = [];
-        $currentTime = 0.0;
+        $currentTime = 0.0; // Start from 0 for mock data
         $wordsPerSegment = 20; // Group words into segments
         
         for ($i = 0; $i < count($words); $i += $wordsPerSegment) {
@@ -981,6 +1053,7 @@ class TruefireSegmentController extends Controller
         $validated = $request->validate([
             'force_reextraction' => 'sometimes|boolean',
             'overwrite_existing' => 'sometimes|boolean',
+            'use_intelligent_detection' => 'sometimes|boolean',
             'audio_quality' => 'sometimes|string|in:fast,balanced,high,premium',
             'transcription_preset' => 'sometimes|string|in:fast,balanced,high,premium',
         ]);
@@ -1004,31 +1077,44 @@ class TruefireSegmentController extends Controller
                 ], 400);
             }
 
+            $useIntelligentDetection = $validated['use_intelligent_detection'] ?? false;
+
             Log::info('Starting redo processing for TrueFire segment', [
                 'segment_id' => $segmentId,
                 'course_id' => $courseId,
                 'previous_status' => $processing->status,
                 'force_reextraction' => $validated['force_reextraction'] ?? false,
                 'overwrite_existing' => $validated['overwrite_existing'] ?? false,
-                'audio_quality' => $validated['audio_quality'] ?? 'balanced',
-                'transcription_preset' => $validated['transcription_preset'] ?? 'balanced'
+                'use_intelligent_detection' => $useIntelligentDetection,
+                'audio_quality' => $useIntelligentDetection ? 'intelligent_detection' : ($validated['audio_quality'] ?? 'balanced'),
+                'transcription_preset' => $useIntelligentDetection ? 'intelligent_detection' : ($validated['transcription_preset'] ?? 'balanced')
             ]);
 
             // Clear any existing failed/pending jobs
             $this->clearRelatedFailedJobs($segmentId);
 
             // Reset the processing record to a clean state with new options
+            $processingMetadata = [
+                'redo_processing' => true,
+                'redo_timestamp' => now()->toISOString(),
+                'use_intelligent_detection' => $useIntelligentDetection
+            ];
+
+            if ($useIntelligentDetection) {
+                $processingMetadata['detection_mode'] = 'intelligent';
+                $processingMetadata['note'] = 'Using intelligent detection for optimal audio and transcription settings';
+            } else {
+                $processingMetadata['audio_quality'] = $validated['audio_quality'] ?? 'balanced';
+                $processingMetadata['transcription_preset'] = $validated['transcription_preset'] ?? 'balanced';
+                $processingMetadata['detection_mode'] = 'manual';
+            }
+
             $processing->update([
                 'status' => 'processing',
                 'progress_percentage' => 0,
                 'error_message' => null,
                 'started_at' => now(),
-                'processing_metadata' => json_encode([
-                    'audio_quality' => $validated['audio_quality'] ?? 'balanced',
-                    'transcription_preset' => $validated['transcription_preset'] ?? 'balanced',
-                    'redo_processing' => true,
-                    'redo_timestamp' => now()->toISOString()
-                ]),
+                'processing_metadata' => json_encode($processingMetadata),
                 
                 // Clear audio extraction data
                 'audio_extraction_started_at' => null,
@@ -1065,38 +1151,53 @@ class TruefireSegmentController extends Controller
                 'audio_extraction_notes' => null
             ]);
 
-            // Start fresh processing with selected options
+            // Start fresh processing with intelligent detection or selected options
             $processing->startAudioExtraction();
-            \App\Jobs\TruefireSegmentAudioExtractionJob::dispatch($processing, [
+            
+            $jobOptions = [
                 'force_reextraction' => $validated['force_reextraction'] ?? true,
                 'overwrite_existing' => $validated['overwrite_existing'] ?? true,
-                'quality_level' => $validated['audio_quality'] ?? 'balanced',
-                'transcription_preset' => $validated['transcription_preset'] ?? 'balanced'
-            ]);
+                'use_intelligent_detection' => $useIntelligentDetection
+            ];
+
+            if (!$useIntelligentDetection) {
+                // Only pass specific presets if not using intelligent detection
+                $jobOptions['quality_level'] = $validated['audio_quality'] ?? 'balanced';
+                $jobOptions['transcription_preset'] = $validated['transcription_preset'] ?? 'balanced';
+            }
+
+            \App\Jobs\TruefireSegmentAudioExtractionJob::dispatch($processing, $jobOptions);
             
             Log::info('TrueFire segment redo processing started', [
                 'segment_id' => $segment->id,
                 'course_id' => $courseId,
                 'job_dispatched' => 'TruefireSegmentAudioExtractionJob',
-                'options' => [
+                'detection_mode' => $useIntelligentDetection ? 'intelligent' : 'manual',
+                'job_options' => $jobOptions
+            ]);
+
+            $responseMessage = $useIntelligentDetection 
+                ? 'Redo processing started successfully with intelligent detection for optimal settings. All existing data will be overwritten.'
+                : 'Redo processing started successfully with selected presets. All existing data will be overwritten.';
+
+            $responseOptions = $useIntelligentDetection 
+                ? ['detection_mode' => 'intelligent', 'note' => 'System will automatically select optimal settings']
+                : [
+                    'detection_mode' => 'manual',
                     'audio_quality' => $validated['audio_quality'] ?? 'balanced',
                     'transcription_preset' => $validated['transcription_preset'] ?? 'balanced'
-                ]
-            ]);
+                ];
             
             return response()->json([
                 'success' => true,
-                'message' => 'Redo processing started successfully with selected presets. All existing data will be overwritten.',
+                'message' => $responseMessage,
                 'segment' => [
                     'id' => $segment->id,
                     'status' => 'processing',
                     'progress_percentage' => 0,
                     'started_at' => $processing->started_at
                 ],
-                'options' => [
-                    'audio_quality' => $validated['audio_quality'] ?? 'balanced',
-                    'transcription_preset' => $validated['transcription_preset'] ?? 'balanced'
-                ]
+                'options' => $responseOptions
             ]);
             
         } catch (\Exception $e) {

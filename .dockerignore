@@ -27,5 +27,11 @@ app/laravel/storage/framework/views/
 app/services/*/venv/
 app/services/*/__pycache__/
 app/services/*/.pytest_cache/
+# Exclude model directories - models are downloaded at runtime
+app/services/*/models/
+**/models/
+# Exclude temporary model cache directories
+**/whisperx_models/
+**/tmp/
 **/.DS_Store
 **/Thumbs.db

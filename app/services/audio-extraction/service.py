@@ -11,6 +11,7 @@ import uuid
 from typing import Dict, List, Optional, Union
 from speech_quality_analyzer import SpeechQualityAnalyzer, analyze_speech_quality, compare_audio_files
 from whisper_quality_analyzer import WhisperQualityAnalyzer, analyze_with_whisper_testing
+from audio_intelligent_selector import intelligent_audio_extraction
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -349,11 +350,17 @@ def get_audio_duration(audio_path):
         logger.warning(f"Error getting duration: {str(e)}")
         return None
 
-def update_job_status(job_id, status, response_data=None, error_message=None, has_audio=None):
+def update_job_status(job_id, status, response_data=None, error_message=None, has_audio=None, segment_id=None, course_id=None, extraction_settings=None):
     """Update the job status in Laravel."""
     try:
-        url = f"{LARAVEL_API_URL}/transcription/{job_id}/status"
-        logger.info(f"Sending status update to Laravel: {url}")
+        # For TrueFire segments, use the TrueFire-specific callback endpoint
+        if segment_id and course_id:
+            url = f"{LARAVEL_API_URL}/truefire-courses/{course_id}/segments/{segment_id}/audio-extraction-callback"
+            logger.info(f"Sending TrueFire audio extraction callback to Laravel: {url}")
+        else:
+            # Use the generic transcription callback for other jobs
+            url = f"{LARAVEL_API_URL}/transcription/{job_id}/status"
+            logger.info(f"Sending generic status update to Laravel: {url}")
         
         payload = {
             'status': status,
@@ -366,6 +373,11 @@ def update_job_status(job_id, status, response_data=None, error_message=None, ha
         if has_audio is not None:
             payload['has_audio'] = has_audio
             logger.info(f"Setting has_audio flag to {has_audio} for job {job_id}")
+        
+        # Include extraction settings for TrueFire segments so the callback can use them
+        if extraction_settings and segment_id and course_id:
+            payload['extraction_settings'] = extraction_settings
+            logger.info(f"Including extraction settings in TrueFire callback for segment {segment_id}")
         
         response = requests.post(url, json=payload)
         
@@ -397,7 +409,10 @@ def health_check():
             'premium_quality_processing': True,
             'advanced_noise_reduction': True,
             'dynamic_audio_normalization': True,
-            'processing_metrics': True
+            'processing_metrics': True,
+            'intelligent_extraction': True,
+            'cascading_quality_escalation': True,
+            'quality_analysis': True
         }
     })
 
@@ -470,9 +485,12 @@ def process_audio_extraction():
     video_path_param = data.get('video_path')
     quality_level = data.get('quality_level', 'balanced')
     segment_id = data.get('segment_id')
+    course_id = data.get('course_id')
     enable_quality_analysis = data.get('enable_quality_analysis', False)
+    enable_intelligent_extraction = data.get('enable_intelligent_extraction', True)  # Enabled by default for internal tool
+    extraction_settings = data.get('test_settings', {})  # Get extraction settings passed from Laravel job
     
-    logger.info(f"Processing job {job_id} (test_mode: {test_mode}, quality: {quality_level}, quality_analysis: {enable_quality_analysis})")
+    logger.info(f"Processing job {job_id} (test_mode: {test_mode}, quality: {quality_level}, quality_analysis: {enable_quality_analysis}, intelligent_extraction: {enable_intelligent_extraction})")
     
     # Handle path construction - always use D drive paths now
     if video_path_param:
@@ -559,14 +577,14 @@ def process_audio_extraction():
             logger.error(error_msg)
             
             # Report error to Laravel
-            update_job_status(job_id, 'failed', None, error_msg, has_audio=False)
+            update_job_status(job_id, 'failed', None, error_msg, has_audio=False, segment_id=segment_id, course_id=course_id, extraction_settings=extraction_settings)
             return jsonify({
                 'success': False,
                 'message': error_msg
             }), 404
             
         # Update status to extracting_audio
-        update_job_status(job_id, 'extracting_audio')
+        update_job_status(job_id, 'extracting_audio', segment_id=segment_id, course_id=course_id, extraction_settings=extraction_settings)
         
         # Ensure the output directory exists (important for test mode)
         audio_dir = os.path.dirname(audio_path)
@@ -574,8 +592,44 @@ def process_audio_extraction():
             logger.info(f"Creating audio output directory: {audio_dir}")
             os.makedirs(audio_dir, exist_ok=True)
         
-        # Handle quality analysis if enabled
-        if enable_quality_analysis and segment_id:
+        # Handle different extraction modes
+        extraction_method = None
+        intelligent_result = None
+        
+        if enable_intelligent_extraction and not enable_quality_analysis:
+            # Use intelligent cascading extraction (enabled by default for internal tool)
+            logger.info(f"Using intelligent audio extraction with cascading quality levels")
+            
+            try:
+                intelligent_result = intelligent_audio_extraction(
+                    video_path=video_path,
+                    output_path=audio_path,
+                    target_quality_threshold=75.0,  # Target quality score
+                    max_escalations=3  # Allow up to 3 escalations (fast -> balanced -> high -> premium)
+                )
+                
+                if intelligent_result.success:
+                    extraction_method = f"intelligent_extraction_{intelligent_result.final_quality}"
+                    logger.info(f"Intelligent extraction completed successfully with {intelligent_result.final_quality} quality")
+                    logger.info(f"Quality score: {intelligent_result.quality_metrics.overall_score:.1f}/100 ({intelligent_result.quality_metrics.grade})")
+                    logger.info(f"Processing time: {intelligent_result.processing_time:.2f}s")
+                    logger.info(f"Escalation steps: {len(intelligent_result.escalation_history)}")
+                else:
+                    logger.error(f"Intelligent extraction failed: {intelligent_result.error_message}")
+                    # Fallback to standard extraction
+                    logger.info(f"Falling back to standard {quality_level} extraction")
+                    convert_to_wav(video_path, audio_path, quality_level)
+                    extraction_method = f"fallback_{quality_level}"
+                    
+            except Exception as e:
+                logger.error(f"Intelligent extraction error: {str(e)}")
+                # Fallback to standard extraction
+                logger.info(f"Falling back to standard {quality_level} extraction")
+                convert_to_wav(video_path, audio_path, quality_level)
+                extraction_method = f"fallback_{quality_level}"
+                
+        elif enable_quality_analysis and segment_id:
+            # Use multi-quality analysis (existing functionality)
             logger.info(f"Quality analysis enabled for segment {segment_id}")
             
             # Generate all quality levels
@@ -633,17 +687,21 @@ def process_audio_extraction():
                     
                     # Update audio_path to point to the final selected file
                     audio_path = final_audio_path
+                    extraction_method = "quality_analysis"
                     
                 except Exception as e:
                     logger.error(f"Quality analysis failed: {str(e)}")
                     # Fallback to original single quality extraction
                     convert_to_wav(video_path, audio_path, quality_level)
+                    extraction_method = f"fallback_{quality_level}"
             else:
                 # Fallback to single quality if multi-quality failed
                 convert_to_wav(video_path, audio_path, quality_level)
+                extraction_method = f"fallback_{quality_level}"
         else:
             # Standard single quality extraction
             convert_to_wav(video_path, audio_path, quality_level)
+            extraction_method = f"standard_{quality_level}"
         
         # Get file size and other metadata
         audio_size = os.path.getsize(audio_path)
@@ -660,6 +718,8 @@ def process_audio_extraction():
             'quality_level': quality_level,
             'segment_id': segment_id,
             'enable_quality_analysis': enable_quality_analysis,
+            'enable_intelligent_extraction': enable_intelligent_extraction,
+            'extraction_method': extraction_method,
             'metadata': {
                 'service': 'audio-extraction-service',
                 'processed_by': 'FFmpeg audio extraction',
@@ -669,9 +729,30 @@ def process_audio_extraction():
                 'codec': 'PCM 16-bit',
                 'quality_level': quality_level,
                 'test_mode': test_mode,
-                'quality_analysis_enabled': enable_quality_analysis
+                'quality_analysis_enabled': enable_quality_analysis,
+                'intelligent_extraction_enabled': enable_intelligent_extraction,
+                'extraction_method': extraction_method
             }
         }
+        
+        # Add intelligent extraction details if it was used
+        if intelligent_result and intelligent_result.success:
+            response_data['intelligent_extraction'] = {
+                'final_quality': intelligent_result.final_quality,
+                'processing_time': intelligent_result.processing_time,
+                'escalation_steps': len(intelligent_result.escalation_history),
+                'quality_metrics': {
+                    'overall_score': intelligent_result.quality_metrics.overall_score,
+                    'grade': intelligent_result.quality_metrics.grade,
+                    'sample_rate_score': intelligent_result.quality_metrics.sample_rate_score,
+                    'volume_score': intelligent_result.quality_metrics.volume_score,
+                    'dynamic_range_score': intelligent_result.quality_metrics.dynamic_range_score,
+                    'duration_score': intelligent_result.quality_metrics.duration_score,
+                    'bit_rate_score': intelligent_result.quality_metrics.bit_rate_score
+                },
+                'selection_decision': intelligent_result.selection_decision.to_dict() if intelligent_result.selection_decision else None,
+                'escalation_history': intelligent_result.escalation_history
+            }
         
         # Add quality analysis info to response if it was used
         if enable_quality_analysis and segment_id:
@@ -686,10 +767,10 @@ def process_audio_extraction():
         # Update job status in Laravel
         if test_mode:
             # For test mode, mark as completed since we're only extracting audio
-            update_job_status(job_id, 'completed', response_data, has_audio=True)
+            update_job_status(job_id, 'completed', response_data, has_audio=True, segment_id=segment_id, course_id=course_id, extraction_settings=extraction_settings)
         else:
             # For regular mode, continue to transcription
-            update_job_status(job_id, 'processing', response_data, has_audio=True)
+            update_job_status(job_id, 'completed', response_data, has_audio=True, segment_id=segment_id, course_id=course_id, extraction_settings=extraction_settings)
         
         return jsonify({
             'success': True,
@@ -702,7 +783,7 @@ def process_audio_extraction():
         logger.error(f"Error processing job {job_id}: {str(e)}")
         
         # Update job status in Laravel
-        update_job_status(job_id, 'failed', None, str(e), has_audio=False)
+        update_job_status(job_id, 'failed', None, str(e), has_audio=False, segment_id=segment_id, course_id=course_id, extraction_settings=extraction_settings)
         
         return jsonify({
             'success': False,
@@ -959,6 +1040,50 @@ def batch_quality_analysis_endpoint():
         return jsonify({
             'success': False,
             'error': str(e)
+        }), 500
+
+
+@app.route('/intelligent-extract', methods=['POST'])
+def intelligent_extract_endpoint():
+    """API endpoint for intelligent audio extraction with cascading quality levels."""
+    try:
+        data = request.get_json()
+        
+        if not data or 'video_path' not in data or 'output_path' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'video_path and output_path are required'
+            }), 400
+            
+        video_path = data['video_path']
+        output_path = data['output_path']
+        target_quality_threshold = data.get('target_quality_threshold', 75.0)
+        max_escalations = data.get('max_escalations', 3)
+        
+        logger.info(f"API request for intelligent extraction: {video_path} -> {output_path}")
+        logger.info(f"Target threshold: {target_quality_threshold}, Max escalations: {max_escalations}")
+        
+        # Perform intelligent extraction
+        result = intelligent_audio_extraction(
+            video_path=video_path,
+            output_path=output_path,
+            target_quality_threshold=target_quality_threshold,
+            max_escalations=max_escalations
+        )
+        
+        # Convert result to dictionary for JSON response
+        response = result.to_dict()
+        response['timestamp'] = datetime.now().isoformat()
+        response['service'] = 'audio-extraction-service'
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error in intelligent-extract endpoint: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
         }), 500
 
 

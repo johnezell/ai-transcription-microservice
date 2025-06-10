@@ -2,7 +2,9 @@ FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
 WORKDIR /app
 
-# Install system dependencies
+# ==============================
+# LAYER 1: System Dependencies (rarely changes)
+# ==============================
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     ffmpeg \
@@ -16,6 +18,9 @@ RUN apt-get update && apt-get install -y \
     && dpkg-reconfigure --frontend noninteractive tzdata \
     && rm -rf /var/lib/apt/lists/*
 
+# ==============================
+# LAYER 2: cuDNN Installation & Fixes (rarely changes)
+# ==============================
 # Install cuDNN 8 to match PyTorch expectations
 RUN conda install -c conda-forge cudnn=8.9.2 --yes
 
@@ -26,12 +31,18 @@ RUN cd /opt/conda/lib && \
     ln -sf libcudnn_adv_infer.so.8.9.2 libcudnn_adv_infer.so.8 && \
     ln -sf libcudnn_cnn_infer.so.8.9.2 libcudnn_cnn_infer.so.8
 
+# ==============================
+# LAYER 3: Python Dependencies (changes occasionally)
+# ==============================
 # Copy requirements first for better caching
 COPY app/services/transcription/requirements.txt .
 
-# Install dependencies
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ==============================
+# LAYER 4: Environment & Directories (rarely changes)
+# ==============================
 # Set environment variables for WhisperX
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=service.py
@@ -46,6 +57,24 @@ RUN mkdir -p /app/models/whisperx /app/models/huggingface
 
 # Increase memory limits for WhisperX processing
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+
+# ==============================
+# LAYER 4.5: MODEL PRE-DOWNLOADING (Phase 1 - Essential Models)
+# ==============================
+# Pre-download critical models to eliminate runtime downloads
+# This layer will significantly improve startup performance
+
+# Copy model download script
+COPY app/services/transcription/download_models.py /tmp/download_models.py
+
+# Execute model download (don't fail build if individual models fail)
+RUN python /tmp/download_models.py || echo "Model download completed with some failures - runtime fallback available"
+
+# ==============================
+# LAYER 5: Application Code (changes frequently)
+# ==============================
+# Copy application code (this will be the most frequently changing layer)
+COPY app/services/transcription/ .
 
 # Command to run the service
 CMD ["python", "service.py"]

@@ -13,6 +13,20 @@ import uuid
 import time
 from pathlib import Path
 
+# Custom JSON encoder to handle numpy types
+class NumpyJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        import numpy as np
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        return super(NumpyJSONEncoder, self).default(obj)
+
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -28,16 +42,31 @@ else:
 import whisperx
 from functools import lru_cache
 import re
+import numpy as np
 from typing import Dict, List, Union, Optional, Any, Tuple
 
 # Import our WhisperX model management system
-from whisperx_models import (
-    load_whisperx_model,
-    get_alignment_model,
-    get_diarization_pipeline,
-    get_model_info,
-    clear_model_cache
-)
+try:
+    from whisperx_models import (
+        load_whisperx_model,
+        get_alignment_model,
+        get_diarization_pipeline,
+        get_model_info,
+        clear_model_cache,
+        get_model_manager
+    )
+except ImportError:
+    # Fallback for relative import issues when running directly
+    import sys
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from whisperx_models import (
+        load_whisperx_model,
+        get_alignment_model,
+        get_diarization_pipeline,
+        get_model_info,
+        clear_model_cache,
+        get_model_manager
+    )
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +74,9 @@ logger = logging.getLogger(__name__)
 
 # Create Flask app
 app = Flask(__name__)
+
+# Configure Flask to use our custom JSON encoder for numpy types
+app.json_encoder = NumpyJSONEncoder
 
 # Set environment constants for cleaner path handling
 S3_BASE_DIR = '/var/www/storage/app/public/s3'
@@ -66,21 +98,353 @@ def load_whisper_model(model_name="base"):
     return model
 
 def calculate_confidence(segments):
-    """Calculate the overall confidence score for a transcription."""
-    probabilities = []
+    """Calculate the overall confidence score for a transcription using segment-weighted approach."""
+    total_confidence = 0.0
+    total_weight = 0.0
     
-    # Extract probabilities from word segments if available
     for segment in segments:
-        for word_info in segment.get('words', []):
-            probability = word_info.get('probability', None)
-            if probability is not None:
-                probabilities.append(probability)
+        # Use segment-level confidence if available (preferred method)
+        segment_confidence = segment.get('confidence')
+        if segment_confidence is not None:
+            # Weight by segment duration for more accurate overall score
+            duration = segment.get('end', 0) - segment.get('start', 0)
+            weight = max(0.1, duration)  # Minimum weight to avoid zero division
+            total_confidence += segment_confidence * weight
+            total_weight += weight
+        else:
+            # Fallback: calculate confidence from word-level data
+            word_scores = []
+            for word_info in segment.get('words', []):
+                # Try multiple word confidence fields
+                score = word_info.get('score') or word_info.get('probability') or word_info.get('confidence')
+                if score is not None:
+                    word_scores.append(score)
+            
+            if word_scores:
+                avg_word_confidence = sum(word_scores) / len(word_scores)
+                duration = segment.get('end', 0) - segment.get('start', 0)
+                weight = max(0.1, duration)
+                total_confidence += avg_word_confidence * weight
+                total_weight += weight
+            else:
+                # Last resort: estimate from text quality
+                text = segment.get('text', '').strip()
+                if text:
+                    text_quality = min(0.8, max(0.3, len(text) / 50.0))
+                    duration = segment.get('end', 0) - segment.get('start', 0)
+                    weight = max(0.1, duration)
+                    total_confidence += text_quality * weight
+                    total_weight += weight
     
-    if not probabilities:
-        return 0.0  # No probabilities available
+    if total_weight == 0:
+        return 0.75  # Reasonable default for successful transcription
     
-    # Calculate mean probability
-    return sum(probabilities) / len(probabilities)
+    overall_confidence = total_confidence / total_weight
+    return max(0.0, min(1.0, overall_confidence))
+
+def calculate_comprehensive_quality_metrics(result: Dict, segments: List[Dict], word_segments: List[Dict]) -> Dict:
+    """Calculate comprehensive quality metrics for transcription analysis."""
+    quality_metrics = {}
+    
+    # 1. SPEECH ACTIVITY ANALYSIS
+    if segments:
+        total_duration = max(seg.get('end', 0) for seg in segments)
+        speech_duration = sum(seg.get('end', 0) - seg.get('start', 0) for seg in segments)
+        
+        # Calculate pauses between segments
+        pauses = []
+        for i in range(len(segments) - 1):
+            pause_duration = segments[i + 1].get('start', 0) - segments[i].get('end', 0)
+            if pause_duration > 0:
+                pauses.append(pause_duration)
+        
+        # Word coverage analysis
+        word_time_coverage = 0
+        if word_segments:
+            word_time_coverage = sum(word.get('end', 0) - word.get('start', 0) for word in word_segments)
+        
+        # Speaking rate calculation
+        total_words = len(word_segments) if word_segments else len(result.get('text', '').split())
+        speaking_rate = (total_words / (speech_duration / 60)) if speech_duration > 0 else 0
+        
+        quality_metrics['speech_activity'] = {
+            'total_duration_seconds': total_duration,
+            'speech_duration_seconds': speech_duration,
+            'silence_duration_seconds': total_duration - speech_duration,
+            'speech_activity_ratio': speech_duration / total_duration if total_duration > 0 else 0,
+            'word_time_coverage_ratio': word_time_coverage / total_duration if total_duration > 0 else 0,
+            'pause_count': len(pauses),
+            'average_pause_duration': np.mean(pauses) if pauses else 0,
+            'max_pause_duration': max(pauses) if pauses else 0,
+            'speaking_rate_wpm': speaking_rate,
+            'segment_count': len(segments)
+        }
+    
+    # 2. CONTENT QUALITY ANALYSIS
+    text = result.get('text', '')
+    if text:
+        words = text.split()
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        # Vocabulary analysis
+        unique_words = set(word.lower().strip('.,!?;:') for word in words)
+        vocabulary_richness = len(unique_words) / len(words) if words else 0
+        
+        # Filler words detection
+        filler_words = {'um', 'uh', 'ah', 'er', 'hmm', 'well', 'like', 'you know', 'actually', 'basically'}
+        filler_count = sum(1 for word in words if word.lower().strip('.,!?;:') in filler_words)
+        filler_ratio = filler_count / len(words) if words else 0
+        
+        # Technical content analysis (for guitar lessons)
+        music_terms = {'chord', 'scale', 'fret', 'string', 'pick', 'strum', 'finger', 'note', 'guitar', 'play'}
+        instruction_words = {'practice', 'try', 'listen', 'watch', 'remember', 'notice', 'learn', 'work'}
+        
+        music_term_count = sum(1 for word in words if word.lower().strip('.,!?;:') in music_terms)
+        instruction_count = sum(1 for word in words if word.lower().strip('.,!?;:') in instruction_words)
+        technical_density = (music_term_count + instruction_count) / len(words) if words else 0
+        
+        quality_metrics['content_quality'] = {
+            'total_words': len(words),
+            'unique_words': len(unique_words),
+            'vocabulary_richness': vocabulary_richness,
+            'sentence_count': len(sentences),
+            'average_sentence_length': np.mean([len(s.split()) for s in sentences]) if sentences else 0,
+            'filler_word_count': filler_count,
+            'filler_word_ratio': filler_ratio,
+            'technical_content_density': technical_density,
+            'music_term_count': music_term_count,
+            'instruction_word_count': instruction_count
+        }
+    
+    # 3. CONFIDENCE PATTERN ANALYSIS
+    if word_segments:
+        word_confidences = [word.get('score', 0) for word in word_segments if 'score' in word]
+        
+        if word_confidences:
+            # Confidence distribution
+            excellent_count = sum(1 for c in word_confidences if c >= 0.9)
+            good_count = sum(1 for c in word_confidences if 0.8 <= c < 0.9)
+            fair_count = sum(1 for c in word_confidences if 0.7 <= c < 0.8)
+            poor_count = sum(1 for c in word_confidences if c < 0.7)
+            
+            total_words = len(word_confidences)
+            
+            # Find low confidence clusters
+            low_confidence_clusters = []
+            current_cluster = []
+            
+            for i, word in enumerate(word_segments):
+                confidence = word.get('score', 1.0)
+                if confidence < 0.7:
+                    current_cluster.append(word)
+                else:
+                    if len(current_cluster) >= 3:  # Cluster of 3+ low confidence words
+                        low_confidence_clusters.append({
+                            'start_time': current_cluster[0].get('start', 0),
+                            'end_time': current_cluster[-1].get('end', 0),
+                            'word_count': len(current_cluster),
+                            'avg_confidence': np.mean([w.get('score', 0) for w in current_cluster])
+                        })
+                    current_cluster = []
+            
+            # Check final cluster
+            if len(current_cluster) >= 3:
+                low_confidence_clusters.append({
+                    'start_time': current_cluster[0].get('start', 0),
+                    'end_time': current_cluster[-1].get('end', 0),
+                    'word_count': len(current_cluster),
+                    'avg_confidence': np.mean([w.get('score', 0) for w in current_cluster])
+                })
+            
+            # Confidence trend analysis
+            if len(word_confidences) >= 10:
+                mid_point = len(word_confidences) // 2
+                first_half_avg = np.mean(word_confidences[:mid_point])
+                second_half_avg = np.mean(word_confidences[mid_point:])
+                trend_direction = 'improving' if second_half_avg > first_half_avg else 'declining'
+                trend_magnitude = abs(second_half_avg - first_half_avg)
+            else:
+                trend_direction = 'stable'
+                trend_magnitude = 0.0
+            
+            quality_metrics['confidence_patterns'] = {
+                'distribution': {
+                    'excellent_ratio': excellent_count / total_words,
+                    'good_ratio': good_count / total_words,
+                    'fair_ratio': fair_count / total_words,
+                    'poor_ratio': poor_count / total_words
+                },
+                'statistics': {
+                    'mean': np.mean(word_confidences),
+                    'std': np.std(word_confidences),
+                    'min': min(word_confidences),
+                    'max': max(word_confidences),
+                    'median': np.median(word_confidences)
+                },
+                'low_confidence_clusters': low_confidence_clusters,
+                'confidence_trend': {
+                    'direction': trend_direction,
+                    'magnitude': trend_magnitude
+                }
+            }
+    
+    # 4. TEMPORAL QUALITY ANALYSIS
+    if word_segments:
+        word_durations = [word.get('end', 0) - word.get('start', 0) for word in word_segments]
+        
+        # Calculate gaps between words
+        word_gaps = []
+        for i in range(len(word_segments) - 1):
+            gap = word_segments[i + 1].get('start', 0) - word_segments[i].get('end', 0)
+            if gap >= 0:  # Only positive gaps
+                word_gaps.append(gap)
+        
+        # Detect unusual timing events
+        unusual_events = []
+        
+        # Very short words (< 0.1 seconds)
+        short_words = [i for i, duration in enumerate(word_durations) if duration < 0.1 and duration > 0]
+        
+        # Very long gaps (> 2 seconds)
+        long_gaps = [i for i, gap in enumerate(word_gaps) if gap > 2.0]
+        
+        if short_words:
+            unusual_events.append({
+                'type': 'very_short_words',
+                'count': len(short_words),
+                'positions': short_words[:5]  # First 5 positions
+            })
+        
+        if long_gaps:
+            unusual_events.append({
+                'type': 'long_gaps',
+                'count': len(long_gaps),
+                'positions': long_gaps[:5]  # First 5 positions
+            })
+        
+        quality_metrics['temporal_quality'] = {
+            'word_duration_stats': {
+                'mean': np.mean(word_durations) if word_durations else 0,
+                'std': np.std(word_durations) if word_durations else 0,
+                'min': min(word_durations) if word_durations else 0,
+                'max': max(word_durations) if word_durations else 0
+            },
+            'word_gap_stats': {
+                'mean': np.mean(word_gaps) if word_gaps else 0,
+                'std': np.std(word_gaps) if word_gaps else 0,
+                'count': len(word_gaps)
+            },
+            'unusual_timing_events': unusual_events,
+            'timing_consistency_score': calculate_timing_consistency_score(word_segments)
+        }
+    
+    # 5. MODEL PERFORMANCE METRICS
+    processing_times = result.get('whisperx_processing', {}).get('processing_times', {})
+    settings = result.get('settings', {})
+    model_metadata = result.get('model_metadata', {})
+    
+    transcription_time = processing_times.get('transcription_seconds', 0)
+    alignment_time = processing_times.get('alignment_seconds', 0)
+    total_time = processing_times.get('total_seconds', 0)
+    
+    audio_duration = quality_metrics.get('speech_activity', {}).get('total_duration_seconds', 1)
+    time_efficiency = min(1.0, audio_duration / max(0.1, total_time)) if total_time > 0 else 1.0
+    
+    quality_metrics['model_performance'] = {
+        'processing_efficiency': {
+            'time_per_second_audio': total_time / max(1, audio_duration),
+            'transcription_time': transcription_time,
+            'alignment_time': alignment_time,
+            'total_time': total_time,
+            'time_efficiency_score': time_efficiency
+        },
+        'model_metadata': {
+            'model_name': settings.get('model_name', 'unknown'),
+            'device': model_metadata.get('device', 'unknown'),
+            'memory_usage_mb': model_metadata.get('memory_usage_mb', 0),
+            'batch_size': settings.get('batch_size', 1)
+        },
+        'output_completeness': {
+            'word_count': len(word_segments),
+            'segment_count': len(segments),
+            'alignment_success': result.get('whisperx_processing', {}).get('alignment') == 'completed'
+        }
+    }
+    
+    # 6. OVERALL QUALITY SCORE
+    overall_score = calculate_overall_quality_score(quality_metrics, result.get('confidence_score', 0))
+    quality_metrics['overall_quality_score'] = overall_score
+    
+    return quality_metrics
+
+def calculate_timing_consistency_score(word_segments: List[Dict]) -> float:
+    """Calculate timing consistency score based on word timing patterns."""
+    if len(word_segments) < 3:
+        return 1.0
+    
+    anomalies = 0
+    total_checks = 0
+    
+    for i, word in enumerate(word_segments[:-1]):
+        current_end = word.get('end', 0)
+        current_start = word.get('start', 0)
+        next_start = word_segments[i + 1].get('start', 0)
+        
+        # Check for reasonable word duration
+        duration = current_end - current_start
+        if duration <= 0 or duration > 3.0:  # Negative or very long duration
+            anomalies += 1
+        
+        # Check for reasonable gaps
+        gap = next_start - current_end
+        if gap < -0.05 or gap > 3.0:  # Significant overlap or very long gap
+            anomalies += 1
+        
+        total_checks += 2
+    
+    consistency_score = 1.0 - (anomalies / max(1, total_checks))
+    return max(0.0, consistency_score)
+
+def calculate_overall_quality_score(quality_metrics: Dict, confidence_score: float) -> float:
+    """Calculate overall quality score from all metrics."""
+    weights = {
+        'confidence': 0.35,
+        'speech_activity': 0.20,
+        'content_quality': 0.20,
+        'temporal_quality': 0.15,
+        'model_performance': 0.10
+    }
+    
+    overall_score = confidence_score * weights['confidence']
+    
+    # Speech activity contribution
+    speech_activity = quality_metrics.get('speech_activity', {})
+    if speech_activity:
+        speech_score = min(1.0, speech_activity.get('speech_activity_ratio', 0) * 1.2)
+        overall_score += speech_score * weights['speech_activity']
+    
+    # Content quality contribution
+    content_quality = quality_metrics.get('content_quality', {})
+    if content_quality:
+        vocab_score = min(1.0, content_quality.get('vocabulary_richness', 0) * 1.5)
+        filler_penalty = 1.0 - content_quality.get('filler_word_ratio', 0)
+        content_score = (vocab_score + filler_penalty) / 2
+        overall_score += content_score * weights['content_quality']
+    
+    # Temporal quality contribution
+    temporal_quality = quality_metrics.get('temporal_quality', {})
+    if temporal_quality:
+        timing_score = temporal_quality.get('timing_consistency_score', 0.5)
+        overall_score += timing_score * weights['temporal_quality']
+    
+    # Model performance contribution
+    model_performance = quality_metrics.get('model_performance', {})
+    if model_performance:
+        efficiency_score = model_performance.get('processing_efficiency', {}).get('time_efficiency_score', 0.5)
+        overall_score += efficiency_score * weights['model_performance']
+    
+    return max(0.0, min(1.0, overall_score))
 
 # Legacy timestamp correction system removed - WhisperX alignment provides superior accuracy
 # WhisperX alignment replaces the need for FFmpeg-based timestamp correction
@@ -95,11 +459,14 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing preset configuration parameters optimized for WhisperX
     """
+    # Comprehensive musical terminology context - same for all presets
+    GUITAR_LESSON_CONTEXT = '''This is a comprehensive guitar lesson with music instruction and educational content. The instructor provides detailed explanations of guitar techniques, music theory concepts, chord progressions, scale patterns, fingerpicking and strumming techniques, musical terminology, and educational guidance. CRITICAL TERMINOLOGY: Always transcribe "chord" never "cord" when referring to musical chords. Examples: C major chord, D minor chord, E dominant 7 chord, F sharp diminished chord, G suspended 4 chord, A minor 7 flat 5 chord, B flat major 9 chord. Musical notes with proper spelling: A, B, C, D, E, F, G with accidentals - C# (C sharp not "see sharp"), Db (D flat not "the flat"), F# (F sharp), Bb (B flat), Ab (A flat), Eb (E flat), G# (G sharp). Extended chords: major 7, minor 7, dominant 7, major 9, minor 9, add 9, sus2, sus4, 6/9, diminished 7, half-diminished, augmented. Guitar anatomy and hardware: fretboard (not "freight board" or "fret board" as two words), frets (metal strips), strings (high E string, B string, G string, D string, A string, low E string), capo (not "cape-o"), tuning pegs (not "tuning peggs"), nut, bridge, saddle, soundhole, pickup (not "pick up" as two words), volume knob, tone knob, pickup selector switch, tremolo system, whammy bar, locking nut. Advanced guitar techniques: fingerpicking patterns (not "finger picking"), hybrid picking, sweep picking, economy picking, alternate picking, string skipping, palm muting, pinch harmonics, natural harmonics, artificial harmonics, hammer-on (not "hammering"), pull-off (not "pulling off"), string bending, pre-bend, bend and release, vibrato, wide vibrato, finger vibrato, wrist vibrato, sliding, legato, staccato, tapping, two-handed tapping. Scale systems: major scale (Ionian mode), natural minor scale (Aeolian mode), harmonic minor scale, melodic minor scale, pentatonic major scale, pentatonic minor scale, blues scale, chromatic scale, whole tone scale, diminished scale, bebop scale. Modal theory: Ionian (major), Dorian, Phrygian, Lydian, Mixolydian, Aeolian (natural minor), Locrian. Chord theory and progressions: Roman numeral analysis (I-IV-V-I, ii-V-I, vi-IV-I-V, I-vi-ii-V), circle of fifths, secondary dominants, chord substitutions, tritone substitution, voice leading, inversions (first inversion, second inversion), slash chords. Rhythm and time: 4/4 time (four-four time not "four four time"), 3/4 time (three-four time), 2/4 time (two-four time), 6/8 time (six-eight time), 12/8 time (twelve-eight time), compound time, simple time, syncopation, polyrhythm, cross-rhythm. Musical intervals with proper names: perfect unison, minor second, major second, minor third, major third, perfect fourth, tritone (augmented fourth/diminished fifth), perfect fifth, minor sixth, major sixth, minor seventh, major seventh, perfect octave. Key signatures and scales: C major (no sharps or flats), G major (one sharp: F#), D major (two sharps: F#, C#), A major (three sharps: F#, C#, G#), E major (four sharps), B major (five sharps), F# major (six sharps), C# major (seven sharps), F major (one flat: Bb), Bb major (two flats: Bb, Eb), Eb major (three flats), Ab major (four flats), Db major (five flats), Gb major (six flats), Cb major (seven flats).'''
+    
     presets = {
         'fast': {
             'model_name': 'tiny',
             'temperature': 0,
-            'initial_prompt': 'This is a guitar lesson with music instruction.',
+            'initial_prompt': GUITAR_LESSON_CONTEXT,
             'word_timestamps': True,
             'language': 'en',
             'enable_alignment': True,
@@ -109,14 +476,12 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'batch_size': 16,
             'chunk_size': 30,
             'return_char_alignments': False,
-            # 'vad_onset': 0.500,  # Removed - not supported in WhisperX 3.1.1+
-            # 'vad_offset': 0.363,  # Removed - not supported in WhisperX 3.1.1+
             'performance_profile': 'speed_optimized'
         },
         'balanced': {
             'model_name': 'small',
             'temperature': 0,
-            'initial_prompt': 'This is a guitar lesson with music instruction. The instructor discusses guitar techniques, chords, scales, and musical concepts.',
+            'initial_prompt': GUITAR_LESSON_CONTEXT,
             'word_timestamps': True,
             'language': 'en',
             'enable_alignment': True,
@@ -126,14 +491,12 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'batch_size': 16,
             'chunk_size': 30,
             'return_char_alignments': False,
-            # 'vad_onset': 0.500,  # Removed - not supported in WhisperX 3.1.1+
-            # 'vad_offset': 0.363,  # Removed - not supported in WhisperX 3.1.1+
             'performance_profile': 'balanced'
         },
         'high': {
             'model_name': 'medium',
             'temperature': 0.2,
-            'initial_prompt': 'This is a detailed guitar lesson with comprehensive music instruction. The instructor covers guitar techniques, music theory, chord progressions, scales, fingerpicking patterns, strumming techniques, and musical terminology. Listen carefully for technical terms, note names, chord names, and specific musical instructions.',
+            'initial_prompt': GUITAR_LESSON_CONTEXT,
             'word_timestamps': True,
             'language': 'en',
             'enable_alignment': True,
@@ -143,8 +506,6 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'batch_size': 8,
             'chunk_size': 30,
             'return_char_alignments': True,
-            # 'vad_onset': 0.400,  # Removed - not supported in WhisperX 3.1.1+
-            # 'vad_offset': 0.300,  # Removed - not supported in WhisperX 3.1.1+
             'min_speakers': 1,
             'max_speakers': 3,
             'performance_profile': 'quality_optimized'
@@ -152,7 +513,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
         'premium': {
             'model_name': 'large-v3',
             'temperature': 0.3,
-            'initial_prompt': 'This is a comprehensive guitar lesson with advanced music instruction and education content. The instructor provides detailed explanations of guitar techniques, advanced music theory concepts, chord progressions, scale patterns, fingerpicking and strumming techniques, musical terminology, and educational guidance. Pay special attention to technical musical terms, note names, chord names, scale degrees, time signatures, key signatures, musical intervals, and specific instructional language. The content may include references to musical styles, artists, songs, and educational methodologies.',
+            'initial_prompt': GUITAR_LESSON_CONTEXT,
             'word_timestamps': True,
             'language': 'en',
             'enable_alignment': True,
@@ -162,8 +523,6 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'batch_size': 4,
             'chunk_size': 30,
             'return_char_alignments': True,
-            # 'vad_onset': 0.300,  # Removed - not supported in WhisperX 3.1.1+
-            # 'vad_offset': 0.200,  # Removed - not supported in WhisperX 3.1.1+
             'min_speakers': 1,
             'max_speakers': 5,
             'performance_profile': 'maximum_quality'
@@ -212,7 +571,7 @@ def render_template_prompt(preset_name: str, course_id: int = None, segment_id: 
     preset_config = get_preset_config(preset_name)
     return preset_config.get('initial_prompt', '')
 
-def process_audio(audio_path, model_name="base", initial_prompt=None, preset_config=None, course_id=None, segment_id=None, preset_name=None):
+def process_audio(audio_path, model_name="base", initial_prompt=None, preset_config=None, course_id=None, segment_id=None, preset_name=None, enable_intelligent_selection=True):
     """
     Process audio with WhisperX including transcription, alignment, and optional diarization.
     Enhanced with WhisperX-specific parameters and performance monitoring.
@@ -225,9 +584,65 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
         course_id: Optional course ID for template rendering
         segment_id: Optional segment ID for template rendering
         preset_name: Optional preset name for template rendering
+        enable_intelligent_selection: Whether to use intelligent model selection (cascading)
         
     Returns:
         Dictionary containing transcription results and enhanced WhisperX metadata
+    """
+    # NEW: Intelligent model selection integration
+    if enable_intelligent_selection:
+        try:
+            from intelligent_selector import intelligent_process_audio
+        except ImportError:
+            # Fallback for relative import issues when running directly
+            import sys
+            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+            from intelligent_selector import intelligent_process_audio
+        
+        logger.info("Using intelligent model selection with cascading escalation")
+        
+        # Create a wrapper function that properly handles the intelligent selector's parameters
+        def core_processor(path, **processing_kwargs):
+            # The intelligent selector will pass model_name in processing_kwargs
+            # Use the passed model_name or fall back to the original one
+            effective_model_name = processing_kwargs.get('model_name', model_name)
+            effective_initial_prompt = processing_kwargs.get('initial_prompt', initial_prompt)
+            effective_preset_config = processing_kwargs.get('preset_config', preset_config)
+            effective_course_id = processing_kwargs.get('course_id', course_id)
+            effective_segment_id = processing_kwargs.get('segment_id', segment_id)
+            effective_preset_name = processing_kwargs.get('preset_name', preset_name)
+            
+            return _process_audio_core(
+                path, 
+                model_name=effective_model_name,
+                initial_prompt=effective_initial_prompt,
+                preset_config=effective_preset_config,
+                course_id=effective_course_id,
+                segment_id=effective_segment_id,
+                preset_name=effective_preset_name
+            )
+        
+        # Prepare kwargs for intelligent selector, excluding model_name to avoid conflicts
+        intelligent_kwargs = {
+            'initial_prompt': initial_prompt,
+            'preset_config': preset_config,
+            'course_id': course_id,
+            'segment_id': segment_id,
+            'preset_name': preset_name
+        }
+        
+        return intelligent_process_audio(
+            audio_path, 
+            core_processor,
+            **intelligent_kwargs
+        )
+    
+    # Original processing
+    return _process_audio_core(audio_path, model_name, initial_prompt, preset_config, course_id, segment_id, preset_name)
+
+def _process_audio_core(audio_path, model_name="base", initial_prompt=None, preset_config=None, course_id=None, segment_id=None, preset_name=None):
+    """
+    Core audio processing function (extracted for intelligent selection integration).
     """
     # Performance tracking
     processing_start_time = time.time()
@@ -328,25 +743,72 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
         elif torch.is_tensor(audio_file):
             audio_file = audio_file.detach().cpu().numpy()
         
-        # WhisperX 3.1.1+ compatibility: Use only supported parameters
-        # Supported parameters: batch_size, language, chunk_size
+        # WhisperX 3.3.4+ compatibility: Base parameters without hotwords for FasterWhisperPipeline
+        # Hotwords will be handled by our hybrid approach using direct WhisperModel access
         transcribe_params = {
             'batch_size': batch_size,
             'language': effective_language,
             'chunk_size': chunk_size
         }
         
-        # Log the initial prompt for debugging but don't pass it to transcribe
+        # Prepare musical hotwords for enhanced transcription
+        musical_hotwords = []
         if effective_initial_prompt:
-            logger.info(f"Initial prompt configured (not passed to API): {effective_initial_prompt[:100]}...")
+            # Convert comprehensive prompt to targeted hotwords for musical terminology
+            musical_hotwords = [
+                # Core musical chords that often get misrecognized
+                "chord", "C major chord", "D minor chord", "E7 chord", "F sharp chord", 
+                "G sus4 chord", "A minor 7 chord", "B flat chord",
+                
+                # Musical notes with proper spelling
+                "C sharp", "D flat", "F sharp", "B flat", "A flat", "E flat", "G sharp",
+                
+                # Guitar hardware and anatomy
+                "fretboard", "fingerpicking", "capo", "pickup", "tremolo", "whammy bar",
+                "nut", "bridge", "saddle", "soundhole", "tuning pegs",
+                
+                # Guitar techniques that get misrecognized  
+                "hammer-on", "pull-off", "string bending", "vibrato", "palm muting", 
+                "harmonics", "slide", "legato", "staccato", "tapping",
+                
+                # Music theory terms
+                "pentatonic", "major scale", "minor scale", "blues scale", 
+                "Dorian", "Mixolydian", "Ionian", "Aeolian",
+                
+                # Common misrecognitions we want to fix
+                "fret", "string", "pick", "strum", "tune", "practice"
+            ]
+            
+            logger.info(f"Musical hotwords prepared: {len(musical_hotwords)} terms for enhanced guitar lesson accuracy")
         
-        logger.info(f"Using transcribe parameters: {transcribe_params}")
-        result = model.transcribe(audio_file, **transcribe_params)
+        logger.info(f"Using base transcribe parameters: {list(transcribe_params.keys())}")
+        
+        # HYBRID APPROACH: Use WhisperModel directly for hotwords + initial_prompt
+        # while keeping WhisperX for alignment and post-processing
+        try:
+            logger.info("Step 1a: Attempting enhanced transcription with direct WhisperModel access")
+            result = transcribe_with_enhanced_features(
+                model, audio_file, transcribe_params, 
+                effective_initial_prompt, musical_hotwords, effective_language
+            )
+            logger.info("Enhanced transcription completed successfully")
+        except Exception as enhanced_error:
+            logger.warning(f"Enhanced transcription failed ({type(enhanced_error).__name__}): {enhanced_error}")
+            logger.info("Step 1b: Falling back to standard WhisperX FasterWhisperPipeline")
+            
+            # Fallback to original method without hotwords
+            fallback_params = {
+                'batch_size': batch_size,
+                'language': effective_language,
+                'chunk_size': chunk_size
+            }
+            logger.info(f"Using fallback transcribe parameters: {list(fallback_params.keys())}")
+            result = model.transcribe(audio_file, **fallback_params)
         
         performance_metrics['transcription_time'] = time.time() - transcription_step_start
         logger.info(f"Step 1: Transcription completed in {performance_metrics['transcription_time']:.2f}s")
         
-        # Step 2: Perform alignment for word-level timestamps (if enabled)
+        # Step 2: Perform alignment for word-level timestamps (REQUIRED for word highlighting)
         alignment_metadata = {}
         if enable_alignment:
             try:
@@ -355,29 +817,155 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
                 alignment_data, align_metadata = get_alignment_model(effective_language)
                 
                 if alignment_data is not None:
-                    logger.info("Step 2: Performing enhanced word-level alignment...")
-                    # Ensure consistent device usage - use the same device as the transcription model
-                    alignment_device = model_metadata.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
-                    logger.info(f"Using device '{alignment_device}' for alignment to match transcription model")
+                    logger.info("Step 2: Performing word-level alignment for real-time highlighting...")
                     
-                    # Ensure audio is on the correct device if it's a tensor
+                    # ROBUST CPU-ONLY ALIGNMENT with comprehensive error handling
+                    # Required for word-level timestamps and confidence scores
+                    
+                    # Ensure the transcription segments don't contain any tensors
+                    segments_for_alignment = result["segments"]
+                    logger.info(f"Processing {len(segments_for_alignment)} segments for word-level alignment")
+                    
+                    # Ensure audio is numpy array for CPU processing
                     if torch.is_tensor(audio_file):
-                        audio_file = audio_file.to(alignment_device)
+                        audio_file_cpu = audio_file.detach().cpu().numpy()
+                        logger.info("Converted audio tensor to numpy array for CPU alignment")
+                    else:
+                        audio_file_cpu = audio_file
+                        logger.info(f"Audio file type: {type(audio_file_cpu)}")
                     
-                    result = whisperx.align(
-                        result["segments"],
-                        alignment_data["model"],
-                        alignment_data["metadata"],
-                        audio_file,
-                        device=alignment_device,
-                        return_char_alignments=return_char_alignments
-                    )
-                    alignment_metadata = align_metadata
-                    alignment_metadata['return_char_alignments'] = return_char_alignments
-                    alignment_metadata['alignment_model'] = preset_config.get('alignment_model', 'default') if preset_config else 'default'
+                    # Multiple alignment strategies with fallbacks
+                    alignment_success = False
                     
-                    performance_metrics['alignment_time'] = time.time() - alignment_step_start
-                    logger.info(f"Step 2: Word-level alignment completed successfully in {performance_metrics['alignment_time']:.2f}s")
+                    # Strategy 1: CPU-only alignment with complete isolation
+                    try:
+                        logger.info("Attempting Strategy 1: Isolated CPU-only alignment...")
+                        
+                        # Complete GPU context isolation
+                        torch.cuda.empty_cache()
+                        original_default_device = torch.cuda.current_device() if torch.cuda.is_available() else None
+                        
+                        # Force CPU-only context
+                        with torch.no_grad():
+                            # Load alignment model on CPU and keep it there
+                            alignment_model_cpu = alignment_data["model"].cpu()
+                            alignment_metadata_cpu = alignment_data["metadata"]
+                            
+                            # Set all tensors to CPU mode temporarily
+                            torch.set_default_tensor_type(torch.FloatTensor)
+                            
+                            try:
+                                logger.info("Performing WhisperX alignment with complete CPU isolation...")
+                                aligned_result = whisperx.align(
+                                    segments_for_alignment,
+                                    alignment_model_cpu,
+                                    alignment_metadata_cpu,
+                                    audio_file_cpu,
+                                    device="cpu",
+                                    return_char_alignments=return_char_alignments
+                                )
+                                
+                                if aligned_result and 'segments' in aligned_result:
+                                    result = aligned_result
+                                    alignment_success = True
+                                    logger.info("Strategy 1: CPU-only alignment completed successfully!")
+                                    
+                            finally:
+                                # Always restore GPU tensor type
+                                if torch.cuda.is_available():
+                                    torch.set_default_tensor_type(torch.cuda.FloatTensor)
+                                    if original_default_device is not None:
+                                        torch.cuda.set_device(original_default_device)
+                                        
+                    except Exception as e:
+                        logger.warning(f"Strategy 1 failed: {str(e)}")
+                        torch.cuda.empty_cache()  # Clean up on failure
+                    
+                    # Strategy 2: Fallback to basic alignment if Strategy 1 fails
+                    if not alignment_success:
+                        try:
+                            logger.info("Attempting Strategy 2: Basic alignment fallback...")
+                            # Simplified alignment without device switching
+                            aligned_result = whisperx.align(
+                                segments_for_alignment,
+                                alignment_data["model"],
+                                alignment_data["metadata"],
+                                audio_file_cpu,
+                                device="cpu",
+                                return_char_alignments=False  # Disable char alignments for stability
+                            )
+                            
+                            if aligned_result and 'segments' in aligned_result:
+                                result = aligned_result
+                                alignment_success = True
+                                logger.info("Strategy 2: Basic alignment completed successfully!")
+                                
+                        except Exception as e:
+                            logger.warning(f"Strategy 2 failed: {str(e)}")
+                    
+                    if alignment_success:
+                        # CLEAN UP ALIGNMENT RESULTS: Filter out spurious single-character words
+                        total_words_before = 0
+                        for segment in result.get('segments', []):
+                            total_words_before += len(segment.get('words', []))
+                        
+                        # Filter out low-confidence single character words and alignment artifacts
+                        for segment in result.get('segments', []):
+                            if 'words' in segment:
+                                original_words = segment['words']
+                                filtered_words = []
+                                
+                                for word in original_words:
+                                    word_text = word.get('word', '').strip()
+                                    confidence = word.get('score', 0.0)
+                                    duration = word.get('end', 0) - word.get('start', 0)
+                                    
+                                    # Filter criteria for spurious words:
+                                    should_filter = (
+                                        # Single character words with low confidence, but keep legitimate articles ('a', 'I')
+                                        (len(word_text) == 1 and confidence < 0.5 and word_text.lower() not in ['a', 'i']) or
+                                        # Single character punctuation-only words
+                                        (len(word_text) == 1 and word_text in '.,!?;:') or
+                                        # Words shorter than 0.05 seconds with very low confidence
+                                        (duration < 0.05 and confidence < 0.3) or
+                                        # Empty or whitespace-only words
+                                        (not word_text or word_text.isspace()) or
+                                        # Extremely low confidence words regardless of length
+                                        (confidence < 0.1)
+                                    )
+                                    
+                                    if not should_filter:
+                                        filtered_words.append(word)
+                                    
+                                segment['words'] = filtered_words
+                        
+                        # Count words after filtering
+                        word_count = 0
+                        for segment in result.get('segments', []):
+                            word_count += len(segment.get('words', []))
+                        
+                        # Log filtering results
+                        filtered_count = total_words_before - word_count
+                        if filtered_count > 0:
+                            logger.info(f"Filtered out {filtered_count} spurious single-character/low-confidence words")
+                        
+                        alignment_metadata = align_metadata
+                        alignment_metadata['return_char_alignments'] = return_char_alignments
+                        alignment_metadata['alignment_model'] = preset_config.get('alignment_model', 'default') if preset_config else 'default'
+                        alignment_metadata['word_count'] = word_count
+                        
+                        performance_metrics['alignment_time'] = time.time() - alignment_step_start
+                        logger.info(f"Step 2: Word-level alignment completed successfully in {performance_metrics['alignment_time']:.2f}s")
+                        logger.info(f"Generated {word_count} word-level timestamps for real-time highlighting")
+                    else:
+                        logger.error("All alignment strategies failed - proceeding without word-level data")
+                        alignment_metadata = {
+                            'error': 'All alignment strategies failed',
+                            'fallback_applied': True,
+                            'return_char_alignments': return_char_alignments,
+                            'note': 'Segment-level timestamps available, word-level highlighting not possible'
+                        }
+                        performance_metrics['alignment_time'] = time.time() - alignment_step_start
                 else:
                     logger.warning(f"Step 2: Alignment model not available for '{effective_language}', skipping alignment")
                     alignment_metadata = {
@@ -385,6 +973,7 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
                         'fallback_applied': True,
                         'return_char_alignments': return_char_alignments
                     }
+                    performance_metrics['alignment_time'] = 0.0
                     
             except Exception as e:
                 logger.error(f"Step 2: Alignment failed: {str(e)}")
@@ -393,6 +982,14 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
                     'fallback_applied': True,
                     'return_char_alignments': return_char_alignments
                 }
+                performance_metrics['alignment_time'] = 0.0
+        else:
+            logger.info(f"Step 2: Alignment disabled in preset configuration")
+            alignment_metadata = {
+                'status': 'disabled_by_preset',
+                'return_char_alignments': return_char_alignments
+            }
+            performance_metrics['alignment_time'] = 0.0
         
         # Step 3: Perform speaker diarization (if enabled)
         diarization_metadata = {}
@@ -454,9 +1051,66 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
         result["diarization_metadata"] = diarization_metadata
         result["performance_metrics"] = performance_metrics
         
-        # Calculate confidence score from segments
-        confidence_score = calculate_confidence(result.get("segments", []))
+        # TRANSPARENCY: Enhanced features tracking for hybrid approach
+        result["enhanced_features_used"] = {
+            "hotwords_applied": musical_hotwords if musical_hotwords else [],
+            "initial_prompt_applied": effective_initial_prompt if effective_initial_prompt else "",
+            "enhancement_method": "direct_whisper_model" if "Enhanced transcription completed successfully" in str(result.get('debug_info', '')) else "whisperx_fallback",
+            "total_hotwords_count": len(musical_hotwords) if musical_hotwords else 0
+        }
+        result["preset_name"] = preset_name if preset_name else None
+        result["whisperx_version"] = "3.3.4+"
+        
+        # Calculate confidence scores at multiple levels
+        segments = result.get("segments", [])
+        
+        # Add segment-level confidence scores
+        for segment in segments:
+            segment_words = segment.get('words', [])
+            if segment_words:
+                # Calculate segment confidence as average of word confidences
+                word_scores = [word.get('score', 0.0) for word in segment_words if word.get('score') is not None]
+                if word_scores:
+                    segment['confidence'] = sum(word_scores) / len(word_scores)
+                else:
+                    segment['confidence'] = 0.0
+            else:
+                # Fallback: estimate from text quality if no word-level data
+                text_length = len(segment.get('text', ''))
+                segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
+        
+        # Calculate overall confidence score
+        confidence_score = calculate_confidence(segments)
         result["confidence_score"] = confidence_score
+        
+        # CRITICAL FIX: Generate complete text from segments (WhisperX doesn't provide top-level 'text' field)
+        segments = result.get("segments", [])
+        complete_text = ""
+        if segments:
+            complete_text = " ".join(segment.get("text", "").strip() for segment in segments if segment.get("text"))
+            complete_text = complete_text.strip()
+        result["text"] = complete_text
+        logger.info(f"Generated complete transcript text: {len(complete_text)} characters")
+        
+        # ENHANCED: Create clean word_segments array for real-time highlighting
+        word_segments = []
+        for segment in segments:
+            for word in segment.get('words', []):
+                word_segments.append({
+                    'word': word.get('word', ''),
+                    'start': word.get('start', 0),
+                    'end': word.get('end', 0), 
+                    'score': word.get('score', 0.0)
+                })
+        
+        result["word_segments"] = word_segments
+        if word_segments:
+            logger.info(f"Generated {len(word_segments)} clean word segments for real-time highlighting")
+        
+        # ENHANCED: Calculate comprehensive quality metrics
+        quality_metrics = calculate_comprehensive_quality_metrics(result, segments, word_segments)
+        result["quality_metrics"] = quality_metrics
+        logger.info(f"Calculated comprehensive quality metrics: overall_score={quality_metrics.get('overall_quality_score', 0):.3f}")
         
         # WhisperX alignment provides superior timing accuracy - no legacy correction needed
         logger.info("WhisperX alignment ensures accurate timestamps without legacy correction")
@@ -508,26 +1162,46 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
         logger.error(f"WhisperX processing failed ({error_type}): {error_msg}")
         
         # Enhanced error categorization for better debugging
-        if "initial_prompt" in error_msg.lower():
-            logger.error("CRITICAL: API compatibility issue detected - initial_prompt parameter not supported")
-        elif "libcudnn" in error_msg.lower() or "cuda" in error_msg.lower():
+        if "libcudnn" in error_msg.lower() or "cuda" in error_msg.lower():
             logger.error("CRITICAL: CUDA library issue detected - missing CUDA dependencies")
         elif "out of memory" in error_msg.lower():
             logger.error("CRITICAL: GPU memory exhausted - consider reducing batch_size")
         elif "timeout" in error_msg.lower():
             logger.error("CRITICAL: Processing timeout - audio file may be too large")
+        elif "hotwords" in error_msg.lower():
+            logger.error("CRITICAL: Hotwords parameter issue - check WhisperX version compatibility")
         
         # Fallback to basic transcription if WhisperX fails
         logger.info("Attempting fallback to basic WhisperX transcription...")
         try:
             model, model_metadata = load_whisperx_model(effective_model_name, effective_language)
             audio_file = whisperx.load_audio(str(audio_path))
-            # WhisperX 3.1.1+ compatibility: Use parameter dictionary for fallback transcription
-            fallback_params = {
-                'batch_size': 8,  # Reduced batch size for fallback
-                'language': effective_language
-            }
-            result = model.transcribe(audio_file, **fallback_params)
+            
+            # Try enhanced transcription first in fallback mode too
+            try:
+                logger.info("Fallback: Attempting enhanced transcription with direct WhisperModel access")
+                # Simplified hotwords list for fallback
+                fallback_hotwords = [
+                    "chord", "C sharp", "fretboard", "fingerpicking", "capo", 
+                    "hammer-on", "pull-off", "pentatonic", "major scale"
+                ]
+                
+                result = transcribe_with_enhanced_features(
+                    model, audio_file, {}, 
+                    effective_initial_prompt, fallback_hotwords, effective_language
+                )
+                logger.info(f"Fallback enhanced transcription completed successfully")
+                
+            except Exception as fallback_enhanced_error:
+                logger.warning(f"Fallback enhanced transcription failed: {fallback_enhanced_error}")
+                logger.info("Fallback: Using basic FasterWhisperPipeline without enhanced features")
+                
+                # Final fallback to basic WhisperX without any enhancements
+                fallback_params = {
+                    'batch_size': 8,  # Reduced batch size for fallback
+                    'language': effective_language
+                }
+                result = model.transcribe(audio_file, **fallback_params)
             
             result["settings"] = settings
             result["model_metadata"] = model_metadata
@@ -540,6 +1214,20 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
                 "fallback_reason": error_msg,
                 "original_error_type": error_type
             }
+            
+            # TRANSPARENCY: Enhanced features tracking for fallback mode
+            fallback_hotwords = [
+                "chord", "C sharp", "fretboard", "fingerpicking", "capo", 
+                "hammer-on", "pull-off", "pentatonic", "major scale"
+            ]
+            result["enhanced_features_used"] = {
+                "hotwords_applied": fallback_hotwords if effective_initial_prompt else [],
+                "initial_prompt_applied": effective_initial_prompt if effective_initial_prompt else "",
+                "enhancement_method": "fallback_enhanced" if effective_initial_prompt else "basic_fallback",
+                "total_hotwords_count": len(fallback_hotwords) if effective_initial_prompt else 0
+            }
+            result["preset_name"] = preset_name if preset_name else None
+            result["whisperx_version"] = "3.3.4+"
             
             logger.info("Fallback WhisperX transcription completed successfully")
             return result
@@ -557,12 +1245,12 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
             }
             
             # Add troubleshooting hints based on error patterns
-            if "initial_prompt" in error_msg.lower() or "initial_prompt" in fallback_error_msg.lower():
-                comprehensive_error["troubleshooting_hints"].append("API compatibility issue: WhisperX version may not support initial_prompt parameter")
             if "libcudnn" in error_msg.lower() or "libcudnn" in fallback_error_msg.lower():
                 comprehensive_error["troubleshooting_hints"].append("CUDA library missing: Install libcudnn8 and related CUDA dependencies")
             if "out of memory" in error_msg.lower() or "out of memory" in fallback_error_msg.lower():
                 comprehensive_error["troubleshooting_hints"].append("GPU memory issue: Reduce batch_size or use CPU processing")
+            if "hotwords" in error_msg.lower() or "hotwords" in fallback_error_msg.lower():
+                comprehensive_error["troubleshooting_hints"].append("WhisperX hotwords compatibility: Verify WhisperX 3.3.3+ installation for hotwords support")
             
             raise Exception(f"Complete WhisperX processing failure. Primary: {error_msg}. Fallback: {fallback_error_msg}. Details: {comprehensive_error}")
 
@@ -794,6 +1482,9 @@ def process_transcription():
         course_id = data.get('course_id')
         segment_id = data.get('segment_id')
         
+        # Check for intelligent selection parameter (enabled by default for internal tool)
+        enable_intelligent_selection = data.get('enable_intelligent_selection', True)
+        
         # Process the audio with Whisper (using preset config or legacy parameters)
         transcription_result = process_audio(
             audio_path, 
@@ -802,14 +1493,38 @@ def process_transcription():
             preset_config,
             course_id=course_id,
             segment_id=segment_id,
-            preset_name=preset_name
+            preset_name=preset_name,
+            enable_intelligent_selection=enable_intelligent_selection
         )
         
         # Save the transcript to files
         save_transcript_to_file(transcription_result['text'], transcript_path)
         save_srt(transcription_result['segments'], srt_path)
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(transcription_result, f, indent=2, ensure_ascii=False)
+        
+        # Save JSON with explicit error handling
+        try:
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(transcription_result, f, indent=2, ensure_ascii=False, cls=NumpyJSONEncoder)
+            logger.info(f"JSON transcript saved to: {json_path}")
+        except Exception as json_error:
+            logger.error(f"Failed to save JSON transcript to {json_path}: {type(json_error).__name__}: {json_error}")
+            # Try to save a minimal version without problematic fields
+            try:
+                minimal_result = {
+                    'segments': transcription_result.get('segments', []),
+                    'text': transcription_result.get('text', ''),
+                    'word_segments': transcription_result.get('word_segments', []),
+                    'confidence_score': transcription_result.get('confidence_score', 0.0),
+                    'initial_prompt_used': transcription_result.get('initial_prompt_used', ''),
+                    'preset_name': transcription_result.get('preset_name', None)
+                }
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    json.dump(minimal_result, f, indent=2, ensure_ascii=False, cls=NumpyJSONEncoder)
+                logger.info(f"JSON transcript saved to: {json_path} (minimal version due to serialization error)")
+            except Exception as minimal_error:
+                logger.error(f"Failed to save even minimal JSON transcript: {type(minimal_error).__name__}: {minimal_error}")
+                # Set json_path to None so Laravel doesn't try to read a non-existent file
+                json_path = None
         
         # Determine effective model name for metadata
         effective_model_name = preset_config['model_name'] if preset_config else model_name
@@ -819,6 +1534,8 @@ def process_transcription():
             'message': 'Transcription completed successfully',
             'service_timestamp': datetime.now().isoformat(),
             'transcript_path': transcript_path,
+            'transcript_json_path': json_path,  # Include JSON file path for Laravel
+            'subtitles_path': srt_path,         # Include SRT file path for Laravel
             'transcript_text': transcription_result['text'],
             'confidence_score': transcription_result.get('confidence_score', 0.0),
             'segments': transcription_result.get('segments', []),
@@ -845,6 +1562,14 @@ def process_transcription():
             
         if transcription_result.get('timing_correction'):
             response_data['timing_correction'] = transcription_result['timing_correction']
+        
+        # ENHANCED: Add comprehensive quality metrics to response
+        if transcription_result.get('quality_metrics'):
+            response_data['quality_metrics'] = transcription_result['quality_metrics']
+            
+        # Add word segments for real-time highlighting
+        if transcription_result.get('word_segments'):
+            response_data['word_segments'] = transcription_result['word_segments']
         
         # Update job status in Laravel
         update_job_status(job_id, 'completed', response_data)
@@ -952,13 +1677,17 @@ def transcribe_audio():
         preset_config = get_preset_config(preset_name)
         logger.info(f"Using preset '{preset_name}' with model: {preset_config['model_name']}")
         
+        # Check for intelligent selection parameter (enabled by default for internal tool)
+        enable_intelligent_selection = data.get('enable_intelligent_selection', True)
+        
         # Process the audio with Whisper using preset configuration
         transcription_result = process_audio(
             full_audio_path, 
             preset_config=preset_config,
             course_id=course_id,
             segment_id=segment_id,
-            preset_name=preset_name
+            preset_name=preset_name,
+            enable_intelligent_selection=enable_intelligent_selection
         )
         
         # Handle output file creation - always use segment-based storage
@@ -984,8 +1713,31 @@ def transcribe_audio():
         
         save_transcript_to_file(transcription_result['text'], transcript_path)
         save_srt(transcription_result['segments'], srt_path)
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(transcription_result, f, indent=2, ensure_ascii=False)
+        
+        # Save JSON with explicit error handling
+        try:
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(transcription_result, f, indent=2, ensure_ascii=False, cls=NumpyJSONEncoder)
+            logger.info(f"JSON transcript saved to: {json_path}")
+        except Exception as json_error:
+            logger.error(f"Failed to save JSON transcript to {json_path}: {type(json_error).__name__}: {json_error}")
+            # Try to save a minimal version without problematic fields
+            try:
+                minimal_result = {
+                    'segments': transcription_result.get('segments', []),
+                    'text': transcription_result.get('text', ''),
+                    'word_segments': transcription_result.get('word_segments', []),
+                    'confidence_score': transcription_result.get('confidence_score', 0.0),
+                    'initial_prompt_used': transcription_result.get('initial_prompt_used', ''),
+                    'preset_name': transcription_result.get('preset_name', None)
+                }
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    json.dump(minimal_result, f, indent=2, ensure_ascii=False, cls=NumpyJSONEncoder)
+                logger.info(f"JSON transcript saved to: {json_path} (minimal version due to serialization error)")
+            except Exception as minimal_error:
+                logger.error(f"Failed to save even minimal JSON transcript: {type(minimal_error).__name__}: {minimal_error}")
+                # Set json_path to None so Laravel doesn't try to read a non-existent file
+                json_path = None
         
         
         # Prepare enhanced response data with comprehensive WhisperX metadata
@@ -993,6 +1745,9 @@ def transcribe_audio():
             'success': True,
             'message': 'Transcription completed successfully',
             'service_timestamp': datetime.now().isoformat(),
+            'transcript_path': transcript_path,
+            'transcript_json_path': json_path,  # Include JSON file path for Laravel
+            'subtitles_path': srt_path,         # Include SRT file path for Laravel
             'transcript_text': transcription_result['text'],
             'confidence_score': transcription_result.get('confidence_score', 0.0),
             'segments': transcription_result.get('segments', []),
@@ -1023,6 +1778,14 @@ def transcribe_audio():
             
         if transcription_result.get('timing_correction'):
             response_data['timing_correction'] = transcription_result['timing_correction']
+        
+        # ENHANCED: Add comprehensive quality metrics to response
+        if transcription_result.get('quality_metrics'):
+            response_data['quality_metrics'] = transcription_result['quality_metrics']
+            
+        # Add word segments for real-time highlighting
+        if transcription_result.get('word_segments'):
+            response_data['word_segments'] = transcription_result['word_segments']
         
         # Add backward compatibility flag for enhanced response format
         response_data['enhanced_format'] = True
@@ -1208,6 +1971,116 @@ def get_service_capabilities():
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }), 500
+
+def transcribe_with_enhanced_features(whisperx_model, audio_file, base_params, initial_prompt, hotwords, language):
+    """
+    Enhanced transcription using direct WhisperModel access for hotwords + initial_prompt support.
+    
+    This function bypasses WhisperX's FasterWhisperPipeline to access the underlying WhisperModel
+    directly, enabling both hotwords and initial_prompt features that are hidden by the wrapper.
+    
+    Args:
+        whisperx_model: WhisperX FasterWhisperPipeline object
+        audio_file: Preprocessed audio data
+        base_params: Base transcription parameters (batch_size, language, chunk_size)
+        initial_prompt: Context prompt for domain-specific terminology
+        hotwords: List of words to boost recognition for
+        language: Target language code
+    
+    Returns:
+        Compatible result object for WhisperX post-processing
+    """
+    logger.info("Accessing underlying WhisperModel for enhanced features")
+    
+    # Access the underlying WhisperModel from FasterWhisperPipeline
+    # The WhisperModel is stored in the 'model' attribute of FasterWhisperPipeline
+    underlying_model = None
+    
+    # Try multiple possible attribute names for the underlying model
+    for attr_name in ['model', '_model', 'whisper_model', '_whisper_model']:
+        if hasattr(whisperx_model, attr_name):
+            potential_model = getattr(whisperx_model, attr_name)
+            # Check if this has the transcribe method with hotwords support
+            if hasattr(potential_model, 'transcribe'):
+                try:
+                    import inspect
+                    sig = inspect.signature(potential_model.transcribe)
+                    if 'hotwords' in sig.parameters:
+                        underlying_model = potential_model
+                        logger.info(f"Found underlying WhisperModel via attribute: {attr_name}")
+                        break
+                except:
+                    continue
+    
+    if not underlying_model:
+        raise Exception("Could not access underlying WhisperModel with hotwords support")
+    
+    # Prepare enhanced parameters with both hotwords and initial_prompt
+    enhanced_params = {
+        'language': language,
+        'word_timestamps': True,  # Required for WhisperX compatibility
+        'log_progress': True,
+    }
+    
+    # Add hotwords if provided (comma-separated string format)
+    if hotwords and len(hotwords) > 0:
+        # Convert list to comma-separated string as expected by faster-whisper
+        hotwords_str = ', '.join(hotwords)
+        enhanced_params['hotwords'] = hotwords_str
+        logger.info(f"Using hotwords: {hotwords_str[:100]}{'...' if len(hotwords_str) > 100 else ''}")
+    
+    # Add initial_prompt if provided
+    if initial_prompt:
+        enhanced_params['initial_prompt'] = initial_prompt
+        logger.info(f"Using initial_prompt: {initial_prompt[:100]}{'...' if len(initial_prompt) > 100 else ''}")
+    
+    # Perform enhanced transcription with underlying model
+    logger.info("Performing direct WhisperModel transcription with enhanced features")
+    segments_iter, transcription_info = underlying_model.transcribe(audio_file, **enhanced_params)
+    
+    # Convert to list (segments_iter is an iterator)
+    segments = list(segments_iter)
+    
+    # Convert faster-whisper format to WhisperX-compatible format
+    whisperx_result = {
+        'segments': [],
+        'language': transcription_info.language,
+        'language_probability': transcription_info.language_probability,
+    }
+    
+    # Convert segments to WhisperX format
+    full_text_parts = []
+    for segment in segments:
+        segment_dict = {
+            'start': segment.start,
+            'end': segment.end,
+            'text': segment.text,
+        }
+        
+        # Add word-level timestamps if available
+        if hasattr(segment, 'words') and segment.words:
+            segment_dict['words'] = []
+            for word in segment.words:
+                word_dict = {
+                    'start': word.start,
+                    'end': word.end,
+                    'word': word.word,
+                    'probability': getattr(word, 'probability', 0.0)
+                }
+                segment_dict['words'].append(word_dict)
+        
+        whisperx_result['segments'].append(segment_dict)
+        full_text_parts.append(segment.text)
+    
+    # Add full text
+    whisperx_result['text'] = ' '.join(full_text_parts)
+    
+    logger.info(f"Enhanced transcription completed: {len(segments)} segments, {len(full_text_parts)} text parts")
+    
+    return whisperx_result
+
+
+# Removed duplicate load_whisperx_model function - using imported version from whisperx_models
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

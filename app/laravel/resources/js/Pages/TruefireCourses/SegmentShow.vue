@@ -377,6 +377,8 @@ const guitarEnhancementAnalysis = computed(() => {
     };
 });
 
+
+
 // Calculate detailed confidence analysis
 const confidenceAnalysis = computed(() => {
     if (!transcriptData.value || !transcriptData.value.segments) {
@@ -727,994 +729,123 @@ const componentKey = ref(Date.now());
 function forceComponentRefresh() {
     componentKey.value = Date.now();
 }
-</script>
 
-<template>
-    <Head :title="`${segmentData.title || segmentData.name} - ${course.title || 'TrueFire Course'}`" />
-
-    <AuthenticatedLayout>
-        <template #header>
-            <div class="flex justify-between">
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ segmentData.title || segmentData.name || `Segment #${segmentData.id}` }}
-                </h2>
-                <div class="flex items-center space-x-3">
-                    <Link :href="route('truefire-courses.show', course.id)" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 transition">
-                        &larr; Back to Course
-                    </Link>
-                    <Link :href="route('truefire-courses.index')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 transition">
-                        &larr; All Courses
-                    </Link>
-                </div>
-            </div>
-        </template>
-
-        <div class="py-12">
-            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 text-gray-900">
-                        <div class="flex flex-col md:flex-row md:space-x-6">
-                            <div class="md:w-2/3">
-                                <!-- Video player with better styling -->
-                                <div class="bg-gray-900 rounded-lg overflow-hidden shadow-lg relative mb-4">
-                                    <video 
-                                        ref="videoElement"
-                                        :src="segmentData.url" 
-                                        controls
-                                        class="w-full max-h-[500px]"
-                                        preload="metadata"
-                                        @error="handleVideoError"
-                                        poster="/images/video-placeholder.svg"
-                                        type="video/mp4"
-                                    ></video>
-                                    
-                                    <div v-if="videoError" class="p-4 bg-red-50 text-red-800 text-sm">
-                                        <div class="font-medium">Error loading video:</div>
-                                        {{ videoError }}
-                                        <div class="mt-2">
-                                            <a :href="segmentData.url" target="_blank" class="text-blue-600 hover:underline">Download video</a>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-
-                                
-                                <!-- Advanced Subtitles component with proper heading -->
-                                <div v-if="segmentData.transcript_json_api_url" class="mt-6">
-                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                                        <h3 class="text-lg font-medium flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
-                                            </svg>
-                                            Interactive Transcript
-                                        </h3>
-                                    </div>
-                                    <AdvancedSubtitles
-                                        :video-ref="videoElement"
-                                        :transcript-json-url="segmentData.transcript_json_url"
-                                        :transcript-json-api-url="segmentData.transcript_json_api_url"
-                                        :transcript-data="transcriptData"
-                                        :is-loading="isTranscriptLoading"
-                                        :key="`advanced-${componentKey}`"
-                                    />
-                                    <div class="mt-2 text-xs text-gray-500 italic">
-                                        🎯 Interactive transcript synchronized with video playback
-                                    </div>
-                                </div>
-                                
-                                <!-- Guitar Term Enhancement Metrics -->
-                                <div v-if="guitarEnhancementAnalysis" class="mt-8">
-                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                                        <h3 class="text-lg font-medium flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12 6-12 6z"></path>
-                                            </svg>
-                                            Guitar Term Enhancement
-                                        </h3>
-                                        <div class="flex items-center gap-3">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                                </svg>
-                                                {{ guitarEnhancementAnalysis.guitarTermsFound }} terms enhanced
-                                            </span>
-                                            <button 
-                                                @click="showGuitarEnhancementDetails = !showGuitarEnhancementDetails" 
-                                                class="flex items-center text-sm px-3 py-1 rounded-md transition"
-                                                :class="showGuitarEnhancementDetails ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-                                            >
-                                                <svg class="w-4 h-4 mr-1 transition-transform" :class="{'rotate-180': showGuitarEnhancementDetails}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                                </svg>
-                                                {{ showGuitarEnhancementDetails ? 'Hide Details' : 'Show Details' }}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Enhancement Summary Cards (Always Visible) -->
-                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                        <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                                            <div class="flex items-center justify-between">
-                                                <div>
-                                                    <div class="text-2xl font-bold text-purple-800">{{ guitarEnhancementAnalysis.guitarTermsFound }}</div>
-                                                    <div class="text-purple-600 text-sm font-medium">Guitar Terms</div>
-                                                    <div class="text-purple-500 text-xs">Found & Enhanced</div>
-                                                </div>
-                                                <div class="p-2 bg-purple-100 rounded-full">
-                                                    <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12 6-12 6z"></path>
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                                            <div class="flex items-center justify-between">
-                                                <div>
-                                                    <div class="text-2xl font-bold text-orange-800">{{ (guitarEnhancementAnalysis.originalAverageConfidence * 100).toFixed(1) }}%</div>
-                                                    <div class="text-orange-600 text-sm font-medium">Before Enhancement</div>
-                                                    <div class="text-orange-500 text-xs">Original Guitar Term Confidence</div>
-                                                </div>
-                                                <div class="p-2 bg-orange-100 rounded-full">
-                                                    <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="bg-green-50 rounded-lg p-4 border border-green-200">
-                                            <div class="flex items-center justify-between">
-                                                <div>
-                                                    <div class="text-2xl font-bold text-green-800">{{ (guitarEnhancementAnalysis.enhancedAverageConfidence * 100).toFixed(0) }}%</div>
-                                                    <div class="text-green-600 text-sm font-medium">After Enhancement</div>
-                                                    <div class="text-green-500 text-xs">Boosted to Maximum Confidence</div>
-                                                </div>
-                                                <div class="p-2 bg-green-100 rounded-full">
-                                                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                            <div class="flex items-center justify-between">
-                                                <div>
-                                                    <div class="text-2xl font-bold text-blue-800">+{{ Math.abs(guitarEnhancementAnalysis.improvementPercentage).toFixed(1) }}%</div>
-                                                    <div class="text-blue-600 text-sm font-medium">Average Improvement</div>
-                                                    <div class="text-blue-500 text-xs">Per Guitar Term</div>
-                                                </div>
-                                                <div class="p-2 bg-blue-100 rounded-full">
-                                                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path>
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Toggleable: Detailed Guitar Enhancement Information -->
-                                    <div v-if="showGuitarEnhancementDetails" class="space-y-6">
-                                        <!-- Enhanced Terms List -->
-                                        <div v-if="guitarEnhancementAnalysis.enhancedTerms.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                                            <h4 class="font-medium flex items-center">
-                                                <svg class="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-                                                </svg>
-                                                Enhanced Guitar Terms ({{ guitarEnhancementAnalysis.enhancedTerms.length }})
-                                            </h4>
-                                        </div>
-                                        
-                                        <div class="max-h-64 overflow-y-auto">
-                                            <div v-for="(term, index) in guitarEnhancementAnalysis.enhancedTerms" :key="index" 
-                                                 class="px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition flex items-center justify-between">
-                                                <div class="flex-1 min-w-0">
-                                                    <div class="flex items-center gap-3">
-                                                        <div class="font-medium text-gray-900">"{{ term.word }}"</div>
-                                                        <div class="text-xs text-gray-500">
-                                                            {{ formatTime(term.start) }} - {{ formatTime(term.end) }}
-                                                        </div>
-                                                        <div v-if="term.normalized_word && term.normalized_word !== term.word" class="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
-                                                            normalized: {{ term.normalized_word }}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div class="flex items-center gap-4 ml-4">
-                                                    <div class="text-right">
-                                                        <div class="text-sm text-gray-600">Before:</div>
-                                                        <div class="font-medium text-orange-700">{{ (term.original_confidence * 100).toFixed(0) }}%</div>
-                                                    </div>
-                                                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                                                    </svg>
-                                                    <div class="text-right">
-                                                        <div class="text-sm text-gray-600">After:</div>
-                                                        <div class="font-bold text-green-700">{{ (term.new_confidence * 100).toFixed(0) }}%</div>
-                                                    </div>
-                                                    <div class="text-right">
-                                                        <div class="text-sm text-gray-600">Gain:</div>
-                                                        <div class="font-medium text-blue-600">+{{ ((term.new_confidence - term.original_confidence) * 100).toFixed(0) }}%</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Enhancement Technology Info -->
-                                    <div class="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                        <h4 class="font-medium mb-3 flex items-center text-gray-800">
-                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-                                            </svg>
-                                            Enhancement Technology
-                                        </h4>
-                                        
-                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div class="bg-white rounded p-3 border">
-                                                <div class="text-xs text-gray-600 mb-1">Evaluator Version</div>
-                                                <div class="font-medium">{{ guitarEnhancementAnalysis.evaluatorVersion }}</div>
-                                            </div>
-                                            
-                                            <div class="bg-white rounded p-3 border">
-                                                <div class="text-xs text-gray-600 mb-1">AI Model Used</div>
-                                                <div class="font-medium">{{ guitarEnhancementAnalysis.llmUsed }}</div>
-                                            </div>
-                                            
-                                            <div class="bg-white rounded p-3 border">
-                                                <div class="text-xs text-gray-600 mb-1">Library Terms</div>
-                                                <div class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.total_terms || 'N/A' }}</div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div v-if="guitarEnhancementAnalysis.libraryStats.total_terms" class="mt-4 text-xs text-gray-600">
-                                            <div class="font-medium mb-2">Term Categories:</div>
-                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                                <div v-if="guitarEnhancementAnalysis.libraryStats.chords_count" class="flex justify-between">
-                                                    <span>Chords:</span>
-                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.chords_count }}</span>
-                                                </div>
-                                                <div v-if="guitarEnhancementAnalysis.libraryStats.playing_techniques_count" class="flex justify-between">
-                                                    <span>Techniques:</span>
-                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.playing_techniques_count }}</span>
-                                                </div>
-                                                <div v-if="guitarEnhancementAnalysis.libraryStats.guitar_parts_count" class="flex justify-between">
-                                                    <span>Parts:</span>
-                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.guitar_parts_count }}</span>
-                                                </div>
-                                                <div v-if="guitarEnhancementAnalysis.libraryStats.musical_theory_count" class="flex justify-between">
-                                                    <span>Theory:</span>
-                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.musical_theory_count }}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <!-- End Toggleable: Detailed Guitar Enhancement Information -->
-                                    </div>
-                                </div>
-                                
-                                <!-- Detailed Confidence Analysis (Toggleable) -->
-                                <div v-if="confidenceAnalysis && showDetailedQualityMetrics" class="mt-6">
-                                    <!-- Confidence Distribution Chart -->
-                                    <div class="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
-                                        <h4 class="font-medium mb-3 flex items-center">
-                                            <svg class="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
-                                            </svg>
-                                            Word Confidence Distribution
-                                        </h4>
-                                        
-                                        <div class="space-y-3">
-                                            <div class="flex items-center">
-                                                <div class="w-20 text-sm text-gray-600">Excellent</div>
-                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
-                                                    <div class="h-full bg-green-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.excellent / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
-                                                </div>
-                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.excellent }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.excellent / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
-                                            </div>
-                                            
-                                            <div class="flex items-center">
-                                                <div class="w-20 text-sm text-gray-600">Good</div>
-                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
-                                                    <div class="h-full bg-blue-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.good / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
-                                                </div>
-                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.good }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.good / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
-                                            </div>
-                                            
-                                            <div class="flex items-center">
-                                                <div class="w-20 text-sm text-gray-600">Fair</div>
-                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
-                                                    <div class="h-full bg-yellow-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.fair / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
-                                                </div>
-                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.fair }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.fair / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
-                                            </div>
-                                            
-                                            <div class="flex items-center">
-                                                <div class="w-20 text-sm text-gray-600">Poor</div>
-                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
-                                                    <div class="h-full bg-red-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.poor / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
-                                                </div>
-                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.poor }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.poor / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Section-by-Section Analysis -->
-                                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                                            <h4 class="font-medium flex items-center">
-                                                <svg class="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h2a2 2 0 002-2z"></path>
-                                                </svg>
-                                                Section Confidence Breakdown ({{ confidenceAnalysis.segments.length }} sections)
-                                            </h4>
-                                        </div>
-                                        
-                                        <div class="max-h-64 overflow-y-auto">
-                                            <div v-for="(segment, index) in confidenceAnalysis.segments" :key="index" 
-                                                 class="px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition">
-                                                <div class="flex items-center justify-between">
-                                                    <div class="flex-1 min-w-0">
-                                                        <div class="flex items-center gap-3 mb-2">
-                                                            <div class="text-sm font-medium text-gray-600">
-                                                                Section {{ index + 1 }}
-                                                            </div>
-                                                            <div class="text-xs text-gray-500">
-                                                                {{ formatTime(segment.start) }} - {{ formatTime(segment.end) }}
-                                                            </div>
-                                                            <div class="flex items-center gap-1">
-                                                                <div class="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                                                    <div class="h-full" :style="{
-                                                                        width: `${(segment.averageConfidence * 100).toFixed(0)}%`,
-                                                                        backgroundColor: getConfidenceColor(segment.averageConfidence)
-                                                                    }"></div>
-                                                                </div>
-                                                                <span class="text-xs font-medium text-gray-700">{{ (segment.averageConfidence * 100).toFixed(0) }}%</span>
-                                                            </div>
-                                                        </div>
-                                                        <div class="text-sm text-gray-700 truncate">{{ segment.text }}</div>
-                                                        <div class="text-xs text-gray-500 mt-1">{{ segment.wordCount }} words</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Low Confidence Segments Alert -->
-                                    <div v-if="confidenceAnalysis.lowConfidenceSegments.length > 0" class="mt-6 bg-orange-50 rounded-lg p-4 border border-orange-200">
-                                        <div class="flex items-start">
-                                            <svg class="w-5 h-5 mr-2 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.734 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                                            </svg>
-                                            <div class="flex-1">
-                                                <div class="font-medium text-orange-800 mb-2">
-                                                    {{ confidenceAnalysis.lowConfidenceSegments.length }} section(s) need review
-                                                </div>
-                                                <div class="text-sm text-orange-700 mb-3">
-                                                    These sections have average confidence below 60% and may contain transcription errors:
-                                                </div>
-                                                <div class="space-y-2">
-                                                    <div v-for="(segment, index) in confidenceAnalysis.lowConfidenceSegments.slice(0, 3)" :key="index" 
-                                                         class="bg-orange-100 rounded p-2 text-sm">
-                                                        <div class="flex items-center justify-between mb-1">
-                                                            <div class="font-medium text-orange-800">Section {{ segment.index + 1 }}</div>
-                                                            <div class="text-orange-600">{{ (segment.averageConfidence * 100).toFixed(0) }}% confidence</div>
-                                                        </div>
-                                                        <div class="text-orange-700">{{ segment.text.substring(0, 100) }}{{ segment.text.length > 100 ? '...' : '' }}</div>
-                                                        <div class="text-xs text-orange-600 mt-1">{{ formatTime(segment.start) }} - {{ formatTime(segment.end) }}</div>
-                                                    </div>
-                                                </div>
-                                                <div v-if="confidenceAnalysis.lowConfidenceSegments.length > 3" class="text-sm text-orange-600 mt-2">
-                                                    ... and {{ confidenceAnalysis.lowConfidenceSegments.length - 3 }} more sections
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Quality Metrics Section -->
-                                <div v-if="qualityMetrics || confidenceAnalysis" class="mt-8">
-                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                                        <h3 class="text-lg font-medium flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                            </svg>
-                                            Quality Metrics
-                                        </h3>
-                                        <div class="flex items-center gap-3">
-                                            <div v-if="qualityMetrics?.overall_quality_score" class="flex items-center">
-                                                <div class="text-lg font-bold text-indigo-800 mr-2">{{ (qualityMetrics.overall_quality_score * 100).toFixed(1) }}%</div>
-                                                <div class="text-sm text-indigo-600">Overall Score</div>
-                                            </div>
-                                            <button 
-                                                v-if="qualityMetrics"
-                                                @click="showDetailedQualityMetrics = !showDetailedQualityMetrics" 
-                                                class="flex items-center text-sm px-3 py-1 rounded-md transition"
-                                                :class="showDetailedQualityMetrics ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-                                            >
-                                                <svg class="w-4 h-4 mr-1 transition-transform" :class="{'rotate-180': showDetailedQualityMetrics}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                                </svg>
-                                                {{ showDetailedQualityMetrics ? 'Hide Details' : 'Show Details' }}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Always Visible: Confidence Summary Cards -->
-                                    <div v-if="confidenceAnalysis" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                        <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                            <div class="flex items-center">
-                                                <div class="text-2xl font-bold text-blue-800">{{ (confidenceAnalysis.averageConfidence * 100).toFixed(1) }}%</div>
-                                                <div class="ml-2">
-                                                    <div class="w-6 h-6 rounded-full border-2 border-blue-600 flex items-center justify-center">
-                                                        <div class="w-3 h-3 rounded-full" :style="{backgroundColor: getConfidenceColor(confidenceAnalysis.averageConfidence)}"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="text-blue-600 text-sm font-medium">Overall Confidence</div>
-                                            <div class="text-blue-500 text-xs">{{ confidenceAnalysis.totalWords }} total words</div>
-                                        </div>
-                                        
-                                        <div class="bg-green-50 rounded-lg p-4 border border-green-200">
-                                            <div class="text-2xl font-bold text-green-800">{{ confidenceAnalysis.highConfidenceWords }}</div>
-                                            <div class="text-green-600 text-sm font-medium">High Confidence</div>
-                                            <div class="text-green-500 text-xs">≥ 80% accuracy</div>
-                                        </div>
-                                        
-                                        <div class="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                                            <div class="text-2xl font-bold text-yellow-800">{{ confidenceAnalysis.mediumConfidenceWords }}</div>
-                                            <div class="text-yellow-600 text-sm font-medium">Medium Confidence</div>
-                                            <div class="text-yellow-500 text-xs">50% - 80% accuracy</div>
-                                        </div>
-                                        
-                                        <div class="bg-red-50 rounded-lg p-4 border border-red-200">
-                                            <div class="text-2xl font-bold text-red-800">{{ confidenceAnalysis.lowConfidenceWords }}</div>
-                                            <div class="text-red-600 text-sm font-medium">Low Confidence</div>
-                                            <div class="text-red-500 text-xs">< 50% accuracy</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Toggleable: Detailed Quality Metrics -->
-                                    <div v-if="qualityMetrics && showDetailedQualityMetrics" class="space-y-6">
-                                        <!-- Quality Metrics Grid -->
-                                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                        
-                                        <!-- Speech Activity Analysis -->
-                                        <div v-if="qualityMetrics.speech_activity" class="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                            <h4 class="font-medium mb-3 flex items-center text-blue-800">
-                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12 6-12 6z"></path>
-                                                </svg>
-                                                Speech Activity
-                                            </h4>
-                                            <div class="space-y-2 text-sm">
-                                                <div class="flex justify-between">
-                                                    <span class="text-blue-700">Speaking Rate:</span>
-                                                    <span class="font-medium text-blue-900">{{ qualityMetrics.speech_activity.speaking_rate_wpm?.toFixed(0) || 'N/A' }} WPM</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-blue-700">Speech Ratio:</span>
-                                                    <span class="font-medium text-blue-900">{{ (qualityMetrics.speech_activity.speech_activity_ratio * 100)?.toFixed(1) || 'N/A' }}%</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-blue-700">Total Duration:</span>
-                                                    <span class="font-medium text-blue-900">{{ formatTime(qualityMetrics.speech_activity.total_duration_seconds) }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-blue-700">Speech Duration:</span>
-                                                    <span class="font-medium text-blue-900">{{ formatTime(qualityMetrics.speech_activity.speech_duration_seconds) }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-blue-700">Pause Count:</span>
-                                                    <span class="font-medium text-blue-900">{{ qualityMetrics.speech_activity.pause_count || 0 }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-blue-700">Avg Pause:</span>
-                                                    <span class="font-medium text-blue-900">{{ qualityMetrics.speech_activity.average_pause_duration?.toFixed(1) || 'N/A' }}s</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Content Quality Analysis -->
-                                        <div v-if="qualityMetrics.content_quality" class="bg-green-50 rounded-lg p-4 border border-green-200">
-                                            <h4 class="font-medium mb-3 flex items-center text-green-800">
-                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                                                </svg>
-                                                Content Quality
-                                            </h4>
-                                            <div class="space-y-2 text-sm">
-                                                <div class="flex justify-between">
-                                                    <span class="text-green-700">Total Words:</span>
-                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.total_words || 0 }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-green-700">Unique Words:</span>
-                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.unique_words || 0 }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-green-700">Vocabulary Richness:</span>
-                                                    <span class="font-medium text-green-900">{{ (qualityMetrics.content_quality.vocabulary_richness * 100)?.toFixed(1) || 'N/A' }}%</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-green-700">Avg Sentence Length:</span>
-                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.average_sentence_length?.toFixed(1) || 'N/A' }} words</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-green-700">Music Terms:</span>
-                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.music_term_count || 0 }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-green-700">Filler Words:</span>
-                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.filler_word_count || 0 }} ({{ (qualityMetrics.content_quality.filler_word_ratio * 100)?.toFixed(2) || 0 }}%)</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Temporal Quality Assessment -->
-                                        <div v-if="qualityMetrics.temporal_quality" class="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                                            <h4 class="font-medium mb-3 flex items-center text-purple-800">
-                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                </svg>
-                                                Timing Quality
-                                            </h4>
-                                            <div class="space-y-2 text-sm">
-                                                <div class="flex justify-between">
-                                                    <span class="text-purple-700">Timing Consistency:</span>
-                                                    <span class="font-medium text-purple-900">{{ (qualityMetrics.temporal_quality.timing_consistency_score * 100)?.toFixed(1) || 'N/A' }}%</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-purple-700">Avg Word Duration:</span>
-                                                    <span class="font-medium text-purple-900">{{ qualityMetrics.temporal_quality.word_duration_stats?.mean?.toFixed(2) || 'N/A' }}s</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-purple-700">Avg Word Gap:</span>
-                                                    <span class="font-medium text-purple-900">{{ qualityMetrics.temporal_quality.word_gap_stats?.mean?.toFixed(2) || 'N/A' }}s</span>
-                                                </div>
-                                                <div v-if="qualityMetrics.temporal_quality.unusual_timing_events" class="text-xs text-purple-600 mt-2">
-                                                    <div v-for="event in qualityMetrics.temporal_quality.unusual_timing_events" :key="event.type" class="flex justify-between">
-                                                        <span>{{ event.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) }}:</span>
-                                                        <span>{{ event.count }}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Model Performance Data -->
-                                        <div v-if="qualityMetrics.model_performance" class="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                                            <h4 class="font-medium mb-3 flex items-center text-orange-800">
-                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m14-6h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-                                                </svg>
-                                                Model Performance
-                                            </h4>
-                                            <div class="space-y-2 text-sm">
-                                                <div class="flex justify-between">
-                                                    <span class="text-orange-700">Model:</span>
-                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.model_name || 'Unknown' }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-orange-700">Device:</span>
-                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.device || 'Unknown' }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-orange-700">Memory Usage:</span>
-                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.memory_usage_mb?.toFixed(0) || 'N/A' }} MB</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-orange-700">Batch Size:</span>
-                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.batch_size || 'N/A' }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-orange-700">Alignment Success:</span>
-                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.output_completeness?.alignment_success ? 'Yes' : 'No' }}</span>
-                                                </div>
-                                                <div class="flex justify-between">
-                                                    <span class="text-orange-700">Efficiency Score:</span>
-                                                    <span class="font-medium text-orange-900">{{ (qualityMetrics.model_performance.processing_efficiency?.time_efficiency_score * 100)?.toFixed(1) || 'N/A' }}%</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Confidence Patterns (Enhanced) -->
-                                    <div v-if="qualityMetrics.confidence_patterns" class="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                        <h4 class="font-medium mb-3 flex items-center text-gray-800">
-                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
-                                            </svg>
-                                            Detailed Confidence Patterns
-                                        </h4>
-                                        
-                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                            <div class="bg-white rounded p-3 border">
-                                                <div class="text-xs text-gray-600 mb-1">Mean Confidence</div>
-                                                <div class="text-lg font-bold">{{ (qualityMetrics.confidence_patterns.statistics.mean * 100)?.toFixed(1) || 'N/A' }}%</div>
-                                            </div>
-                                            <div class="bg-white rounded p-3 border">
-                                                <div class="text-xs text-gray-600 mb-1">Median Confidence</div>
-                                                <div class="text-lg font-bold">{{ (qualityMetrics.confidence_patterns.statistics.median * 100)?.toFixed(1) || 'N/A' }}%</div>
-                                            </div>
-                                            <div class="bg-white rounded p-3 border">
-                                                <div class="text-xs text-gray-600 mb-1">Confidence Trend</div>
-                                                <div class="text-lg font-bold flex items-center">
-                                                    <span class="mr-1">{{ qualityMetrics.confidence_patterns.confidence_trend?.direction === 'declining' ? '📉' : qualityMetrics.confidence_patterns.confidence_trend?.direction === 'improving' ? '📈' : '➡️' }}</span>
-                                                    {{ qualityMetrics.confidence_patterns.confidence_trend?.direction || 'Stable' }}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Low Confidence Clusters -->
-                                        <div v-if="qualityMetrics.confidence_patterns.low_confidence_clusters?.length > 0" class="mt-4">
-                                            <div class="text-sm font-medium text-gray-700 mb-2">Low Confidence Clusters ({{ qualityMetrics.confidence_patterns.low_confidence_clusters.length }})</div>
-                                            <div class="space-y-1 max-h-32 overflow-y-auto">
-                                                <div v-for="(cluster, index) in qualityMetrics.confidence_patterns.low_confidence_clusters.slice(0, 5)" :key="index" 
-                                                     class="flex items-center justify-between text-xs bg-white rounded p-2 border">
-                                                    <span class="text-gray-600">{{ formatTime(cluster.start_time) }} - {{ formatTime(cluster.end_time) }}</span>
-                                                    <span class="text-gray-700">{{ cluster.word_count }} words</span>
-                                                    <span class="font-medium" :style="{color: getConfidenceColor(cluster.avg_confidence)}">{{ (cluster.avg_confidence * 100).toFixed(0) }}%</span>
-                                                </div>
-                                            </div>
-                                            <div v-if="qualityMetrics.confidence_patterns.low_confidence_clusters.length > 5" class="text-xs text-gray-500 mt-2">
-                                                ... and {{ qualityMetrics.confidence_patterns.low_confidence_clusters.length - 5 }} more clusters
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <!-- End Toggleable Detailed Quality Metrics -->
-                                </div>
-                            </div>
-                                
-                                <!-- Synchronized Transcript with Toggle -->
-                                <div v-if="segmentData.transcript_text || segmentData.transcript_json_api_url" class="mt-6">
-                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                                        <h3 class="text-lg font-medium flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                            </svg>
-                                            Synchronized Transcript
-                                        </h3>
-                                        <button 
-                                            @click="showSynchronizedTranscript = !showSynchronizedTranscript" 
-                                            class="flex items-center text-sm px-3 py-1 rounded-md transition"
-                                            :class="showSynchronizedTranscript ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'"
-                                        >
-                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="showSynchronizedTranscript ? 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.529 6.529m4.243 4.243l4.242 4.242m0 0l3.35 3.35' : 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.543 7-1.275 4.057-5.065 7-9.543 7-4.477 0-8.268-2.943-9.542-7z'"></path>
-                                            </svg>
-                                            {{ showSynchronizedTranscript ? 'Hide' : 'Show' }}
-                                        </button>
-                                    </div>
-                                    
-                                    <!-- Synchronized Transcript (improved implementation) -->
-                                    <div v-if="showSynchronizedTranscript" class="transition-all duration-300 ease-in-out">
-                                        <SynchronizedTranscript
-                                            :video-ref="videoElement"
-                                            :srt-url="segmentData.subtitles_url"
-                                            :transcript-json-url="segmentData.transcript_json_url || segmentData.transcript_json_api_url"
-                                            :transcript-json-api-url="segmentData.transcript_json_api_url"
-                                            :transcript-text="segmentData.transcript_text"
-                                            :key="`sync-${componentKey}`"
-                                        />
-                                    </div>
-                                </div>
-                                
-                                <!-- Terminology Viewer -->
-                                <div v-if="segmentData.has_terminology" class="mt-8">
-                                    <TerminologyViewer 
-                                        :terminology-url="segmentData.terminology_url"
-                                        :terminology-api-url="segmentData.terminology_json_api_url"
-                                        :terminology-metadata="segmentData.terminology_metadata"
-                                        :terminology-count="segmentData.terminology_count"
-                                    />
-                                </div>
-                                
-                                <!-- Simple Restart Processing for Completed Segments -->
-                                <div v-if="segmentData.status === 'completed'" class="mt-8">
-                                    <div class="bg-orange-50 rounded-lg p-5 shadow-sm border border-orange-200">
-                                        <h3 class="text-lg font-medium mb-4 flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                            </svg>
-                                            Restart Processing
-                                        </h3>
-                                        <p class="text-gray-600 mb-4">
-                                            Re-run the entire processing pipeline using intelligent detection for optimal audio extraction and transcription settings. This will overwrite all existing results.
-                                        </p>
-                                        
-                                        <!-- Intelligent Detection Info -->
-                                        <div class="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
-                                            <div class="flex items-start">
-                                                <svg class="w-5 h-5 mr-2 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                </svg>
-                                                <div class="text-sm text-blue-800">
-                                                    <div class="font-medium">Intelligent Detection Enabled</div>
-                                                    <div>The system will automatically select optimal audio extraction and transcription settings based on content analysis, audio quality, and segment characteristics.</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Warning Message -->
-                                        <div class="bg-orange-100 border border-orange-300 rounded-md p-3 mb-4">
-                                            <div class="flex items-start">
-                                                <svg class="w-5 h-5 mr-2 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.734 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                                                </svg>
-                                                <div class="text-sm text-orange-800">
-                                                    <div class="font-medium">Warning:</div>
-                                                    <div>This action will permanently delete and replace all existing audio files, transcripts, and terminology data for this segment. This cannot be undone.</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Action Button -->
-                                        <button 
-                                            @click="restartProcessing" 
-                                            class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition shadow-sm flex items-center"
-                                        >
-                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                            </svg>
-                                            Restart Processing with Intelligent Detection
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                <!-- Restart Transcription for Failed Segments - PRIORITY FOR FAILED STATUS -->
-                                <div v-if="segmentData.status === 'failed'" class="mt-8">
-                                    <div class="bg-red-50 rounded-lg p-5 shadow-sm border border-red-200">
-                                        <h3 class="text-lg font-medium mb-4 flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                            </svg>
-                                            Processing Failed
-                                        </h3>
-                                        <p class="text-gray-600 mb-4">
-                                            The transcription process failed. You can restart it to try again.
-                                        </p>
-                                        <div v-if="segmentData.error_message" class="mb-4 p-3 bg-red-100 text-red-800 rounded-md border border-red-300">
-                                            <div class="font-medium">Error Details:</div>
-                                            <div class="text-sm mt-1">{{ segmentData.error_message }}</div>
-                                        </div>
-                                        <div class="flex space-x-3">
-                                            <button 
-                                                @click="restartTranscription" 
-                                                class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition shadow-sm"
-                                            >
-                                                Restart Transcription Process
-                                            </button>
-                                            <button 
-                                                @click="abortProcessing" 
-                                                class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md transition shadow-sm"
-                                            >
-                                                Reset to Ready
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Transcription Trigger -->
-                                <div v-else-if="!segmentData.transcript_path && segmentData.status === 'ready'" class="mt-8">
-                                    <div class="bg-blue-50 rounded-lg p-5 shadow-sm border border-blue-200">
-                                        <h3 class="text-lg font-medium mb-4 flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                                            </svg>
-                                            Start Transcription
-                                        </h3>
-                                        <p class="text-gray-600 mb-4">
-                                            Extract audio and generate transcript for this TrueFire course segment.
-                                        </p>
-                                        <button 
-                                            @click="requestTranscription" 
-                                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition shadow-sm"
-                                        >
-                                            Start Audio Extraction & Transcription
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <!-- Terminology Recognition Trigger - DISABLED -->
-                                <div v-else-if="segmentData.transcript_path && !segmentData.has_terminology && segmentData.status === 'completed'" class="mt-8">
-                                    <div class="bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200">
-                                        <h3 class="text-lg font-medium mb-4 flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
-                                            </svg>
-                                            Term Recognition (Disabled)
-                                        </h3>
-                                        <p class="text-gray-600 mb-4">
-                                            Terminology recognition is currently disabled. The transcript is complete.
-                                        </p>
-                                        <button 
-                                            disabled 
-                                            class="px-4 py-2 bg-gray-400 text-white rounded-md cursor-not-allowed"
-                                        >
-                                            Terminology Recognition Disabled
-                                        </button>
-                                    </div>
-                                </div>
-
-
-                            </div>
-                            
-                            <div class="md:w-1/3 mt-6 md:mt-0">
-                                <div class="bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200">
-                                    <h3 class="text-lg font-medium mb-4 flex items-center">
-                                        <svg class="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        Segment Information
-                                    </h3>
-                                    
-                                    <div class="space-y-4">
-                                        <div>
-                                            <div class="text-gray-500 text-sm mb-1">Course</div>
-                                            <div class="font-medium">{{ course.title || `Course #${course.id}` }}</div>
-                                        </div>
-
-                                        <div>
-                                            <div class="text-gray-500 text-sm mb-1">Segment ID</div>
-                                            <div class="font-medium">{{ segmentData.id }}</div>
-                                        </div>
-
-                                        <div v-if="segmentData.name">
-                                            <div class="text-gray-500 text-sm mb-1">Name</div>
-                                            <div class="font-medium">{{ segmentData.name }}</div>
-                                        </div>
-
-                                        <div v-if="segmentData.description">
-                                            <div class="text-gray-500 text-sm mb-1">Description</div>
-                                            <div class="font-medium">{{ segmentData.description }}</div>
-                                        </div>
-
-                                        <div v-if="segmentData.runtime">
-                                            <div class="text-gray-500 text-sm mb-1">Runtime</div>
-                                            <div class="font-medium">{{ segmentData.runtime }} seconds</div>
-                                        </div>
-                                        
-                                        <div>
-                                            <div class="text-gray-500 text-sm mb-1">Status</div>
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
-                                                :class="{
-                                                    'bg-green-100 text-green-800': segmentData.status === 'completed',
-                                                    'bg-blue-100 text-blue-800': segmentData.status === 'processing',
-                                                    'bg-purple-100 text-purple-800': segmentData.status === 'transcribing',
-                                                    'bg-indigo-100 text-indigo-800': segmentData.status === 'transcribed',
-                                                    'bg-orange-100 text-orange-800': segmentData.status === 'processing_terminology',
-                                                    'bg-yellow-100 text-yellow-800': segmentData.status === 'audio_extracted',
-                                                    'bg-gray-100 text-gray-800': segmentData.status === 'ready',
-                                                    'bg-red-100 text-red-800': segmentData.status === 'failed',
-                                                }">
-                                                <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
-                                                    v-if="segmentData.status === 'completed'">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                                </svg>
-                                                <svg class="w-3.5 h-3.5 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
-                                                    v-else-if="segmentData.is_processing">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                                </svg>
-                                                {{ segmentData.status }}
-                                            </span>
-                                        </div>
-                                        
-                                        <div>
-                                            <div class="text-gray-500 text-sm mb-1">Updated</div>
-                                            <div class="font-medium">{{ new Date(segmentData.updated_at).toLocaleString() }}</div>
-                                        </div>
-                                        
-                                        <!-- Add the overall confidence display in the Segment Information section -->
-                                        <div v-if="overallConfidence !== null">
-                                            <div class="text-gray-500 text-sm mb-1">Transcript Confidence</div>
-                                            <div class="flex items-center gap-2">
-                                                <div class="w-full h-3 bg-gray-300 rounded-full overflow-hidden">
-                                                    <div 
-                                                        class="h-full" 
-                                                        :style="{
-                                                            width: `${(overallConfidence * 100).toFixed(0)}%`,
-                                                            backgroundColor: getConfidenceColor(overallConfidence)
-                                                        }"
-                                                    ></div>
-                                                </div>
-                                                <span class="font-medium whitespace-nowrap">{{ (overallConfidence * 100).toFixed(0) }}%</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Timeline component (moved to sidebar) -->
-                                <div class="mt-6 bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200">
-                                    <div class="flex items-center justify-between mb-3">
-                                        <h3 class="text-lg font-medium">Processing Timeline</h3>
-                                        
-                                        <!-- Abort button for processing segments -->
-                                        <button 
-                                            v-if="segmentData.is_processing && segmentData.status !== 'ready' && segmentData.status !== 'completed'"
-                                            @click="abortProcessing" 
-                                            class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md transition shadow-sm"
-                                            title="Stop processing and reset to ready state"
-                                        >
-                                            Abort
-                                        </button>
-                                    </div>
-                                    
-                                    <TranscriptionTimeline 
-                                        :status="timelineData.status || segmentData.status"
-                                        :timing="timelineData.timing"
-                                        :progress-percentage="timelineData.progress_percentage"
-                                        :error="segmentData.error_message"
-                                        :media-duration="segmentData.audio_duration"
-                                    />
-                                </div>
-                                
-                                <!-- Error message -->
-                                <div v-if="segmentData.error_message" class="mt-4 p-3 bg-red-50 text-red-800 rounded-md border border-red-200">
-                                    <div class="font-medium flex items-center">
-                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        Error
-                                    </div>
-                                    <div class="mt-1">{{ segmentData.error_message }}</div>
-                                </div>
-                                
-                                <!-- Audio Player (if audio extraction is complete) -->
-                                <div v-if="segmentData.audio_url" class="mt-8">
-                                    <h3 class="text-lg font-medium mb-4 flex items-center">
-                                        <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
-                                        </svg>
-                                        Extracted Audio
-                                    </h3>
-                                    <div class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200">
-                                        <audio controls class="w-full">
-                                            <source :src="segmentData.audio_url" type="audio/wav">
-                                            Your browser does not support the audio element.
-                                        </audio>
-                                        <div class="mt-2 flex space-x-4 text-sm text-gray-600">
-                                            <div v-if="segmentData.formatted_duration" class="flex items-center">
-                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                </svg>
-                                                {{ segmentData.formatted_duration }}
-                                            </div>
-                                            <div v-if="segmentData.audio_size" class="flex items-center">
-                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
-                                                </svg>
-                                                {{ formatFileSize(segmentData.audio_size) }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </AuthenticatedLayout>
-</template>
-
-<script>
-export default {
-    methods: {
-        formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        },
-        getConfidenceColor(confidence) {
-            if (confidence >= 0.8) return '#10b981'; // green-500
-            if (confidence >= 0.5) return '#f59e0b'; // yellow-500
-            return '#ef4444'; // red-500
-        }
+// Helper function to calculate overall grade
+const overallGrade = computed(() => {
+    if (!confidenceAnalysis.value && !qualityMetrics.value) {
+        return { grade: 'N/A', color: 'gray', description: 'No analysis available' };
     }
-}
+    
+    // Calculate composite score from available metrics
+    let totalScore = 0;
+    let weightedSum = 0;
+    
+    // Confidence score (40% weight)
+    if (confidenceAnalysis.value?.averageConfidence) {
+        const confidence = confidenceAnalysis.value.averageConfidence;
+        totalScore += confidence * 0.4;
+        weightedSum += 0.4;
+    }
+    
+    // Quality metrics (40% weight)
+    if (qualityMetrics.value?.overall_quality_score) {
+        const quality = qualityMetrics.value.overall_quality_score;
+        totalScore += quality * 0.4;
+        weightedSum += 0.4;
+    }
+    
+    // Guitar enhancement impact (20% weight)
+    if (guitarEnhancementAnalysis.value?.guitarTermsFound > 0) {
+        const enhancementBonus = Math.min(0.2, guitarEnhancementAnalysis.value.guitarTermsFound * 0.05);
+        totalScore += enhancementBonus;
+        weightedSum += 0.2;
+    }
+    
+    // Normalize score
+    const finalScore = weightedSum > 0 ? totalScore / weightedSum : 0;
+    
+    // Convert to grade
+    if (finalScore >= 0.9) return { grade: 'A', color: 'green', description: 'Excellent transcription quality' };
+    if (finalScore >= 0.8) return { grade: 'B', color: 'blue', description: 'Good transcription quality' };
+    if (finalScore >= 0.7) return { grade: 'C', color: 'yellow', description: 'Fair transcription quality' };
+    if (finalScore >= 0.6) return { grade: 'D', color: 'orange', description: 'Poor transcription quality' };
+    return { grade: 'F', color: 'red', description: 'Failed transcription quality' };
+});
+
+// Simplified success indicator
+const transcriptionSuccess = computed(() => {
+    if (segmentData.value?.status !== 'completed') {
+        return { 
+            success: false, 
+            title: 'Processing Incomplete', 
+            message: 'Transcription is not yet complete',
+            actionNeeded: true 
+        };
+    }
+    
+    if (!segmentData.value?.transcript_text) {
+        return { 
+            success: false, 
+            title: 'No Transcript Available', 
+            message: 'Transcription completed but no text was generated',
+            actionNeeded: true 
+        };
+    }
+    
+    const grade = overallGrade.value;
+    if (grade.grade === 'F') {
+        return { 
+            success: false, 
+            title: 'Low Quality Transcript', 
+            message: 'Transcription completed but quality is very poor',
+            actionNeeded: true 
+        };
+    }
+    
+    return { 
+        success: true, 
+        title: 'Transcription Successful', 
+        message: `High quality transcript generated (Grade: ${grade.grade})`,
+        actionNeeded: false 
+    };
+});
+
+// Calculate key summary metrics
+const summaryMetrics = computed(() => {
+    const metrics = {
+        wordCount: 0,
+        duration: segmentData.value?.formatted_duration || 'Unknown',
+        confidence: 0,
+        musicTerms: 0,
+        issues: 0
+    };
+    
+    // Word count from transcript or confidence analysis
+    if (confidenceAnalysis.value?.totalWords) {
+        metrics.wordCount = confidenceAnalysis.value.totalWords;
+    } else if (segmentData.value?.transcript_text) {
+        metrics.wordCount = segmentData.value.transcript_text.split(' ').length;
+    }
+    
+    // Overall confidence
+    if (confidenceAnalysis.value?.averageConfidence) {
+        metrics.confidence = confidenceAnalysis.value.averageConfidence;
+    }
+    
+    // Music terms found
+    if (guitarEnhancementAnalysis.value?.guitarTermsFound) {
+        metrics.musicTerms = guitarEnhancementAnalysis.value.guitarTermsFound;
+    }
+    
+    // Count issues (low confidence words)
+    if (confidenceAnalysis.value?.lowConfidenceWords) {
+        metrics.issues = confidenceAnalysis.value.lowConfidenceWords;
+    }
+    
+    return metrics;
+});
+
+// Control visibility of detailed sections
+const showAdvancedMetrics = ref(false);
+const showProcessingDetails = ref(false);
 </script> 

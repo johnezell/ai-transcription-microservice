@@ -1135,10 +1135,6 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                 text_length = len(segment.get('text', ''))
                 segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
         
-        # Calculate overall confidence score
-        confidence_score = calculate_confidence(segments)
-        result["confidence_score"] = confidence_score
-        
         # CRITICAL FIX: Generate complete text from segments (WhisperX doesn't provide top-level 'text' field)
         segments = result.get("segments", [])
         complete_text = ""
@@ -1163,10 +1159,38 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
         if word_segments:
             logger.info(f"Generated {len(word_segments)} clean word segments for real-time highlighting")
         
-        # ENHANCED: Calculate comprehensive quality metrics
-        quality_metrics = calculate_comprehensive_quality_metrics(result, segments, word_segments)
-        result["quality_metrics"] = quality_metrics
-        logger.info(f"Calculated comprehensive quality metrics: overall_score={quality_metrics.get('overall_quality_score', 0):.3f}")
+        # CALCULATE: Original confidence score and quality metrics BEFORE guitar term enhancement
+        # This preserves the baseline metrics for comparison with enhanced scores
+        
+        # Calculate segment-level confidence scores with original word scores
+        for segment in segments:
+            segment_words = segment.get('words', [])
+            if segment_words:
+                # Calculate segment confidence as average of word confidences
+                word_scores = [word.get('score', 0.0) for word in segment_words if word.get('score') is not None]
+                if word_scores:
+                    segment['confidence'] = sum(word_scores) / len(word_scores)
+                else:
+                    segment['confidence'] = 0.0
+            else:
+                # Fallback: estimate from text quality if no word-level data
+                text_length = len(segment.get('text', ''))
+                segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
+        
+        # Calculate original overall confidence score and quality metrics
+        original_confidence_score = calculate_confidence(segments)
+        original_quality_metrics = calculate_comprehensive_quality_metrics(result, segments, word_segments)
+        
+        # Store original metrics for comparison
+        result["original_metrics"] = {
+            "confidence_score": original_confidence_score,
+            "quality_metrics": original_quality_metrics,
+            "calculated_before_enhancement": True,
+            "note": "These metrics reflect the raw transcription quality before guitar term enhancement"
+        }
+        
+        logger.info(f"Original transcription metrics - Confidence: {original_confidence_score:.3f}, "
+                   f"Overall quality: {original_quality_metrics.get('overall_quality_score', 0):.3f}")
         
         # ENHANCED: Guitar terminology evaluation and confidence boosting
         enable_guitar_term_evaluation = True  # Default enabled
@@ -1194,6 +1218,72 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                 logger.error(f"Guitar terminology enhancement failed: {e} - continuing without enhancement")
         else:
             logger.info("Guitar terminology evaluation disabled by preset configuration")
+        
+        # RECALCULATE: Overall confidence score and quality metrics AFTER guitar term enhancement
+        # This ensures the enhanced guitar term scores are properly reflected in the final metrics
+        segments = result.get("segments", [])
+        word_segments = result.get("word_segments", [])
+        
+        # Recalculate segment-level confidence scores with enhanced word scores
+        for segment in segments:
+            segment_words = segment.get('words', [])
+            if segment_words:
+                # Calculate segment confidence as average of word confidences (now includes enhanced scores)
+                word_scores = [word.get('score', 0.0) for word in segment_words if word.get('score') is not None]
+                if word_scores:
+                    segment['confidence'] = sum(word_scores) / len(word_scores)
+                else:
+                    segment['confidence'] = 0.0
+            else:
+                # Fallback: estimate from text quality if no word-level data
+                text_length = len(segment.get('text', ''))
+                segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
+        
+        # Calculate enhanced overall confidence score and quality metrics
+        enhanced_confidence_score = calculate_confidence(segments)
+        enhanced_quality_metrics = calculate_comprehensive_quality_metrics(result, segments, word_segments)
+        
+        # Set the final metrics (these are the enhanced versions)
+        result["confidence_score"] = enhanced_confidence_score
+        result["quality_metrics"] = enhanced_quality_metrics
+        
+        # COMPARISON: Create enhancement comparison summary
+        original_metrics = result.get("original_metrics", {})
+        original_confidence = original_metrics.get("confidence_score", 0)
+        original_overall_quality = original_metrics.get("quality_metrics", {}).get("overall_quality_score", 0)
+        
+        confidence_improvement = enhanced_confidence_score - original_confidence
+        quality_improvement = enhanced_quality_metrics.get('overall_quality_score', 0) - original_overall_quality
+        
+        # Add enhancement comparison to results
+        result["enhancement_comparison"] = {
+            "confidence_scores": {
+                "original": original_confidence,
+                "enhanced": enhanced_confidence_score,
+                "improvement": confidence_improvement,
+                "improvement_percentage": (confidence_improvement / max(0.001, original_confidence)) * 100
+            },
+            "overall_quality_scores": {
+                "original": original_overall_quality,
+                "enhanced": enhanced_quality_metrics.get('overall_quality_score', 0),
+                "improvement": quality_improvement,
+                "improvement_percentage": (quality_improvement / max(0.001, original_overall_quality)) * 100
+            },
+            "enhancement_applied": enable_guitar_term_evaluation and 'guitar_term_evaluation' in result,
+            "guitar_terms_enhanced": result.get('guitar_term_evaluation', {}).get('musical_terms_found', 0) if 'guitar_term_evaluation' in result else 0
+        }
+        
+        logger.info(f"ENHANCED metrics after guitar term enhancement - Confidence: {enhanced_confidence_score:.3f} (+{confidence_improvement:.3f}), "
+                   f"Overall quality: {enhanced_quality_metrics.get('overall_quality_score', 0):.3f} (+{quality_improvement:.3f})")
+        
+        # Log the improvement if guitar terms were enhanced
+        if enable_guitar_term_evaluation and 'guitar_term_evaluation' in result:
+            eval_data = result['guitar_term_evaluation']
+            guitar_terms_count = eval_data.get('musical_terms_found', 0)
+            if guitar_terms_count > 0:
+                logger.info(f"Quality improvement summary: {guitar_terms_count} guitar terms boosted to 100% confidence, "
+                           f"overall confidence improved by {confidence_improvement:.1%} "
+                           f"({original_confidence:.3f} → {enhanced_confidence_score:.3f})")
         
         # WhisperX alignment provides superior timing accuracy - no legacy correction needed
         logger.info("WhisperX alignment ensures accurate timestamps without legacy correction")
@@ -1234,7 +1324,7 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
             }
         
         logger.info(f"WhisperX processing completed in {performance_metrics['total_processing_time']:.2f}s - "
-                   f"Confidence: {confidence_score:.2f}, Alignment: {alignment_status}, "
+                   f"Final Confidence: {enhanced_confidence_score:.3f}, Alignment: {alignment_status}, "
                    f"Diarization: {diarization_status}, Profile: {performance_profile}")
         
         return result

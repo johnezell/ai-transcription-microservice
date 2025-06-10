@@ -255,6 +255,13 @@ async function fetchTranscriptData() {
         transcriptData.value = await response.json();
         lastFetchedUrl.value = currentUrl;
         calculateOverallConfidence();
+        
+        // Extract guitar term enhancement data if available
+        if (transcriptData.value.guitar_term_evaluation) {
+            guitarEnhancementMetrics.value = transcriptData.value.guitar_term_evaluation;
+            console.log('Guitar enhancement metrics loaded from transcript:', guitarEnhancementMetrics.value);
+        }
+        
         console.log('Transcript data loaded successfully');
     } catch (error) {
         console.error('Error fetching transcript data:', error);
@@ -295,6 +302,7 @@ function calculateOverallConfidence() {
 
 // Quality metrics data
 const qualityMetrics = ref(null);
+const guitarEnhancementMetrics = ref(null);
 
 // Fetch quality metrics
 async function fetchQualityMetrics() {
@@ -309,10 +317,64 @@ async function fetchQualityMetrics() {
             qualityMetrics.value = data.quality_metrics || data;
             console.log('Quality metrics loaded:', qualityMetrics.value);
         }
+        
+        // Extract guitar term enhancement data
+        if (data.guitar_term_evaluation) {
+            guitarEnhancementMetrics.value = data.guitar_term_evaluation;
+            console.log('Guitar enhancement metrics loaded:', guitarEnhancementMetrics.value);
+        }
     } catch (error) {
         console.error('Error fetching quality metrics:', error);
     }
 }
+
+// Calculate guitar term enhancement analysis
+const guitarEnhancementAnalysis = computed(() => {
+    if (!guitarEnhancementMetrics.value || !transcriptData.value) {
+        return null;
+    }
+    
+    const enhancement = guitarEnhancementMetrics.value;
+    const enhancedTerms = enhancement.enhanced_terms || [];
+    
+    // Calculate original vs enhanced confidence
+    let originalSum = 0;
+    let enhancedSum = 0;
+    let totalWords = 0;
+    let guitarTermsCount = 0;
+    
+    // Process enhanced terms
+    enhancedTerms.forEach(term => {
+        originalSum += term.original_confidence || 0;
+        enhancedSum += term.new_confidence || 0;
+        guitarTermsCount++;
+    });
+    
+    // Calculate overall averages from all segments for comparison
+    if (transcriptData.value.segments) {
+        transcriptData.value.segments.forEach(segment => {
+            if (segment.words) {
+                segment.words.forEach(word => {
+                    const confidence = word.score || word.probability || 0;
+                    totalWords++;
+                });
+            }
+        });
+    }
+    
+    return {
+        guitarTermsFound: guitarTermsCount,
+        originalAverageConfidence: guitarTermsCount > 0 ? originalSum / guitarTermsCount : 0,
+        enhancedAverageConfidence: guitarTermsCount > 0 ? enhancedSum / guitarTermsCount : 0,
+        improvementPercentage: guitarTermsCount > 0 ? ((enhancedSum / guitarTermsCount) - (originalSum / guitarTermsCount)) * 100 : 0,
+        enhancedTerms: enhancedTerms,
+        totalWordsEvaluated: enhancement.total_words_evaluated || totalWords,
+        evaluatorVersion: enhancement.evaluator_version || 'Unknown',
+        llmUsed: enhancement.llm_used || 'Library Only',
+        libraryStats: enhancement.library_statistics || {},
+        enhancementEnabled: true
+    };
+});
 
 // Calculate detailed confidence analysis
 const confidenceAnalysis = computed(() => {
@@ -736,6 +798,184 @@ function forceComponentRefresh() {
                                     />
                                     <div class="mt-2 text-xs text-gray-500 italic">
                                         🎯 Interactive transcript synchronized with video playback
+                                    </div>
+                                </div>
+                                
+                                <!-- Guitar Term Enhancement Metrics -->
+                                <div v-if="guitarEnhancementAnalysis" class="mt-8">
+                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
+                                        <h3 class="text-lg font-medium flex items-center">
+                                            <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12 6-12 6z"></path>
+                                            </svg>
+                                            Guitar Term Enhancement
+                                        </h3>
+                                        <div class="flex items-center gap-2">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                                </svg>
+                                                {{ guitarEnhancementAnalysis.guitarTermsFound }} terms enhanced
+                                            </span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Enhancement Summary Cards -->
+                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                        <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <div class="text-2xl font-bold text-purple-800">{{ guitarEnhancementAnalysis.guitarTermsFound }}</div>
+                                                    <div class="text-purple-600 text-sm font-medium">Guitar Terms</div>
+                                                    <div class="text-purple-500 text-xs">Found & Enhanced</div>
+                                                </div>
+                                                <div class="p-2 bg-purple-100 rounded-full">
+                                                    <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12 6-12 6z"></path>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <div class="text-2xl font-bold text-orange-800">{{ (guitarEnhancementAnalysis.originalAverageConfidence * 100).toFixed(1) }}%</div>
+                                                    <div class="text-orange-600 text-sm font-medium">Original Confidence</div>
+                                                    <div class="text-orange-500 text-xs">Before Enhancement</div>
+                                                </div>
+                                                <div class="p-2 bg-orange-100 rounded-full">
+                                                    <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"></path>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="bg-green-50 rounded-lg p-4 border border-green-200">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <div class="text-2xl font-bold text-green-800">{{ (guitarEnhancementAnalysis.enhancedAverageConfidence * 100).toFixed(1) }}%</div>
+                                                    <div class="text-green-600 text-sm font-medium">Enhanced Confidence</div>
+                                                    <div class="text-green-500 text-xs">After Enhancement</div>
+                                                </div>
+                                                <div class="p-2 bg-green-100 rounded-full">
+                                                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <div class="text-2xl font-bold text-blue-800">+{{ guitarEnhancementAnalysis.improvementPercentage.toFixed(1) }}%</div>
+                                                    <div class="text-blue-600 text-sm font-medium">Improvement</div>
+                                                    <div class="text-blue-500 text-xs">Confidence Boost</div>
+                                                </div>
+                                                <div class="p-2 bg-blue-100 rounded-full">
+                                                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Enhanced Terms List -->
+                                    <div v-if="guitarEnhancementAnalysis.enhancedTerms.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                            <h4 class="font-medium flex items-center">
+                                                <svg class="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                                                </svg>
+                                                Enhanced Guitar Terms ({{ guitarEnhancementAnalysis.enhancedTerms.length }})
+                                            </h4>
+                                        </div>
+                                        
+                                        <div class="max-h-64 overflow-y-auto">
+                                            <div v-for="(term, index) in guitarEnhancementAnalysis.enhancedTerms" :key="index" 
+                                                 class="px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition flex items-center justify-between">
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-3">
+                                                        <div class="font-medium text-gray-900">"{{ term.word }}"</div>
+                                                        <div class="text-xs text-gray-500">
+                                                            {{ formatTime(term.start) }} - {{ formatTime(term.end) }}
+                                                        </div>
+                                                        <div v-if="term.normalized_word && term.normalized_word !== term.word" class="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                                                            normalized: {{ term.normalized_word }}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center gap-4 ml-4">
+                                                    <div class="text-right">
+                                                        <div class="text-sm text-gray-600">Before:</div>
+                                                        <div class="font-medium text-orange-700">{{ (term.original_confidence * 100).toFixed(0) }}%</div>
+                                                    </div>
+                                                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                                                    </svg>
+                                                    <div class="text-right">
+                                                        <div class="text-sm text-gray-600">After:</div>
+                                                        <div class="font-bold text-green-700">{{ (term.new_confidence * 100).toFixed(0) }}%</div>
+                                                    </div>
+                                                    <div class="text-right">
+                                                        <div class="text-sm text-gray-600">Gain:</div>
+                                                        <div class="font-medium text-blue-600">+{{ ((term.new_confidence - term.original_confidence) * 100).toFixed(0) }}%</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Enhancement Technology Info -->
+                                    <div class="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                        <h4 class="font-medium mb-3 flex items-center text-gray-800">
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                            </svg>
+                                            Enhancement Technology
+                                        </h4>
+                                        
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div class="bg-white rounded p-3 border">
+                                                <div class="text-xs text-gray-600 mb-1">Evaluator Version</div>
+                                                <div class="font-medium">{{ guitarEnhancementAnalysis.evaluatorVersion }}</div>
+                                            </div>
+                                            
+                                            <div class="bg-white rounded p-3 border">
+                                                <div class="text-xs text-gray-600 mb-1">AI Model Used</div>
+                                                <div class="font-medium">{{ guitarEnhancementAnalysis.llmUsed }}</div>
+                                            </div>
+                                            
+                                            <div class="bg-white rounded p-3 border">
+                                                <div class="text-xs text-gray-600 mb-1">Library Terms</div>
+                                                <div class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.total_terms || 'N/A' }}</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div v-if="guitarEnhancementAnalysis.libraryStats.total_terms" class="mt-4 text-xs text-gray-600">
+                                            <div class="font-medium mb-2">Term Categories:</div>
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                <div v-if="guitarEnhancementAnalysis.libraryStats.chords_count" class="flex justify-between">
+                                                    <span>Chords:</span>
+                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.chords_count }}</span>
+                                                </div>
+                                                <div v-if="guitarEnhancementAnalysis.libraryStats.playing_techniques_count" class="flex justify-between">
+                                                    <span>Techniques:</span>
+                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.playing_techniques_count }}</span>
+                                                </div>
+                                                <div v-if="guitarEnhancementAnalysis.libraryStats.guitar_parts_count" class="flex justify-between">
+                                                    <span>Parts:</span>
+                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.guitar_parts_count }}</span>
+                                                </div>
+                                                <div v-if="guitarEnhancementAnalysis.libraryStats.musical_theory_count" class="flex justify-between">
+                                                    <span>Theory:</span>
+                                                    <span class="font-medium">{{ guitarEnhancementAnalysis.libraryStats.musical_theory_count }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 

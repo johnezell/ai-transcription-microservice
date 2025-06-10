@@ -27,14 +27,18 @@ class WhisperXModelManager:
     Centralized manager for WhisperX models with caching and resource management.
     """
     
-    def __init__(self, cache_dir: str = "/tmp/whisperx_models", device: str = None):
+    def __init__(self, cache_dir: str = None, device: str = None):
         """
         Initialize the WhisperX model manager.
         
         Args:
-            cache_dir: Directory to cache downloaded models
+            cache_dir: Directory to cache downloaded models (defaults to env var or persistent location)
             device: Device to use ('cuda', 'cpu', or None for auto-detection)
         """
+        # Use environment variable for cache directory, fallback to persistent location
+        if cache_dir is None:
+            cache_dir = os.environ.get('WHISPERX_CACHE_DIR', '/app/models')
+        
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
@@ -145,7 +149,9 @@ class WhisperXModelManager:
         try:
             # Load alignment model on CPU for consistent, reliable processing
             logger.info(f"Loading alignment model with device={alignment_device}, language={language}")
-            model_dir = "/app/models"
+            # Use persistent cache directory for alignment models
+            model_dir = str(self.cache_dir / "alignment")
+            os.makedirs(model_dir, exist_ok=True)
             logger.info(f"Using alignment model directory: {model_dir}")
             model, metadata = whisperx.load_align_model(
                 language_code=language,
@@ -280,7 +286,7 @@ def get_model_manager() -> WhisperXModelManager:
         _model_manager = WhisperXModelManager()
     return _model_manager
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=8)  # Cache up to 8 models (all common sizes)
 def load_whisperx_model(model_name: str = "base", language: str = "en") -> Tuple[Any, Dict[str, Any]]:
     """
     Load WhisperX model with caching (backward compatibility function).

@@ -88,6 +88,9 @@ services:
       - ./app/services/transcription:/app
       - ./app/shared:/var/www/storage/app/public/s3:delegated
       - D:/:/mnt/d_drive
+      # PERSISTENT MODEL CACHE - Prevents re-downloading models
+      - whisperx_models:/app/models
+      - huggingface_cache:/root/.cache/huggingface
     depends_on:
       - laravel
       - audio-extraction-service
@@ -95,8 +98,18 @@ services:
       - app-network
     environment:
       - LARAVEL_API_URL=http://laravel/api
+      # LLM Configuration for guitar term evaluation
+      - LLM_ENDPOINT=http://host.docker.internal:11434/api/generate
+      - LLM_MODEL=llama3
+      - LLM_ENABLED=true
+      # MODEL CACHE CONFIGURATION - Prevents re-downloading
+      - WHISPERX_CACHE_DIR=/app/models
+      - HUGGINGFACE_HUB_CACHE=/root/.cache/huggingface
+      - TORCH_HOME=/app/models/torch
     ports:
       - "5051:5000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   music-term-recognition-service:
     build:
@@ -131,6 +144,11 @@ services:
 
 volumes:
   redis_data:
+  # PERSISTENT MODEL CACHES - Prevent re-downloading models on restart
+  whisperx_models:
+    driver: local
+  huggingface_cache:
+    driver: local
 
 networks:
   app-network:

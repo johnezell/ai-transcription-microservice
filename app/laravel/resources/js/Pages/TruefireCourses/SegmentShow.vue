@@ -30,6 +30,7 @@ const transcriptData = ref(null);
 const overallConfidence = ref(null);
 const processingTerminology = ref(false);
 const showSynchronizedTranscript = ref(false); // Hidden by default
+const showDetailedQualityMetrics = ref(false); // Hidden by default
 
 // Simple restart options
 const showRestartConfirm = ref(false);
@@ -261,8 +262,10 @@ function calculateOverallConfidence() {
     transcriptData.value.segments.forEach(segment => {
         if (Array.isArray(segment.words)) {
             segment.words.forEach(word => {
-                if (word.probability !== undefined) {
-                    confidenceSum += parseFloat(word.probability);
+                // Check for both 'probability' and 'score' fields (different transcript formats)
+                const confidence = word.probability !== undefined ? word.probability : word.score;
+                if (confidence !== undefined) {
+                    confidenceSum += parseFloat(confidence);
                     totalWords++;
                 }
             });
@@ -273,6 +276,146 @@ function calculateOverallConfidence() {
     if (totalWords > 0) {
         overallConfidence.value = confidenceSum / totalWords;
     }
+}
+
+// Quality metrics data
+const qualityMetrics = ref(null);
+
+// Fetch quality metrics
+async function fetchQualityMetrics() {
+    if (!segmentData.value?.transcript_json_api_url) return;
+    
+    try {
+        const response = await fetch(segmentData.value.transcript_json_api_url);
+        const data = await response.json();
+        
+        // Check if quality metrics are available in the transcript data
+        if (data.quality_metrics || data.speech_activity || data.content_quality) {
+            qualityMetrics.value = data.quality_metrics || data;
+            console.log('Quality metrics loaded:', qualityMetrics.value);
+        }
+    } catch (error) {
+        console.error('Error fetching quality metrics:', error);
+    }
+}
+
+// Calculate detailed confidence analysis
+const confidenceAnalysis = computed(() => {
+    if (!transcriptData.value || !transcriptData.value.segments) {
+        return null;
+    }
+    
+    const analysis = {
+        totalWords: 0,
+        averageConfidence: 0,
+        highConfidenceWords: 0,    // >= 0.8
+        mediumConfidenceWords: 0,  // 0.5 - 0.8
+        lowConfidenceWords: 0,     // < 0.5
+        segments: [],
+        confidenceDistribution: {
+            excellent: 0,  // 0.9-1.0
+            good: 0,       // 0.7-0.9
+            fair: 0,       // 0.5-0.7
+            poor: 0        // 0.0-0.5
+        },
+        lowConfidenceSegments: []
+    };
+    
+    transcriptData.value.segments.forEach((segment, segmentIndex) => {
+        const segmentAnalysis = {
+            index: segmentIndex,
+            start: segment.start,
+            end: segment.end,
+            text: segment.text,
+            wordCount: 0,
+            averageConfidence: 0,
+            confidenceSum: 0,
+            lowConfidenceWords: []
+        };
+        
+        if (Array.isArray(segment.words) && segment.words.length > 0) {
+            segment.words.forEach((word, wordIndex) => {
+                // Check for both 'probability' and 'score' fields (different transcript formats)
+                const confidenceValue = word.probability !== undefined ? word.probability : word.score;
+                if (confidenceValue !== undefined) {
+                    const confidence = parseFloat(confidenceValue);
+                    
+                    analysis.totalWords++;
+                    segmentAnalysis.wordCount++;
+                    segmentAnalysis.confidenceSum += confidence;
+                    
+                    // Categorize confidence levels
+                    if (confidence >= 0.9) analysis.confidenceDistribution.excellent++;
+                    else if (confidence >= 0.7) analysis.confidenceDistribution.good++;
+                    else if (confidence >= 0.5) analysis.confidenceDistribution.fair++;
+                    else analysis.confidenceDistribution.poor++;
+                    
+                    // Count confidence levels
+                    if (confidence >= 0.8) analysis.highConfidenceWords++;
+                    else if (confidence >= 0.5) analysis.mediumConfidenceWords++;
+                    else analysis.lowConfidenceWords++;
+                    
+                    // Track low confidence words
+                    if (confidence < 0.5) {
+                        segmentAnalysis.lowConfidenceWords.push({
+                            word: word.word,
+                            confidence: confidence,
+                            start: word.start,
+                            end: word.end,
+                            index: wordIndex
+                        });
+                    }
+                }
+            });
+        } else if (segment.confidence !== undefined) {
+            // Fallback to segment-level confidence if no word-level data
+            const segmentConfidence = parseFloat(segment.confidence);
+            const estimatedWordCount = Math.ceil(segment.text.split(' ').length);
+            
+            analysis.totalWords += estimatedWordCount;
+            segmentAnalysis.wordCount = estimatedWordCount;
+            segmentAnalysis.confidenceSum = segmentConfidence * estimatedWordCount;
+            
+            // Categorize based on segment confidence
+            for (let i = 0; i < estimatedWordCount; i++) {
+                if (segmentConfidence >= 0.9) analysis.confidenceDistribution.excellent++;
+                else if (segmentConfidence >= 0.7) analysis.confidenceDistribution.good++;
+                else if (segmentConfidence >= 0.5) analysis.confidenceDistribution.fair++;
+                else analysis.confidenceDistribution.poor++;
+                
+                if (segmentConfidence >= 0.8) analysis.highConfidenceWords++;
+                else if (segmentConfidence >= 0.5) analysis.mediumConfidenceWords++;
+                else analysis.lowConfidenceWords++;
+            }
+        }
+            
+            // Calculate segment average confidence
+            if (segmentAnalysis.wordCount > 0) {
+                segmentAnalysis.averageConfidence = segmentAnalysis.confidenceSum / segmentAnalysis.wordCount;
+            }
+            
+            // Track low confidence segments
+            if (segmentAnalysis.averageConfidence < 0.6) {
+                analysis.lowConfidenceSegments.push(segmentAnalysis);
+            }
+        
+        analysis.segments.push(segmentAnalysis);
+    });
+    
+    // Calculate overall average
+    if (analysis.totalWords > 0) {
+        const totalConfidenceSum = analysis.segments.reduce((sum, seg) => sum + seg.confidenceSum, 0);
+        analysis.averageConfidence = totalConfidenceSum / analysis.totalWords;
+    }
+    
+    return analysis;
+});
+
+// Helper function to format time in MM:SS format
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 // Add the terminology recognition trigger method
@@ -462,6 +605,9 @@ onMounted(() => {
     // Fetch transcript data if available
     fetchTranscriptData();
     
+    // Fetch quality metrics if available
+    fetchQualityMetrics();
+    
     // Then start polling after a short delay to ensure backend has time to update
     setTimeout(() => {
         startPolling();
@@ -575,6 +721,378 @@ function forceComponentRefresh() {
                                         🎯 Interactive transcript synchronized with video playback
                                     </div>
                                 </div>
+                                
+                                <!-- Detailed Confidence Analysis (Toggleable) -->
+                                <div v-if="confidenceAnalysis && showDetailedQualityMetrics" class="mt-6">
+                                    <!-- Confidence Distribution Chart -->
+                                    <div class="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
+                                        <h4 class="font-medium mb-3 flex items-center">
+                                            <svg class="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                                            </svg>
+                                            Word Confidence Distribution
+                                        </h4>
+                                        
+                                        <div class="space-y-3">
+                                            <div class="flex items-center">
+                                                <div class="w-20 text-sm text-gray-600">Excellent</div>
+                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
+                                                    <div class="h-full bg-green-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.excellent / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
+                                                </div>
+                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.excellent }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.excellent / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
+                                            </div>
+                                            
+                                            <div class="flex items-center">
+                                                <div class="w-20 text-sm text-gray-600">Good</div>
+                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
+                                                    <div class="h-full bg-blue-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.good / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
+                                                </div>
+                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.good }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.good / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
+                                            </div>
+                                            
+                                            <div class="flex items-center">
+                                                <div class="w-20 text-sm text-gray-600">Fair</div>
+                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
+                                                    <div class="h-full bg-yellow-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.fair / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
+                                                </div>
+                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.fair }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.fair / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
+                                            </div>
+                                            
+                                            <div class="flex items-center">
+                                                <div class="w-20 text-sm text-gray-600">Poor</div>
+                                                <div class="flex-1 mx-3 bg-gray-200 rounded-full h-4 overflow-hidden">
+                                                    <div class="h-full bg-red-500" :style="{width: `${confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.poor / confidenceAnalysis.totalWords * 100).toFixed(1) : 0}%`}"></div>
+                                                </div>
+                                                <div class="w-16 text-sm text-gray-800 font-medium">{{ confidenceAnalysis.confidenceDistribution.poor }} ({{ confidenceAnalysis.totalWords > 0 ? (confidenceAnalysis.confidenceDistribution.poor / confidenceAnalysis.totalWords * 100).toFixed(1) : 0 }}%)</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Section-by-Section Analysis -->
+                                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                            <h4 class="font-medium flex items-center">
+                                                <svg class="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h2a2 2 0 002-2z"></path>
+                                                </svg>
+                                                Section Confidence Breakdown ({{ confidenceAnalysis.segments.length }} sections)
+                                            </h4>
+                                        </div>
+                                        
+                                        <div class="max-h-64 overflow-y-auto">
+                                            <div v-for="(segment, index) in confidenceAnalysis.segments" :key="index" 
+                                                 class="px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition">
+                                                <div class="flex items-center justify-between">
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="flex items-center gap-3 mb-2">
+                                                            <div class="text-sm font-medium text-gray-600">
+                                                                Section {{ index + 1 }}
+                                                            </div>
+                                                            <div class="text-xs text-gray-500">
+                                                                {{ formatTime(segment.start) }} - {{ formatTime(segment.end) }}
+                                                            </div>
+                                                            <div class="flex items-center gap-1">
+                                                                <div class="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                                    <div class="h-full" :style="{
+                                                                        width: `${(segment.averageConfidence * 100).toFixed(0)}%`,
+                                                                        backgroundColor: getConfidenceColor(segment.averageConfidence)
+                                                                    }"></div>
+                                                                </div>
+                                                                <span class="text-xs font-medium text-gray-700">{{ (segment.averageConfidence * 100).toFixed(0) }}%</span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="text-sm text-gray-700 truncate">{{ segment.text }}</div>
+                                                        <div class="text-xs text-gray-500 mt-1">{{ segment.wordCount }} words</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Low Confidence Segments Alert -->
+                                    <div v-if="confidenceAnalysis.lowConfidenceSegments.length > 0" class="mt-6 bg-orange-50 rounded-lg p-4 border border-orange-200">
+                                        <div class="flex items-start">
+                                            <svg class="w-5 h-5 mr-2 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.734 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                                            </svg>
+                                            <div class="flex-1">
+                                                <div class="font-medium text-orange-800 mb-2">
+                                                    {{ confidenceAnalysis.lowConfidenceSegments.length }} section(s) need review
+                                                </div>
+                                                <div class="text-sm text-orange-700 mb-3">
+                                                    These sections have average confidence below 60% and may contain transcription errors:
+                                                </div>
+                                                <div class="space-y-2">
+                                                    <div v-for="(segment, index) in confidenceAnalysis.lowConfidenceSegments.slice(0, 3)" :key="index" 
+                                                         class="bg-orange-100 rounded p-2 text-sm">
+                                                        <div class="flex items-center justify-between mb-1">
+                                                            <div class="font-medium text-orange-800">Section {{ segment.index + 1 }}</div>
+                                                            <div class="text-orange-600">{{ (segment.averageConfidence * 100).toFixed(0) }}% confidence</div>
+                                                        </div>
+                                                        <div class="text-orange-700">{{ segment.text.substring(0, 100) }}{{ segment.text.length > 100 ? '...' : '' }}</div>
+                                                        <div class="text-xs text-orange-600 mt-1">{{ formatTime(segment.start) }} - {{ formatTime(segment.end) }}</div>
+                                                    </div>
+                                                </div>
+                                                <div v-if="confidenceAnalysis.lowConfidenceSegments.length > 3" class="text-sm text-orange-600 mt-2">
+                                                    ... and {{ confidenceAnalysis.lowConfidenceSegments.length - 3 }} more sections
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Quality Metrics Section -->
+                                <div v-if="qualityMetrics || confidenceAnalysis" class="mt-8">
+                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
+                                        <h3 class="text-lg font-medium flex items-center">
+                                            <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                            </svg>
+                                            Quality Metrics
+                                        </h3>
+                                        <div class="flex items-center gap-3">
+                                            <div v-if="qualityMetrics?.overall_quality_score" class="flex items-center">
+                                                <div class="text-lg font-bold text-indigo-800 mr-2">{{ (qualityMetrics.overall_quality_score * 100).toFixed(1) }}%</div>
+                                                <div class="text-sm text-indigo-600">Overall Score</div>
+                                            </div>
+                                            <button 
+                                                v-if="qualityMetrics"
+                                                @click="showDetailedQualityMetrics = !showDetailedQualityMetrics" 
+                                                class="flex items-center text-sm px-3 py-1 rounded-md transition"
+                                                :class="showDetailedQualityMetrics ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                                            >
+                                                <svg class="w-4 h-4 mr-1 transition-transform" :class="{'rotate-180': showDetailedQualityMetrics}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                                {{ showDetailedQualityMetrics ? 'Hide Details' : 'Show Details' }}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Always Visible: Confidence Summary Cards -->
+                                    <div v-if="confidenceAnalysis" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                        <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                            <div class="flex items-center">
+                                                <div class="text-2xl font-bold text-blue-800">{{ (confidenceAnalysis.averageConfidence * 100).toFixed(1) }}%</div>
+                                                <div class="ml-2">
+                                                    <div class="w-6 h-6 rounded-full border-2 border-blue-600 flex items-center justify-center">
+                                                        <div class="w-3 h-3 rounded-full" :style="{backgroundColor: getConfidenceColor(confidenceAnalysis.averageConfidence)}"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="text-blue-600 text-sm font-medium">Overall Confidence</div>
+                                            <div class="text-blue-500 text-xs">{{ confidenceAnalysis.totalWords }} total words</div>
+                                        </div>
+                                        
+                                        <div class="bg-green-50 rounded-lg p-4 border border-green-200">
+                                            <div class="text-2xl font-bold text-green-800">{{ confidenceAnalysis.highConfidenceWords }}</div>
+                                            <div class="text-green-600 text-sm font-medium">High Confidence</div>
+                                            <div class="text-green-500 text-xs">≥ 80% accuracy</div>
+                                        </div>
+                                        
+                                        <div class="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                                            <div class="text-2xl font-bold text-yellow-800">{{ confidenceAnalysis.mediumConfidenceWords }}</div>
+                                            <div class="text-yellow-600 text-sm font-medium">Medium Confidence</div>
+                                            <div class="text-yellow-500 text-xs">50% - 80% accuracy</div>
+                                        </div>
+                                        
+                                        <div class="bg-red-50 rounded-lg p-4 border border-red-200">
+                                            <div class="text-2xl font-bold text-red-800">{{ confidenceAnalysis.lowConfidenceWords }}</div>
+                                            <div class="text-red-600 text-sm font-medium">Low Confidence</div>
+                                            <div class="text-red-500 text-xs">< 50% accuracy</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Toggleable: Detailed Quality Metrics -->
+                                    <div v-if="qualityMetrics && showDetailedQualityMetrics" class="space-y-6">
+                                        <!-- Quality Metrics Grid -->
+                                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                        
+                                        <!-- Speech Activity Analysis -->
+                                        <div v-if="qualityMetrics.speech_activity" class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                            <h4 class="font-medium mb-3 flex items-center text-blue-800">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12 6-12 6z"></path>
+                                                </svg>
+                                                Speech Activity
+                                            </h4>
+                                            <div class="space-y-2 text-sm">
+                                                <div class="flex justify-between">
+                                                    <span class="text-blue-700">Speaking Rate:</span>
+                                                    <span class="font-medium text-blue-900">{{ qualityMetrics.speech_activity.speaking_rate_wpm?.toFixed(0) || 'N/A' }} WPM</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-blue-700">Speech Ratio:</span>
+                                                    <span class="font-medium text-blue-900">{{ (qualityMetrics.speech_activity.speech_activity_ratio * 100)?.toFixed(1) || 'N/A' }}%</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-blue-700">Total Duration:</span>
+                                                    <span class="font-medium text-blue-900">{{ formatTime(qualityMetrics.speech_activity.total_duration_seconds) }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-blue-700">Speech Duration:</span>
+                                                    <span class="font-medium text-blue-900">{{ formatTime(qualityMetrics.speech_activity.speech_duration_seconds) }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-blue-700">Pause Count:</span>
+                                                    <span class="font-medium text-blue-900">{{ qualityMetrics.speech_activity.pause_count || 0 }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-blue-700">Avg Pause:</span>
+                                                    <span class="font-medium text-blue-900">{{ qualityMetrics.speech_activity.average_pause_duration?.toFixed(1) || 'N/A' }}s</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Content Quality Analysis -->
+                                        <div v-if="qualityMetrics.content_quality" class="bg-green-50 rounded-lg p-4 border border-green-200">
+                                            <h4 class="font-medium mb-3 flex items-center text-green-800">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                                                </svg>
+                                                Content Quality
+                                            </h4>
+                                            <div class="space-y-2 text-sm">
+                                                <div class="flex justify-between">
+                                                    <span class="text-green-700">Total Words:</span>
+                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.total_words || 0 }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-green-700">Unique Words:</span>
+                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.unique_words || 0 }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-green-700">Vocabulary Richness:</span>
+                                                    <span class="font-medium text-green-900">{{ (qualityMetrics.content_quality.vocabulary_richness * 100)?.toFixed(1) || 'N/A' }}%</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-green-700">Avg Sentence Length:</span>
+                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.average_sentence_length?.toFixed(1) || 'N/A' }} words</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-green-700">Music Terms:</span>
+                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.music_term_count || 0 }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-green-700">Filler Words:</span>
+                                                    <span class="font-medium text-green-900">{{ qualityMetrics.content_quality.filler_word_count || 0 }} ({{ (qualityMetrics.content_quality.filler_word_ratio * 100)?.toFixed(2) || 0 }}%)</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Temporal Quality Assessment -->
+                                        <div v-if="qualityMetrics.temporal_quality" class="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                                            <h4 class="font-medium mb-3 flex items-center text-purple-800">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                                Timing Quality
+                                            </h4>
+                                            <div class="space-y-2 text-sm">
+                                                <div class="flex justify-between">
+                                                    <span class="text-purple-700">Timing Consistency:</span>
+                                                    <span class="font-medium text-purple-900">{{ (qualityMetrics.temporal_quality.timing_consistency_score * 100)?.toFixed(1) || 'N/A' }}%</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-purple-700">Avg Word Duration:</span>
+                                                    <span class="font-medium text-purple-900">{{ qualityMetrics.temporal_quality.word_duration_stats?.mean?.toFixed(2) || 'N/A' }}s</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-purple-700">Avg Word Gap:</span>
+                                                    <span class="font-medium text-purple-900">{{ qualityMetrics.temporal_quality.word_gap_stats?.mean?.toFixed(2) || 'N/A' }}s</span>
+                                                </div>
+                                                <div v-if="qualityMetrics.temporal_quality.unusual_timing_events" class="text-xs text-purple-600 mt-2">
+                                                    <div v-for="event in qualityMetrics.temporal_quality.unusual_timing_events" :key="event.type" class="flex justify-between">
+                                                        <span>{{ event.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) }}:</span>
+                                                        <span>{{ event.count }}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Model Performance Data -->
+                                        <div v-if="qualityMetrics.model_performance" class="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                                            <h4 class="font-medium mb-3 flex items-center text-orange-800">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m14-6h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                                                </svg>
+                                                Model Performance
+                                            </h4>
+                                            <div class="space-y-2 text-sm">
+                                                <div class="flex justify-between">
+                                                    <span class="text-orange-700">Model:</span>
+                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.model_name || 'Unknown' }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-orange-700">Device:</span>
+                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.device || 'Unknown' }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-orange-700">Memory Usage:</span>
+                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.memory_usage_mb?.toFixed(0) || 'N/A' }} MB</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-orange-700">Batch Size:</span>
+                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.model_metadata?.batch_size || 'N/A' }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-orange-700">Alignment Success:</span>
+                                                    <span class="font-medium text-orange-900">{{ qualityMetrics.model_performance.output_completeness?.alignment_success ? 'Yes' : 'No' }}</span>
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="text-orange-700">Efficiency Score:</span>
+                                                    <span class="font-medium text-orange-900">{{ (qualityMetrics.model_performance.processing_efficiency?.time_efficiency_score * 100)?.toFixed(1) || 'N/A' }}%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Confidence Patterns (Enhanced) -->
+                                    <div v-if="qualityMetrics.confidence_patterns" class="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                        <h4 class="font-medium mb-3 flex items-center text-gray-800">
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                                            </svg>
+                                            Detailed Confidence Patterns
+                                        </h4>
+                                        
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                            <div class="bg-white rounded p-3 border">
+                                                <div class="text-xs text-gray-600 mb-1">Mean Confidence</div>
+                                                <div class="text-lg font-bold">{{ (qualityMetrics.confidence_patterns.statistics.mean * 100)?.toFixed(1) || 'N/A' }}%</div>
+                                            </div>
+                                            <div class="bg-white rounded p-3 border">
+                                                <div class="text-xs text-gray-600 mb-1">Median Confidence</div>
+                                                <div class="text-lg font-bold">{{ (qualityMetrics.confidence_patterns.statistics.median * 100)?.toFixed(1) || 'N/A' }}%</div>
+                                            </div>
+                                            <div class="bg-white rounded p-3 border">
+                                                <div class="text-xs text-gray-600 mb-1">Confidence Trend</div>
+                                                <div class="text-lg font-bold flex items-center">
+                                                    <span class="mr-1">{{ qualityMetrics.confidence_patterns.confidence_trend?.direction === 'declining' ? '📉' : qualityMetrics.confidence_patterns.confidence_trend?.direction === 'improving' ? '📈' : '➡️' }}</span>
+                                                    {{ qualityMetrics.confidence_patterns.confidence_trend?.direction || 'Stable' }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Low Confidence Clusters -->
+                                        <div v-if="qualityMetrics.confidence_patterns.low_confidence_clusters?.length > 0" class="mt-4">
+                                            <div class="text-sm font-medium text-gray-700 mb-2">Low Confidence Clusters ({{ qualityMetrics.confidence_patterns.low_confidence_clusters.length }})</div>
+                                            <div class="space-y-1 max-h-32 overflow-y-auto">
+                                                <div v-for="(cluster, index) in qualityMetrics.confidence_patterns.low_confidence_clusters.slice(0, 5)" :key="index" 
+                                                     class="flex items-center justify-between text-xs bg-white rounded p-2 border">
+                                                    <span class="text-gray-600">{{ formatTime(cluster.start_time) }} - {{ formatTime(cluster.end_time) }}</span>
+                                                    <span class="text-gray-700">{{ cluster.word_count }} words</span>
+                                                    <span class="font-medium" :style="{color: getConfidenceColor(cluster.avg_confidence)}">{{ (cluster.avg_confidence * 100).toFixed(0) }}%</span>
+                                                </div>
+                                            </div>
+                                            <div v-if="qualityMetrics.confidence_patterns.low_confidence_clusters.length > 5" class="text-xs text-gray-500 mt-2">
+                                                ... and {{ qualityMetrics.confidence_patterns.low_confidence_clusters.length - 5 }} more clusters
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- End Toggleable Detailed Quality Metrics -->
+                                </div>
+                            </div>
                                 
                                 <!-- Synchronized Transcript with Toggle -->
                                 <div v-if="segmentData.transcript_text || segmentData.transcript_json_api_url" class="mt-6">

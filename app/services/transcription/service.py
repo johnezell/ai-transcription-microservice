@@ -2490,6 +2490,151 @@ def test_guitar_term_evaluator():
             'timestamp': datetime.now().isoformat()
         }), 500
 
+@app.route('/test-dictionary', methods=['GET'])
+def test_dictionary():
+    """Test the enchant dictionary functionality used by guitar term evaluator"""
+    try:
+        from guitar_term_evaluator import GuitarTerminologyEvaluator
+        
+        # Create evaluator instance to check dictionary status
+        evaluator = GuitarTerminologyEvaluator()
+        
+        # Test words to check dictionary functionality
+        test_words = [
+            # Common English words that should be detected as dictionary words
+            "here's", "there's", "what's", "that's", "it's", "can't", "don't",
+            "the", "and", "with", "have", "will", "from", "they", "been",
+            "would", "could", "should", "about", "their", "which", "during",
+            
+            # Guitar terms that should NOT be detected as dictionary words
+            "fretboard", "capo", "hammer-on", "pull-off", "fingerpicking",
+            "tremolo", "whammy", "barre", "tablature", "pentatonic",
+            
+            # Non-words that should not be in dictionary
+            "xyzzyx", "blahblah", "nonsenseword", "fakeguitar", "notreal"
+        ]
+        
+        results = []
+        for word in test_words:
+            normalized = evaluator._normalize_word(word)
+            is_common = evaluator._is_common_english_word(word)
+            
+            # Also test if enchant dictionary directly recognizes it
+            enchant_check = None
+            if evaluator.dictionary:
+                try:
+                    enchant_check = evaluator.dictionary.check(normalized)
+                except:
+                    enchant_check = "Error checking word"
+            
+            results.append({
+                'original_word': word,
+                'normalized_word': normalized,
+                'is_common_english': is_common,
+                'enchant_dictionary_check': enchant_check,
+                'enchant_available': evaluator.dictionary is not None
+            })
+        
+        # Dictionary configuration info
+        dictionary_config = {
+            'enchant_available': hasattr(evaluator, 'dictionary') and evaluator.dictionary is not None,
+            'dictionary_object': str(type(evaluator.dictionary)) if evaluator.dictionary else None,
+            'filtering_method': 'dictionary_based' if evaluator.dictionary else 'fallback_common_words'
+        }
+        
+        # Test specific problematic word with new contraction logic
+        heres_test = {
+            'word': "here's",
+            'normalized': evaluator._normalize_word("here's"),
+            'is_contraction': evaluator._is_contraction("here's"),
+            'contraction_expansions': evaluator._expand_contraction("here's"),
+            'contraction_parts_valid': evaluator._check_contraction_parts("here's"),
+            'is_common_english': evaluator._is_common_english_word("here's"),
+            'would_be_guitar_term': evaluator.query_local_llm("here's", "so here's what we need to do"),
+            'in_guitar_library': evaluator.guitar_library.is_guitar_term("here's") if evaluator.guitar_library else False,
+            'in_basic_terms': "heres" in evaluator.basic_guitar_terms
+        }
+        
+        # Test various contraction patterns
+        contraction_tests = []
+        test_contractions = [
+            "here's", "there's", "what's", "it's", "don't", "can't", "won't", "I'm", "you're", 
+            "they'll", "we've", "hasn't", "guitar's", "player's", "couldn't", "shouldn't"
+        ]
+        
+        for contraction in test_contractions:
+            contraction_tests.append({
+                'word': contraction,
+                'is_contraction': evaluator._is_contraction(contraction),
+                'expansions': evaluator._expand_contraction(contraction),
+                'parts_valid': evaluator._check_contraction_parts(contraction),
+                'is_common_english': evaluator._is_common_english_word(contraction),
+                'normalized': evaluator._normalize_word(contraction)
+            })
+        
+        # Test various compound word patterns and special musical characters
+        compound_tests = []
+        test_compounds = [
+            # Common English compound words (should be detected as common)
+            "well-known", "state-of-the-art", "up-to-date", "long-term", "short-term", 
+            "high-quality", "low-end", "real-time", "full-time", "part-time",
+            "user_interface", "file_name", "data_base", "web_site", "email_address",
+            
+            # Guitar-specific compound words (should NOT be detected as common)
+            "hammer-on", "pull-off", "pick-up", "set-up", "tune-up", "warm-up",
+            "finger_picking", "chord_progression", "scale_pattern", "whammy_bar", "tremolo_arm",
+            
+            # Musical notation with special characters (preserve # + b)
+            "C#", "F#", "Bb", "D♭", "C#maj7", "F#dim", "Bb+", "add9", "sus4", "maj7", "dim7",
+            
+            # Musical progressions and patterns
+            "I-V-vi-IV", "ii-V-I", "vi-IV-I-V", "12-bar-blues", "8-bar-bridge",
+            
+            # Mixed/ambiguous cases
+            "sound-board", "sound_board", "note-book", "finger-board", "string-theory"
+        ]
+        
+        for compound in test_compounds:
+            compound_tests.append({
+                'word': compound,
+                'is_compound': evaluator._is_compound_word(compound),
+                'parts': evaluator._split_compound_word(compound),
+                'parts_valid': evaluator._check_compound_parts(compound),
+                'is_common_english': evaluator._is_common_english_word(compound),
+                'normalized': evaluator._normalize_word(compound),
+                'cache_key': evaluator._normalize_for_cache(compound)
+            })
+        
+        return jsonify({
+            'success': True,
+            'dictionary_configuration': dictionary_config,
+            'test_results': results,
+            'problematic_word_analysis': heres_test,
+            'contraction_pattern_tests': contraction_tests,
+            'compound_word_tests': compound_tests,
+            'summary': {
+                'total_words_tested': len(test_words),
+                'common_words_detected': len([r for r in results if r['is_common_english']]),
+                'contractions_tested': len(contraction_tests),
+                'contractions_detected_as_common': len([c for c in contraction_tests if c['is_common_english']]),
+                'compounds_tested': len(compound_tests),
+                'compounds_detected_as_common': len([c for c in compound_tests if c['is_common_english']]),
+                'guitar_compounds_filtered': len([c for c in compound_tests if not c['is_common_english'] and c['is_compound']]),
+                'enchant_working': dictionary_config['enchant_available'],
+                'message': 'Enchant dictionary is working with intelligent contraction and compound word detection' if dictionary_config['enchant_available'] else 'Using fallback word filtering with pattern-based contractions and compounds'
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Dictionary test failed: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
 @app.route('/test-enhancement-modes', methods=['POST'])
 def test_enhancement_modes():
     """

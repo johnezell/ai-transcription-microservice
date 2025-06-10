@@ -6,6 +6,13 @@ import logging
 import re
 import os
 
+# Try to import dictionary checking capability
+try:
+    import enchant
+    ENCHANT_AVAILABLE = True
+except ImportError:
+    ENCHANT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -37,6 +44,17 @@ class GuitarTerminologyEvaluator:
         
         logger.info(f"Guitar Term Evaluator initialized - LLM: {self.llm_endpoint}, Model: {self.model_name}, Enabled: {self.llm_enabled}")
         
+        # Initialize dictionary checker for common English words
+        self.dictionary = None
+        if ENCHANT_AVAILABLE:
+            try:
+                self.dictionary = enchant.Dict("en_US")
+                logger.info("English dictionary loaded for common word filtering")
+            except Exception as e:
+                logger.warning(f"Could not load English dictionary: {e}")
+        else:
+            logger.warning("enchant library not available - using fallback word filtering")
+        
         # Load comprehensive guitar terms library
         try:
             from guitar_terms_library import get_guitar_terms_library
@@ -58,10 +76,182 @@ class GuitarTerminologyEvaluator:
             "sharp", "flat", "natural", "diminished", "augmented", "suspended",
             "barre", "open", "mute", "harmonics", "tapping", "palm", "muting"
         }
+    
+    def _normalize_word(self, word: str) -> str:
+        """
+        Conservative normalization for musical contexts - preserves meaningful special characters.
+        Used for caching and library lookups, NOT for LLM queries (LLM gets original word).
+        """
+        if not word:
+            return ""
         
-        # CRITICAL: Common words that should NEVER be enhanced as guitar terms
-        # These are frequently misclassified by LLMs and must be explicitly filtered out
-        self.common_words_blacklist = {
+        # Very conservative normalization for musical terminology
+        # Remove only clearly irrelevant punctuation: . , ! ? : ; " ( ) [ ] { }
+        # PRESERVE meaningful musical characters: - _ ' # + (for musical notation)
+        # Keep: - (hammer-on, pull-off), _ (file_names, chord_progressions), 
+        #       ' (contractions), # (C#, F#), + (augmented chords)
+        normalized = re.sub(r'[.,:;!?"()\[\]{}]', '', word)
+        normalized = normalized.strip().lower()
+        
+        return normalized
+
+    def _normalize_for_cache(self, word: str) -> str:
+        """
+        Create a cache key that preserves musical meaning while being consistent.
+        This is used for LLM response caching to avoid re-querying the same musical terms.
+        """
+        if not word:
+            return ""
+        
+        # Minimal normalization for cache keys - just case and whitespace
+        # PRESERVE ALL special characters that might be musically meaningful
+        return word.strip().lower()
+
+    def _is_contraction(self, word: str) -> bool:
+        """Check if a word contains an apostrophe indicating a contraction"""
+        return "'" in word and len(word) > 2
+
+    def _is_compound_word(self, word: str) -> bool:
+        """Check if a word contains hyphens or underscores indicating a compound word"""
+        return ("-" in word or "_" in word) and len(word) > 3
+
+    def _expand_contraction(self, word: str) -> List[str]:
+        """Expand contractions into component words for dictionary checking"""
+        if not self._is_contraction(word):
+            return [word]
+        
+        # Split on apostrophe and handle common patterns
+        parts = word.lower().split("'")
+        if len(parts) != 2:
+            return [word]  # Not a simple contraction
+        
+        base, suffix = parts
+        
+        # Common contraction patterns with multiple possible expansions
+        expansions = {
+            's': [base + ' is', base + ' has'],          # "here's" -> ["here is", "here has"]
+            're': [base + ' are'],                       # "you're" -> ["you are"]  
+            'll': [base + ' will'],                      # "you'll" -> ["you will"]
+            'd': [base + ' would', base + ' had'],       # "you'd" -> ["you would", "you had"]
+            've': [base + ' have'],                      # "you've" -> ["you have"]
+            't': [base + ' not'],                        # "don't" -> ["do not"], "can't" -> ["can not"]
+            'm': [base + ' am'],                         # "I'm" -> ["I am"]
+        }
+        
+        possible_expansions = expansions.get(suffix, [])
+        
+        # If no standard expansion, return the base word (might be a possessive)
+        if not possible_expansions:
+            return [base]  # "John's" -> ["john"]
+        
+        return possible_expansions
+
+    def _check_contraction_parts(self, word: str) -> bool:
+        """Check if a contraction expands to common English words"""
+        if not self._is_contraction(word):
+            return False
+        
+        expansions = self._expand_contraction(word)
+        
+        # Check if any expansion consists of all dictionary words
+        for expansion in expansions:
+            words = expansion.split()
+            if self.dictionary:
+                # All words in expansion must be in dictionary
+                if all(self.dictionary.check(w) for w in words):
+                    return True
+            else:
+                # Fallback: check against common words
+                common_words = {
+                    "i", "you", "he", "she", "it", "we", "they", "here", "there", "what", "that",
+                    "who", "how", "when", "where", "is", "are", "am", "was", "were", "have", "has", "had",
+                    "will", "would", "could", "should", "might", "may", "can", "do", "does", "did", "not"
+                }
+                if all(w in common_words for w in words):
+                    return True
+        
+        return False
+
+    def _split_compound_word(self, word: str) -> List[str]:
+        """Split compound words on hyphens and underscores"""
+        if not self._is_compound_word(word):
+            return [word]
+        
+        # Split on both hyphens and underscores
+        # Replace underscores with hyphens first, then split on hyphens
+        normalized = word.replace('_', '-')
+        parts = normalized.split('-')
+        
+        # Filter out empty parts and very short parts (likely not real words)
+        valid_parts = [part.strip() for part in parts if len(part.strip()) > 1]
+        
+        return valid_parts if valid_parts else [word]
+
+    def _check_compound_parts(self, word: str) -> bool:
+        """Check if a compound word's parts are all common English words"""
+        if not self._is_compound_word(word):
+            return False
+        
+        # IMPORTANT: Check if it's a known guitar compound term first
+        # These should NOT be split because they're specialized terminology
+        guitar_compound_terms = {
+            "hammer-on", "pull-off", "pick-up", "set-up", "tune-up", 
+            "warm-up", "cool-down", "step-up", "step-down", "break-down",
+            "build-up", "fade-in", "fade-out", "cut-off", "cut-through"
+        }
+        
+        if word.lower() in guitar_compound_terms:
+            return False  # Don't treat guitar terms as common English
+        
+        parts = self._split_compound_word(word)
+        
+        if len(parts) < 2:
+            return False  # Not really a compound word
+        
+        # Check if all parts are common English words
+        if self.dictionary:
+            # Use dictionary if available
+            return all(self.dictionary.check(part.lower()) for part in parts)
+        else:
+            # Fallback: check against common words
+            common_words = {
+                "the", "and", "or", "but", "so", "if", "then", "when", "where", "why", "how",
+                "to", "from", "in", "on", "at", "by", "for", "with", "without", "of", "off",
+                "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+                "do", "does", "did", "will", "would", "could", "should", "may", "might", "can",
+                "get", "got", "getting", "put", "take", "make", "go", "come", "see", "look",
+                "this", "that", "these", "those", "here", "there", "now", "then", "today",
+                "you", "your", "yours", "we", "our", "ours", "he", "his", "she", "her", "hers",
+                "it", "its", "they", "their", "theirs", "me", "my", "mine", "us", "him", "them",
+                "up", "down", "over", "under", "through", "around", "between", "among", "within",
+                "state", "art", "well", "known", "high", "low", "good", "bad", "best", "better",
+                "first", "last", "next", "back", "front", "side", "top", "bottom", "left", "right"
+            }
+            return all(part.lower() in common_words for part in parts)
+
+    def _is_common_english_word(self, word: str) -> bool:
+        """Check if word is a common English dictionary word using intelligent contraction detection"""
+        if not word or len(word) < 2:
+            return True  # Very short words are usually common
+        
+        original_word = word.strip().lower()
+        normalized_word = self._normalize_word(word)
+        
+        # STEP 1: Check if it's a contraction with apostrophe pattern
+        if self._is_contraction(original_word):
+            return self._check_contraction_parts(original_word)
+        
+        # STEP 2: Check if it's a compound word with hyphen/underscore pattern
+        if self._is_compound_word(original_word):
+            return self._check_compound_parts(original_word)
+        
+        # STEP 3: Use dictionary if available for the normalized word
+        if self.dictionary:
+            if self.dictionary.check(normalized_word):
+                return True
+        
+        # STEP 4: Fallback to basic common words list (for cases where dictionary isn't available)
+        very_common_words = {
             "the", "and", "or", "but", "so", "if", "then", "when", "where", "why", "how",
             "to", "from", "in", "on", "at", "by", "for", "with", "without", "of", "off",
             "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
@@ -69,25 +259,10 @@ class GuitarTerminologyEvaluator:
             "get", "got", "getting", "put", "take", "make", "go", "come", "see", "look",
             "this", "that", "these", "those", "here", "there", "now", "then", "today",
             "you", "your", "yours", "we", "our", "ours", "he", "his", "she", "her", "hers",
-            "it", "its", "they", "their", "theirs", "me", "my", "mine", "us", "him", "them",
-            "up", "down", "out", "over", "under", "through", "into", "onto", "across",
-            "very", "really", "quite", "pretty", "much", "many", "more", "most", "less", "least",
-            "good", "bad", "big", "small", "new", "old", "first", "last", "next", "other",
-            "right", "left", "back", "front", "high", "low", "long", "short", "wide", "narrow"
+            "it", "its", "they", "their", "theirs", "me", "my", "mine", "us", "him", "them"
         }
-    
-    def _normalize_word(self, word: str) -> str:
-        """Normalize word by removing punctuation and converting to lowercase"""
-        if not word:
-            return ""
         
-        # Remove common punctuation but preserve hyphens in compound terms
-        # Remove: . , ! ? : ; " ' ( ) [ ] { }
-        # Keep: - (for terms like "hammer-on", "pull-off")
-        normalized = re.sub(r'[.,:;!?"\'()\[\]{}]', '', word)
-        normalized = normalized.strip().lower()
-        
-        return normalized
+        return normalized_word in very_common_words
 
     def extract_words_from_json(self, transcription_data: Dict[str, Any]) -> List[WordSegment]:
         """Extract word segments from transcription JSON (adapted to your service format)"""
@@ -118,34 +293,36 @@ class GuitarTerminologyEvaluator:
 
     def query_local_llm(self, word: str, context: str = "") -> bool:
         """Query local LLM to determine if word is guitar instruction terminology"""
-        # Normalize word for caching and evaluation
+        # Use conservative cache key that preserves musical characters
+        cache_key = self._normalize_for_cache(word)
+        # Use regular normalization for library lookups (removes some punctuation)
         normalized_word = self._normalize_word(word)
         
-        if normalized_word in self.evaluation_cache:
-            logger.debug(f"Cache hit for '{word}' (normalized: '{normalized_word}')")
-            return self.evaluation_cache[normalized_word]
+        if cache_key in self.evaluation_cache:
+            logger.debug(f"Cache hit for '{word}' (cache_key: '{cache_key}')")
+            return self.evaluation_cache[cache_key]
         
-        # CRITICAL: Check blacklist first - never enhance common words
-        if normalized_word in self.common_words_blacklist:
-            logger.debug(f"Blacklisted common word '{word}' (normalized: '{normalized_word}') - will not enhance")
-            self.evaluation_cache[normalized_word] = False
-            return False
-        
-        # Check comprehensive library first (faster and more reliable than LLM)
+        # STEP 1: Check comprehensive guitar library first (confirmed guitar terms)
         if self.guitar_library:
             is_guitar_term = self.guitar_library.is_guitar_term(normalized_word)
             if is_guitar_term:
                 logger.debug(f"Guitar library confirmed '{word}' (normalized: '{normalized_word}') as guitar term")
-                self.evaluation_cache[normalized_word] = True
+                self.evaluation_cache[cache_key] = True
                 return True
         
-        # Check basic fallback terms
+        # STEP 2: Check basic fallback guitar terms
         if normalized_word in self.basic_guitar_terms:
             logger.debug(f"Basic fallback confirmed '{word}' (normalized: '{normalized_word}') as guitar term")
-            self.evaluation_cache[normalized_word] = True
+            self.evaluation_cache[cache_key] = True
             return True
         
-        # Only query LLM if enabled and available for unknown terms
+        # STEP 3: Check if it's a common English dictionary word - if yes, don't enhance
+        if self._is_common_english_word(word):
+            logger.debug(f"Dictionary word '{word}' (cache_key: '{cache_key}') - will not enhance common English word")
+            self.evaluation_cache[cache_key] = False
+            return False
+        
+        # STEP 4: Only query LLM for non-dictionary words that might be specialized guitar terms
         if self.llm_enabled:
             try:
                 prompt = f"""
@@ -154,25 +331,22 @@ class GuitarTerminologyEvaluator:
                 Word to evaluate: "{word}"
                 Context: "{context}"
                 
+                This word is NOT in standard English dictionaries, so it might be specialized terminology.
                 Is this word specific to guitar instruction, guitar playing techniques, or guitar-related music theory?
                 
-                INCLUDE these types of terms:
-                - Playing techniques (strumming, picking, fretting, hammer-on, pull-off, fingerstyle, etc.)
-                - Guitar parts and hardware (frets, capo, bridge, pickup, strings, etc.)
-                - Music theory as applied to guitar (chords, scales, progressions, etc.)
-                - Guitar-specific notation or instruction terms
-                - Musical notes and chord names (C, D, E, F, G, A, B, sharp, flat, major, minor, etc.)
-                - Guitar techniques and effects
+                INCLUDE these types of specialized terms:
+                - Playing techniques: hammer-on, pull-off, sweep-picking, palm-muting, finger_picking
+                - Musical notation: C#, F#, Bb, D♭, chord progressions like I-V-vi-IV
+                - Guitar hardware: pick-up, set-up, tune-up, whammy_bar, tremolo_arm
+                - Technical terms: tablature, fingerstyle, flatpicking, bottleneck
+                - Effects and gear: overdrive, fuzz-box, delay_pedal, reverb_tank
+                - Music theory: pentatonic, mixolydian, add9, sus4, maj7, dim7
                 
-                DO NOT INCLUDE common words like:
-                - Articles (a, an, the)
-                - Prepositions (in, on, at, to, from, with, by, for, of)
-                - Pronouns (you, your, I, my, we, our, he, his, she, her, they, their)
-                - Common verbs (is, are, was, were, have, has, had, do, does, did, get, got, put, take, make, go, come)
-                - General adjectives (good, bad, big, small, new, old, right, left, high, low)
-                - Common adverbs (very, really, quite, now, then, here, there)
+                PRESERVE special characters like hyphens (-), underscores (_), sharps (#), flats (b), plus (+) 
+                as they are often meaningful in musical terminology.
                 
-                ONLY respond with "YES" for genuine guitar/music terminology. Respond "NO" for all common words.
+                Only respond "YES" for genuine specialized guitar/music terminology.
+                Respond "NO" if it's likely a typo, foreign word, or unrelated technical term.
                 """
                 
                 response = requests.post(
@@ -197,8 +371,8 @@ class GuitarTerminologyEvaluator:
                     # This prevents false positives from responses like "NO, this is not a YES-worthy term"
                     is_guitar_term = llm_response.startswith("YES") or llm_response == "YES"
                     
-                    logger.debug(f"LLM evaluation for '{word}' (normalized: '{normalized_word}'): response='{llm_response}', result={is_guitar_term}")
-                    self.evaluation_cache[normalized_word] = is_guitar_term
+                    logger.debug(f"LLM evaluation for original word '{word}': response='{llm_response}', result={is_guitar_term}")
+                    self.evaluation_cache[cache_key] = is_guitar_term
                     return is_guitar_term
                 else:
                     logger.warning(f"LLM request failed with status {response.status_code} for word '{word}' - falling back to library-only mode")
@@ -209,8 +383,8 @@ class GuitarTerminologyEvaluator:
             logger.debug(f"LLM disabled - using library-only evaluation for '{word}'")
         
         # Final fallback: conservative approach - don't boost unknown terms
-        logger.debug(f"Term '{word}' (normalized: '{normalized_word}') not found in guitar libraries, marking as non-guitar term")
-        self.evaluation_cache[normalized_word] = False
+        logger.debug(f"Term '{word}' not found in guitar libraries and LLM unavailable/failed, marking as non-guitar term")
+        self.evaluation_cache[cache_key] = False
         return False
 
     def get_context_window(self, segments: List[WordSegment], index: int, window_size: int = 3) -> str:
@@ -230,7 +404,7 @@ class GuitarTerminologyEvaluator:
         
         boosted_count = 0
         unchanged_count = 0
-        blacklisted_count = 0
+        dictionary_filtered_count = 0
         evaluated_terms = []
         
         for i, segment in enumerate(segments):
@@ -244,13 +418,6 @@ class GuitarTerminologyEvaluator:
             if segment.confidence >= self.confidence_threshold:
                 unchanged_count += 1
                 logger.debug(f"Skipped '{segment.word}': {segment.original_confidence:.3f} (confidence already high)")
-                continue
-            
-            # Check if word is blacklisted before evaluation
-            normalized_word = self._normalize_word(segment.word)
-            if normalized_word in self.common_words_blacklist:
-                blacklisted_count += 1
-                logger.debug(f"Blacklisted common word '{segment.word}': {segment.original_confidence:.3f} (filtered out)")
                 continue
             
             # Evaluate low-confidence words to see if they're guitar terms
@@ -271,10 +438,15 @@ class GuitarTerminologyEvaluator:
                 logger.debug(f"Boosted guitar term '{segment.word}': {segment.original_confidence:.3f} -> {segment.confidence:.3f}")
             else:
                 # Non-guitar terms are left completely unchanged at their original confidence
+                # (This includes dictionary words filtered out by _is_common_english_word)
                 unchanged_count += 1
-                logger.debug(f"Left unchanged '{segment.word}': {segment.original_confidence:.3f} (not a guitar term)")
+                if self._is_common_english_word(segment.word):
+                    dictionary_filtered_count += 1
+                    logger.debug(f"Left unchanged dictionary word '{segment.word}': {segment.original_confidence:.3f} (common English word)")
+                else:
+                    logger.debug(f"Left unchanged '{segment.word}': {segment.original_confidence:.3f} (not a guitar term)")
         
-        logger.info(f"Enhanced confidence for {boosted_count} guitar terms, left {unchanged_count} non-guitar terms unchanged, filtered out {blacklisted_count} common words")
+        logger.info(f"Enhanced confidence for {boosted_count} guitar terms, left {unchanged_count} non-guitar terms unchanged ({dictionary_filtered_count} were dictionary words)")
         
         # Update the original JSON structure with enhanced confidence scores
         updated_json = self._update_json_with_new_confidence(transcription_json, segments)
@@ -292,11 +464,11 @@ class GuitarTerminologyEvaluator:
         
         # Add evaluation metadata
         updated_json['guitar_term_evaluation'] = {
-            'evaluator_version': '2.4',  # Updated version with common word blacklist and 75% threshold
+            'evaluator_version': '3.2',  # Update: Conservative normalization preserves musical special characters
             'total_words_evaluated': len(segments),
             'musical_terms_found': boosted_count,
             'non_musical_terms_unchanged': unchanged_count,
-            'common_words_filtered': blacklisted_count,
+            'dictionary_words_filtered': dictionary_filtered_count,
             'confidence_threshold': self.confidence_threshold,
             'target_confidence': self.target_confidence,
             'evaluation_timestamp': json.dumps(evaluated_terms, default=str),  # For serialization
@@ -307,13 +479,18 @@ class GuitarTerminologyEvaluator:
                 'enabled': self.llm_enabled,
                 'cache_hits': len(self.evaluation_cache)
             },
+            'dictionary_configuration': {
+                'dictionary_available': self.dictionary is not None,
+                'enchant_available': ENCHANT_AVAILABLE,
+                'filtering_method': 'dictionary_based' if self.dictionary else 'fallback_common_words'
+            },
             'library_statistics': library_stats,
             'punctuation_handling': 'enabled',
-            'confidence_filtering': 'enabled',  # New: only evaluate low-confidence words
-            'strict_llm_parsing': 'enabled',   # New: strict YES/NO parsing
-            'common_word_blacklist': 'enabled',  # New: filter out common words
+            'confidence_filtering': 'enabled',  # Only evaluate low-confidence words
+            'strict_llm_parsing': 'enabled',   # Strict YES/NO parsing
+            'dictionary_filtering': 'enabled',  # New: Dictionary-based common word filtering
             'docker_networking': 'configured',
-            'note': f'Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common words are blacklisted. Guitar terms are boosted to 100%, others keep original confidence. Enhanced with strict LLM response parsing and common word filtering.'
+            'note': f'Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common English dictionary words and contractions are automatically filtered out using intelligent pattern detection. Musical terms with special characters (-, _, #, +) are preserved throughout the evaluation process. Guitar terms are boosted to 100%, others keep original confidence. LLM receives original words with all special characters intact.'
         }
         
         return updated_json
@@ -394,7 +571,7 @@ def enhance_guitar_terminology(transcription_result: Dict[str, Any],
         
     Returns:
         Enhanced transcription result with boosted guitar term confidence.
-        Only low-confidence words are evaluated. Common words are blacklisted to prevent false positives.
+        Only low-confidence words are evaluated. Common English dictionary words are automatically filtered out to prevent false positives.
     """
     try:
         evaluator = GuitarTerminologyEvaluator(

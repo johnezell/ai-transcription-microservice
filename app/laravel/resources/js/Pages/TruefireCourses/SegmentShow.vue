@@ -31,6 +31,7 @@ const overallConfidence = ref(null);
 const processingTerminology = ref(false);
 const showSynchronizedTranscript = ref(false); // Hidden by default
 const showDetailedQualityMetrics = ref(false); // Hidden by default
+const showGuitarEnhancementDetails = ref(false); // Hidden by default
 
 // Simple restart options
 const showRestartConfirm = ref(false);
@@ -810,17 +811,27 @@ function forceComponentRefresh() {
                                             </svg>
                                             Guitar Term Enhancement
                                         </h3>
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex items-center gap-3">
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                                 <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                                 </svg>
                                                 {{ guitarEnhancementAnalysis.guitarTermsFound }} terms enhanced
                                             </span>
+                                            <button 
+                                                @click="showGuitarEnhancementDetails = !showGuitarEnhancementDetails" 
+                                                class="flex items-center text-sm px-3 py-1 rounded-md transition"
+                                                :class="showGuitarEnhancementDetails ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                                            >
+                                                <svg class="w-4 h-4 mr-1 transition-transform" :class="{'rotate-180': showGuitarEnhancementDetails}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                                {{ showGuitarEnhancementDetails ? 'Hide Details' : 'Show Details' }}
+                                            </button>
                                         </div>
                                     </div>
                                     
-                                    <!-- Enhancement Summary Cards -->
+                                    <!-- Enhancement Summary Cards (Always Visible) -->
                                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                                         <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
                                             <div class="flex items-center justify-between">
@@ -841,12 +852,12 @@ function forceComponentRefresh() {
                                             <div class="flex items-center justify-between">
                                                 <div>
                                                     <div class="text-2xl font-bold text-orange-800">{{ (guitarEnhancementAnalysis.originalAverageConfidence * 100).toFixed(1) }}%</div>
-                                                    <div class="text-orange-600 text-sm font-medium">Original Confidence</div>
-                                                    <div class="text-orange-500 text-xs">Before Enhancement</div>
+                                                    <div class="text-orange-600 text-sm font-medium">Before Enhancement</div>
+                                                    <div class="text-orange-500 text-xs">Original Guitar Term Confidence</div>
                                                 </div>
                                                 <div class="p-2 bg-orange-100 rounded-full">
                                                     <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"></path>
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                                     </svg>
                                                 </div>
                                             </div>
@@ -855,13 +866,13 @@ function forceComponentRefresh() {
                                         <div class="bg-green-50 rounded-lg p-4 border border-green-200">
                                             <div class="flex items-center justify-between">
                                                 <div>
-                                                    <div class="text-2xl font-bold text-green-800">{{ (guitarEnhancementAnalysis.enhancedAverageConfidence * 100).toFixed(1) }}%</div>
-                                                    <div class="text-green-600 text-sm font-medium">Enhanced Confidence</div>
-                                                    <div class="text-green-500 text-xs">After Enhancement</div>
+                                                    <div class="text-2xl font-bold text-green-800">{{ (guitarEnhancementAnalysis.enhancedAverageConfidence * 100).toFixed(0) }}%</div>
+                                                    <div class="text-green-600 text-sm font-medium">After Enhancement</div>
+                                                    <div class="text-green-500 text-xs">Boosted to Maximum Confidence</div>
                                                 </div>
                                                 <div class="p-2 bg-green-100 rounded-full">
                                                     <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                                     </svg>
                                                 </div>
                                             </div>
@@ -870,9 +881,9 @@ function forceComponentRefresh() {
                                         <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
                                             <div class="flex items-center justify-between">
                                                 <div>
-                                                    <div class="text-2xl font-bold text-blue-800">+{{ guitarEnhancementAnalysis.improvementPercentage.toFixed(1) }}%</div>
-                                                    <div class="text-blue-600 text-sm font-medium">Improvement</div>
-                                                    <div class="text-blue-500 text-xs">Confidence Boost</div>
+                                                    <div class="text-2xl font-bold text-blue-800">+{{ Math.abs(guitarEnhancementAnalysis.improvementPercentage).toFixed(1) }}%</div>
+                                                    <div class="text-blue-600 text-sm font-medium">Average Improvement</div>
+                                                    <div class="text-blue-500 text-xs">Per Guitar Term</div>
                                                 </div>
                                                 <div class="p-2 bg-blue-100 rounded-full">
                                                     <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -883,8 +894,10 @@ function forceComponentRefresh() {
                                         </div>
                                     </div>
                                     
-                                    <!-- Enhanced Terms List -->
-                                    <div v-if="guitarEnhancementAnalysis.enhancedTerms.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                    <!-- Toggleable: Detailed Guitar Enhancement Information -->
+                                    <div v-if="showGuitarEnhancementDetails" class="space-y-6">
+                                        <!-- Enhanced Terms List -->
+                                        <div v-if="guitarEnhancementAnalysis.enhancedTerms.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
                                         <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
                                             <h4 class="font-medium flex items-center">
                                                 <svg class="w-4 h-4 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -976,6 +989,8 @@ function forceComponentRefresh() {
                                                 </div>
                                             </div>
                                         </div>
+                                    </div>
+                                    <!-- End Toggleable: Detailed Guitar Enhancement Information -->
                                     </div>
                                 </div>
                                 

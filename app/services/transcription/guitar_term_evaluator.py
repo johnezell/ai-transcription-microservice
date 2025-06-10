@@ -1,6 +1,6 @@
 import json
 import requests
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import logging
 import re
@@ -24,8 +24,18 @@ class WordSegment:
     confidence: float
     original_confidence: float = None
 
+@dataclass
+class MusicalCountingPattern:
+    """Represents a detected musical counting pattern"""
+    pattern_type: str
+    words: List[str]
+    start_index: int
+    end_index: int
+    confidence_boost: float
+    description: str
+
 class GuitarTerminologyEvaluator:
-    """Service to evaluate and boost confidence for guitar instruction terms"""
+    """Service to evaluate and boost confidence for guitar instruction terms and musical counting patterns"""
     
     def __init__(self, 
                  llm_endpoint: str = None,
@@ -35,7 +45,7 @@ class GuitarTerminologyEvaluator:
         
         # Use environment variables with fallbacks for Docker container networking
         self.llm_endpoint = llm_endpoint or os.getenv('LLM_ENDPOINT', 'http://host.docker.internal:11434/api/generate')
-        self.model_name = model_name or os.getenv('LLM_MODEL', 'llama2')
+        self.model_name = model_name or os.getenv('LLM_MODEL', 'llama3:latest')
         self.llm_enabled = os.getenv('LLM_ENABLED', 'true').lower() == 'true'
         
         self.confidence_threshold = confidence_threshold
@@ -289,10 +299,21 @@ class GuitarTerminologyEvaluator:
         end = word_data.get('end', 0)
         confidence = word_data.get('score', word_data.get('confidence', 0))
         
-        return WordSegment(word=word, start=start, end=end, confidence=confidence)
+        # Check if original_confidence already exists from previous processing
+        # If so, preserve it; otherwise, use current confidence
+        original_confidence = word_data.get('original_confidence', confidence)
+        
+        segment = WordSegment(word=word, start=start, end=end, confidence=confidence)
+        segment.original_confidence = original_confidence
+        
+        return segment
 
-    def query_local_llm(self, word: str, context: str = "") -> bool:
-        """Query local LLM to determine if word is guitar instruction terminology"""
+    def query_local_llm(self, word: str, context: str = "") -> Tuple[bool, bool]:
+        """Query local LLM to determine if word is guitar instruction terminology
+        
+        Returns:
+            tuple[bool, bool]: (is_guitar_term, llm_was_used)
+        """
         # Use conservative cache key that preserves musical characters
         cache_key = self._normalize_for_cache(word)
         # Use regular normalization for library lookups (removes some punctuation)
@@ -300,7 +321,7 @@ class GuitarTerminologyEvaluator:
         
         if cache_key in self.evaluation_cache:
             logger.debug(f"Cache hit for '{word}' (cache_key: '{cache_key}')")
-            return self.evaluation_cache[cache_key]
+            return self.evaluation_cache[cache_key], False  # Cache hit, no LLM used
         
         # STEP 1: Check comprehensive guitar library first (confirmed guitar terms)
         if self.guitar_library:
@@ -308,19 +329,19 @@ class GuitarTerminologyEvaluator:
             if is_guitar_term:
                 logger.debug(f"Guitar library confirmed '{word}' (normalized: '{normalized_word}') as guitar term")
                 self.evaluation_cache[cache_key] = True
-                return True
+                return True, False  # Library found it, no LLM used
         
         # STEP 2: Check basic fallback guitar terms
         if normalized_word in self.basic_guitar_terms:
             logger.debug(f"Basic fallback confirmed '{word}' (normalized: '{normalized_word}') as guitar term")
             self.evaluation_cache[cache_key] = True
-            return True
+            return True, False  # Library found it, no LLM used
         
         # STEP 3: Check if it's a common English dictionary word - if yes, don't enhance
         if self._is_common_english_word(word):
             logger.debug(f"Dictionary word '{word}' (cache_key: '{cache_key}') - will not enhance common English word")
             self.evaluation_cache[cache_key] = False
-            return False
+            return False, False  # Dictionary word, no LLM used
         
         # STEP 4: Only query LLM for non-dictionary words that might be specialized guitar terms
         if self.llm_enabled:
@@ -373,19 +394,21 @@ class GuitarTerminologyEvaluator:
                     
                     logger.debug(f"LLM evaluation for original word '{word}': response='{llm_response}', result={is_guitar_term}")
                     self.evaluation_cache[cache_key] = is_guitar_term
-                    return is_guitar_term
+                    return is_guitar_term, True  # LLM was used successfully
                 else:
                     logger.warning(f"LLM request failed with status {response.status_code} for word '{word}' - falling back to library-only mode")
+                    return False, True  # LLM was attempted but failed
                 
             except Exception as e:
                 logger.debug(f"LLM query failed for '{word}': {e} - using library-only evaluation")
+                return False, True  # LLM was attempted but failed
         else:
             logger.debug(f"LLM disabled - using library-only evaluation for '{word}'")
         
         # Final fallback: conservative approach - don't boost unknown terms
         logger.debug(f"Term '{word}' not found in guitar libraries and LLM unavailable/failed, marking as non-guitar term")
         self.evaluation_cache[cache_key] = False
-        return False
+        return False, False  # No LLM used, library only
 
     def get_context_window(self, segments: List[WordSegment], index: int, window_size: int = 3) -> str:
         """Get surrounding words for context"""
@@ -396,23 +419,45 @@ class GuitarTerminologyEvaluator:
 
     def evaluate_and_boost(self, transcription_json: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Main method: evaluate guitar terms and set their confidence to 100%
+        Main method: evaluate guitar terms and musical counting patterns, set their confidence to 100%
         """
-        logger.info("Starting guitar terminology evaluation...")
+        logger.info("Starting guitar terminology and musical counting pattern evaluation...")
         segments = self.extract_words_from_json(transcription_json)
         logger.info(f"Found {len(segments)} word segments for evaluation")
         
+        # STEP 1: Detect musical counting patterns first
+        logger.info("Detecting musical counting patterns...")
+        musical_patterns = self._detect_musical_counting_patterns(segments)
+        logger.info(f"Found {len(musical_patterns)} musical counting patterns")
+        
+        # Apply musical counting pattern boosts
+        counting_boosted_count = self._apply_counting_pattern_boosts(segments, musical_patterns)
+        
+        # STEP 2: Individual guitar term evaluation (for non-pattern words)
+        logger.info("Starting individual guitar term evaluation...")
         boosted_count = 0
         unchanged_count = 0
         dictionary_filtered_count = 0
         evaluated_terms = []
+        llm_queries_made = 0
+        llm_successful_responses = 0
+        
+        # Track which words were already boosted by counting patterns
+        pattern_boosted_indices = set()
+        for pattern in musical_patterns:
+            for i in range(pattern.start_index, pattern.end_index + 1):
+                pattern_boosted_indices.add(i)
         
         for i, segment in enumerate(segments):
             if not segment.word or len(segment.word.strip()) < 2:
                 continue
             
-            # Always preserve original confidence
-            segment.original_confidence = segment.confidence
+            # Skip words that were already boosted by musical counting patterns
+            if i in pattern_boosted_indices:
+                logger.debug(f"Skipped '{segment.word}': already boosted by musical counting pattern")
+                continue
+            
+            # Original confidence is now preserved in _create_word_segment
             
             # Only evaluate words with confidence below threshold (performance optimization)
             if segment.confidence >= self.confidence_threshold:
@@ -423,7 +468,15 @@ class GuitarTerminologyEvaluator:
             # Evaluate low-confidence words to see if they're guitar terms
             context = self.get_context_window(segments, i)
             
-            if self.query_local_llm(segment.word, context):
+            is_guitar_term, llm_was_used = self.query_local_llm(segment.word, context)
+            
+            # Track LLM usage statistics
+            if llm_was_used:
+                llm_queries_made += 1
+                if is_guitar_term:
+                    llm_successful_responses += 1
+            
+            if is_guitar_term:
                 # ONLY guitar terms get boosted to 100% confidence
                 segment.confidence = self.target_confidence
                 boosted_count += 1
@@ -433,7 +486,8 @@ class GuitarTerminologyEvaluator:
                     'original_confidence': segment.original_confidence,
                     'new_confidence': segment.confidence,
                     'start': segment.start,
-                    'end': segment.end
+                    'end': segment.end,
+                    'boost_reason': 'guitar_terminology'
                 })
                 logger.debug(f"Boosted guitar term '{segment.word}': {segment.original_confidence:.3f} -> {segment.confidence:.3f}")
             else:
@@ -446,10 +500,30 @@ class GuitarTerminologyEvaluator:
                 else:
                     logger.debug(f"Left unchanged '{segment.word}': {segment.original_confidence:.3f} (not a guitar term)")
         
-        logger.info(f"Enhanced confidence for {boosted_count} guitar terms, left {unchanged_count} non-guitar terms unchanged ({dictionary_filtered_count} were dictionary words)")
+        # Add counting pattern terms to evaluated_terms for reporting
+        for pattern in musical_patterns:
+            for i in range(pattern.start_index, pattern.end_index + 1):
+                if i < len(segments):
+                    segment = segments[i]
+                    evaluated_terms.append({
+                        'word': segment.word,
+                        'normalized_word': self._normalize_word(segment.word),
+                        'original_confidence': segment.original_confidence,
+                        'new_confidence': segment.confidence,
+                        'start': segment.start,
+                        'end': segment.end,
+                        'boost_reason': 'musical_counting_pattern',
+                        'pattern_type': pattern.pattern_type,
+                        'pattern_description': pattern.description
+                    })
+        
+        total_boosted = boosted_count + counting_boosted_count
+        logger.info(f"Enhanced confidence for {total_boosted} terms total: "
+                   f"{boosted_count} guitar terms + {counting_boosted_count} musical counting words, "
+                   f"left {unchanged_count} non-musical terms unchanged ({dictionary_filtered_count} were dictionary words)")
         
         # Update the original JSON structure with enhanced confidence scores
-        updated_json = self._update_json_with_new_confidence(transcription_json, segments)
+        updated_json = self._update_json_with_new_confidence(transcription_json, segments, evaluated_terms)
         
         # Get library statistics
         library_stats = {}
@@ -462,17 +536,49 @@ class GuitarTerminologyEvaluator:
                 'library_type': 'basic_fallback'
             }
         
-        # Add evaluation metadata
+        # Determine what AI model was actually used
+        if llm_queries_made > 0:
+            llm_used = f"{self.model_name} + Library"
+        elif self.llm_enabled:
+            llm_used = "Library Only (no unknown terms)"
+        else:
+            llm_used = "Library Only (LLM disabled)"
+
+        # Add evaluation metadata with musical counting pattern information
         updated_json['guitar_term_evaluation'] = {
-            'evaluator_version': '3.2',  # Update: Conservative normalization preserves musical special characters
+            'evaluator_version': '3.3',  # Update: Added musical counting pattern detection
             'total_words_evaluated': len(segments),
             'musical_terms_found': boosted_count,
+            'musical_counting_words_found': counting_boosted_count,
+            'total_enhanced_words': total_boosted,
             'non_musical_terms_unchanged': unchanged_count,
             'dictionary_words_filtered': dictionary_filtered_count,
             'confidence_threshold': self.confidence_threshold,
             'target_confidence': self.target_confidence,
             'evaluation_timestamp': json.dumps(evaluated_terms, default=str),  # For serialization
             'enhanced_terms': evaluated_terms,
+            'musical_counting_patterns': [
+                {
+                    'pattern_type': pattern.pattern_type,
+                    'words': pattern.words,
+                    'description': pattern.description,
+                    'start_index': pattern.start_index,
+                    'end_index': pattern.end_index,
+                    'confidence_boost': pattern.confidence_boost
+                }
+                for pattern in musical_patterns
+            ],
+            'pattern_statistics': {
+                'total_patterns_found': len(musical_patterns),
+                'pattern_types': list(set(pattern.pattern_type for pattern in musical_patterns)),
+                'words_boosted_by_patterns': counting_boosted_count
+            },
+            'llm_used': llm_used,  # This is what the frontend displays
+            'llm_statistics': {
+                'queries_made': llm_queries_made,
+                'successful_responses': llm_successful_responses,
+                'cache_hits': len(self.evaluation_cache)
+            },
             'llm_configuration': {
                 'endpoint': self.llm_endpoint,
                 'model': self.model_name,
@@ -488,15 +594,17 @@ class GuitarTerminologyEvaluator:
             'punctuation_handling': 'enabled',
             'confidence_filtering': 'enabled',  # Only evaluate low-confidence words
             'strict_llm_parsing': 'enabled',   # Strict YES/NO parsing
-            'dictionary_filtering': 'enabled',  # New: Dictionary-based common word filtering
+            'dictionary_filtering': 'enabled',  # Dictionary-based common word filtering
+            'musical_counting_detection': 'enabled',  # NEW: Musical counting pattern detection
             'docker_networking': 'configured',
-            'note': f'Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common English dictionary words and contractions are automatically filtered out using intelligent pattern detection. Musical terms with special characters (-, _, #, +) are preserved throughout the evaluation process. Guitar terms are boosted to 100%, others keep original confidence. LLM receives original words with all special characters intact.'
+            'note': f'Enhanced {total_boosted} total words: {boosted_count} guitar terms + {counting_boosted_count} musical counting words from {len(musical_patterns)} detected patterns. Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common English dictionary words are automatically filtered out. Musical counting patterns like "1, 2, 3, 4, 5" are detected and boosted to 100% confidence. Guitar terms with special characters (-, _, #, +) are preserved. LLM made {llm_queries_made} queries with {llm_successful_responses} successful guitar term identifications.'
         }
         
         return updated_json
 
     def _update_json_with_new_confidence(self, original_json: Dict[str, Any], 
-                                       segments: List[WordSegment]) -> Dict[str, Any]:
+                                       segments: List[WordSegment], 
+                                       evaluated_terms: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Update original JSON with new confidence scores, preserving structure"""
         updated_json = json.loads(json.dumps(original_json))  # Deep copy
         
@@ -520,7 +628,19 @@ class GuitarTerminologyEvaluator:
                     # Add metadata if boosted
                     if seg.original_confidence != seg.confidence:
                         word_data['guitar_term_boosted'] = True
-                        word_data['boost_reason'] = 'musical_terminology'
+                        # Determine boost reason from evaluated_terms if available
+                        boost_reason = 'musical_terminology'  # default
+                        for term in evaluated_terms:
+                            if (term.get('word') == seg.word and 
+                                term.get('start') == seg.start and 
+                                term.get('end') == seg.end):
+                                boost_reason = term.get('boost_reason', 'musical_terminology')
+                                if boost_reason == 'musical_counting_pattern':
+                                    word_data['musical_counting_pattern'] = True
+                                    word_data['pattern_type'] = term.get('pattern_type', 'unknown')
+                                    word_data['pattern_description'] = term.get('pattern_description', '')
+                                break
+                        word_data['boost_reason'] = boost_reason
                         word_data['normalized_form'] = self._normalize_word(seg.word)
                     
                     segment_idx += 1
@@ -546,12 +666,561 @@ class GuitarTerminologyEvaluator:
                             # Add metadata if boosted
                             if seg.original_confidence != seg.confidence:
                                 word_data['guitar_term_boosted'] = True
-                                word_data['boost_reason'] = 'musical_terminology'
+                                # Determine boost reason from evaluated_terms if available
+                                boost_reason = 'musical_terminology'  # default
+                                for term in evaluated_terms:
+                                    if (term.get('word') == seg.word and 
+                                        term.get('start') == seg.start and 
+                                        term.get('end') == seg.end):
+                                        boost_reason = term.get('boost_reason', 'musical_terminology')
+                                        if boost_reason == 'musical_counting_pattern':
+                                            word_data['musical_counting_pattern'] = True
+                                            word_data['pattern_type'] = term.get('pattern_type', 'unknown')
+                                            word_data['pattern_description'] = term.get('pattern_description', '')
+                                        break
+                                word_data['boost_reason'] = boost_reason
                                 word_data['normalized_form'] = self._normalize_word(seg.word)
                             
                             segment_idx += 1
         
         return updated_json
+
+    def _is_number_word(self, word: str) -> bool:
+        """Check if a word represents a number (digit or word form)"""
+        if not word:
+            return False
+        
+        word_clean = word.strip().lower()
+        
+        # Check if it's a digit
+        if word_clean.isdigit():
+            return True
+        
+        # Check if it's a number word
+        number_words = {
+            "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+            "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", 
+            "seventeen", "eighteen", "nineteen", "twenty"
+        }
+        
+        return word_clean in number_words
+
+    def _word_to_number(self, word: str) -> Optional[int]:
+        """Convert word to its numeric value"""
+        if not word:
+            return None
+        
+        word_clean = word.strip().lower()
+        
+        # Handle digits
+        if word_clean.isdigit():
+            return int(word_clean)
+        
+        # Handle number words
+        number_mapping = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+            "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+            "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20
+        }
+        
+        return number_mapping.get(word_clean)
+
+    def _detect_musical_counting_patterns(self, segments: List[WordSegment]) -> List[MusicalCountingPattern]:
+        """Detect musical counting patterns in the word segments"""
+        patterns = []
+        
+        for i in range(len(segments)):
+            # Look for sequential counting patterns starting from this position
+            pattern = self._check_sequential_pattern(segments, i)
+            if pattern:
+                patterns.append(pattern)
+            
+            # Look for other musical instruction patterns
+            musical_pattern = self._check_musical_instruction_patterns(segments, i)
+            if musical_pattern:
+                patterns.append(musical_pattern)
+        
+        return patterns
+
+    def _check_sequential_pattern(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Check for sequential counting pattern starting at given index"""
+        if start_index >= len(segments):
+            return None
+        
+        # Must start with a number
+        first_word = segments[start_index].word
+        if not self._is_number_word(first_word):
+            return None
+        
+        first_num = self._word_to_number(first_word)
+        if first_num is None:
+            return None
+        
+        # Look for consecutive numbers
+        sequence = [first_word]
+        current_index = start_index
+        expected_next = first_num + 1
+        
+        # Look ahead for continuation of the sequence
+        for j in range(start_index + 1, min(start_index + 10, len(segments))):  # Look up to 10 words ahead
+            current_word = segments[j].word
+            
+            # Skip common filler words between numbers
+            if current_word.lower() in {"and", "then", "now", "ok", "okay", "so", "well", "uh", "um"}:
+                continue
+            
+            # Check if this is the next number in sequence
+            if self._is_number_word(current_word):
+                current_num = self._word_to_number(current_word)
+                if current_num == expected_next:
+                    sequence.append(current_word)
+                    current_index = j
+                    expected_next += 1
+                    continue
+                elif current_num is not None and current_num > expected_next:
+                    # Skip in sequence, still musical (like 1, 3, 5)
+                    sequence.append(current_word)
+                    current_index = j
+                    expected_next = current_num + 1
+                    continue
+            
+            # If we hit a non-number that's not a filler, stop looking
+            break
+        
+        # Determine if this is a musical counting pattern
+        if len(sequence) >= 3:  # At least 3 numbers in sequence
+            # Common musical patterns
+            if len(sequence) >= 4 and first_num == 1:
+                return MusicalCountingPattern(
+                    pattern_type="musical_count_in",
+                    words=sequence,
+                    start_index=start_index,
+                    end_index=current_index,
+                    confidence_boost=1.0,  # Boost to 100%
+                    description=f"Musical count-in pattern: {', '.join(sequence)}"
+                )
+            elif len(sequence) >= 3:
+                return MusicalCountingPattern(
+                    pattern_type="sequential_counting",
+                    words=sequence,
+                    start_index=start_index,
+                    end_index=current_index,
+                    confidence_boost=1.0,  # Boost to 100%
+                    description=f"Sequential counting pattern: {', '.join(sequence)}"
+                )
+        
+        # Check for common musical timing patterns
+        if len(sequence) == 4 and first_num == 1:
+            # "1, 2, 3, 4" is a very common musical count-in
+            return MusicalCountingPattern(
+                pattern_type="four_count",
+                words=sequence,
+                start_index=start_index,
+                end_index=current_index,
+                confidence_boost=1.0,
+                description="Four-count musical timing pattern"
+            )
+        
+        # Check for specific musical patterns even with 2 numbers
+        if len(sequence) == 2:
+            if first_num == 1 and self._word_to_number(sequence[1]) == 2:
+                # Check if followed by musical context
+                context = self._get_context_after_pattern(segments, current_index)
+                if any(word in context.lower() for word in ["and", "a", "ready", "go", "play", "start", "begin"]):
+                    return MusicalCountingPattern(
+                        pattern_type="count_start",
+                        words=sequence,
+                        start_index=start_index,
+                        end_index=current_index,
+                        confidence_boost=1.0,
+                        description="Musical count start pattern"
+                    )
+        
+        return None
+
+    def _get_context_after_pattern(self, segments: List[WordSegment], end_index: int, window_size: int = 5) -> str:
+        """Get context words after a counting pattern"""
+        start_idx = end_index + 1
+        end_idx = min(len(segments), start_idx + window_size)
+        context_words = [seg.word for seg in segments[start_idx:end_idx]]
+        return " ".join(context_words)
+
+    def _apply_counting_pattern_boosts(self, segments: List[WordSegment], patterns: List[MusicalCountingPattern]) -> int:
+        """Apply confidence boosts to detected musical counting patterns"""
+        boosted_count = 0
+        
+        for pattern in patterns:
+            logger.info(f"Applying musical counting pattern boost: {pattern.description}")
+            
+            # Boost confidence for all words in the pattern
+            for i in range(pattern.start_index, pattern.end_index + 1):
+                if i < len(segments):
+                    segment = segments[i]
+                    
+                    # Only boost if current confidence is below threshold
+                    if segment.confidence < self.confidence_threshold:
+                        # Store original confidence if not already stored
+                        if segment.original_confidence is None:
+                            segment.original_confidence = segment.confidence
+                        
+                        # Apply boost
+                        segment.confidence = pattern.confidence_boost
+                        boosted_count += 1
+                        
+                        logger.debug(f"Boosted musical counting word '{segment.word}': "
+                                   f"{segment.original_confidence:.3f} -> {segment.confidence:.3f} "
+                                   f"(pattern: {pattern.pattern_type})")
+        
+        return boosted_count
+
+    def _check_musical_instruction_patterns(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Check for various musical instruction patterns beyond counting"""
+        if start_index >= len(segments):
+            return None
+        
+        # Check for rhythm vocalization patterns
+        rhythm_pattern = self._check_rhythm_vocalization_pattern(segments, start_index)
+        if rhythm_pattern:
+            return rhythm_pattern
+        
+        # Check for strumming pattern descriptions
+        strumming_pattern = self._check_strumming_pattern(segments, start_index)
+        if strumming_pattern:
+            return strumming_pattern
+        
+        # Check for note/chord sequences
+        note_sequence_pattern = self._check_note_sequence_pattern(segments, start_index)
+        if note_sequence_pattern:
+            return note_sequence_pattern
+        
+        # Check for fingerpicking patterns
+        fingerpicking_pattern = self._check_fingerpicking_pattern(segments, start_index)
+        if fingerpicking_pattern:
+            return fingerpicking_pattern
+        
+        # Check for timing/metronome patterns
+        timing_pattern = self._check_timing_pattern(segments, start_index)
+        if timing_pattern:
+            return timing_pattern
+        
+        # Check for guitar effect sound patterns
+        effect_pattern = self._check_effect_sound_pattern(segments, start_index)
+        if effect_pattern:
+            return effect_pattern
+        
+        return None
+
+    def _check_rhythm_vocalization_pattern(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect rhythm vocalization patterns like 'da-da-da-dum' or 'boom-chick-boom-chick'"""
+        if start_index >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word.lower()
+        
+        # Common rhythm syllables
+        rhythm_syllables = {
+            'da', 'dum', 'ta', 'ka', 'boom', 'chick', 'tick', 'tock', 
+            'doo', 'dah', 'bah', 'pah', 'tsk', 'tik', 'tak', 'tuk'
+        }
+        
+        # Check if first word is a rhythm syllable
+        clean_first = first_word.strip('-').lower()
+        if clean_first not in rhythm_syllables:
+            return None
+        
+        # Look for repetitive rhythm pattern
+        sequence = [first_word]
+        current_index = start_index
+        
+        for j in range(start_index + 1, min(start_index + 8, len(segments))):
+            current_word = segments[j].word.lower()
+            clean_word = current_word.strip('-').lower()
+            
+            # Continue if it's a rhythm syllable
+            if clean_word in rhythm_syllables:
+                sequence.append(segments[j].word)
+                current_index = j
+                continue
+            # Allow short connector words
+            elif current_word in {'and', 'a'}:
+                continue
+            else:
+                break
+        
+        # Need at least 3 rhythm syllables for a pattern
+        if len(sequence) >= 3:
+            return MusicalCountingPattern(
+                pattern_type="rhythm_vocalization",
+                words=sequence,
+                start_index=start_index,
+                end_index=current_index,
+                confidence_boost=1.0,
+                description=f"Rhythm vocalization pattern: {'-'.join(sequence)}"
+            )
+        
+        return None
+
+    def _check_strumming_pattern(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect strumming pattern descriptions like 'down-up-down-up'"""
+        if start_index >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word.lower()
+        
+        # Strumming direction terms
+        strumming_terms = {
+            'down', 'up', 'strum', 'pick', 'hit', 'miss', 'rest', 'mute',
+            'downstroke', 'upstroke', 'stroke', 'pluck', 'attack'
+        }
+        
+        if first_word not in strumming_terms:
+            return None
+        
+        # Look for repetitive strumming pattern
+        sequence = [first_word]
+        current_index = start_index
+        
+        for j in range(start_index + 1, min(start_index + 8, len(segments))):
+            current_word = segments[j].word.lower()
+            
+            if current_word in strumming_terms:
+                sequence.append(segments[j].word)
+                current_index = j
+                continue
+            elif current_word in {'and', 'then'}:
+                continue
+            else:
+                break
+        
+        # Need at least 3 strumming terms for a pattern
+        if len(sequence) >= 3:
+            return MusicalCountingPattern(
+                pattern_type="strumming_pattern",
+                words=sequence,
+                start_index=start_index,
+                end_index=current_index,
+                confidence_boost=1.0,
+                description=f"Strumming pattern: {'-'.join(sequence)}"
+            )
+        
+        return None
+
+    def _check_note_sequence_pattern(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect note/chord sequences like 'C-G-Am-F' or 'E-A-D-G-B-E'"""
+        if start_index >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word
+        
+        # Check if it's a note or chord name
+        if not self._is_note_or_chord_name(first_word):
+            return None
+        
+        # Look for sequence of notes/chords
+        sequence = [first_word]
+        current_index = start_index
+        
+        for j in range(start_index + 1, min(start_index + 8, len(segments))):
+            current_word = segments[j].word
+            
+            if self._is_note_or_chord_name(current_word):
+                sequence.append(current_word)
+                current_index = j
+                continue
+            elif current_word.lower() in {'to', 'and', 'then'}:
+                continue
+            else:
+                break
+        
+        # Need at least 3 notes/chords for a sequence
+        if len(sequence) >= 3:
+            return MusicalCountingPattern(
+                pattern_type="note_sequence",
+                words=sequence,
+                start_index=start_index,
+                end_index=current_index,
+                confidence_boost=1.0,
+                description=f"Note/chord sequence: {'-'.join(sequence)}"
+            )
+        
+        return None
+
+    def _is_note_or_chord_name(self, word: str) -> bool:
+        """Check if a word is a note or chord name"""
+        if not word:
+            return False
+        
+        word_clean = word.strip().upper()
+        
+        # Basic note names
+        basic_notes = {'A', 'B', 'C', 'D', 'E', 'F', 'G'}
+        
+        # Check for single note
+        if word_clean in basic_notes:
+            return True
+        
+        # Check for note with accidental (A#, Bb, C#, etc.)
+        if len(word_clean) == 2 and word_clean[0] in basic_notes and word_clean[1] in {'#', 'B', '♯', '♭'}:
+            return True
+        
+        # Common chord suffixes
+        chord_patterns = [
+            'M', 'MIN', 'MAJ', 'DIM', 'AUG', 'SUS', 'ADD',
+            '7', '9', '11', '13', 'M7', 'MAJ7', 'MIN7', 'DIM7'
+        ]
+        
+        # Check for chord names (C, Cm, CM7, Am, etc.)
+        for note in basic_notes:
+            for pattern in ['', 'M', 'm'] + chord_patterns:
+                if word_clean == note + pattern:
+                    return True
+            
+            # With accidentals
+            for accidental in ['#', 'b', '♯', '♭']:
+                for pattern in ['', 'M', 'm'] + chord_patterns:
+                    if word_clean == note + accidental + pattern:
+                        return True
+        
+        # Solfege syllables
+        solfege = {'DO', 'RE', 'MI', 'FA', 'SOL', 'LA', 'TI', 'SI'}
+        if word_clean in solfege:
+            return True
+        
+        return False
+
+    def _check_fingerpicking_pattern(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect fingerpicking patterns like 'thumb-index-middle-ring' or 'T-I-M-R'"""
+        if start_index >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word.lower()
+        
+        # Fingerpicking terms
+        finger_terms = {
+            'thumb', 'index', 'middle', 'ring', 'pinky',
+            't', 'i', 'm', 'r', 'p', 'a',  # Classical notation
+            'pick', 'rest', 'pluck', 'strike'
+        }
+        
+        if first_word not in finger_terms:
+            return None
+        
+        # Look for fingerpicking sequence
+        sequence = [first_word]
+        current_index = start_index
+        
+        for j in range(start_index + 1, min(start_index + 6, len(segments))):
+            current_word = segments[j].word.lower()
+            
+            if current_word in finger_terms:
+                sequence.append(segments[j].word)
+                current_index = j
+                continue
+            elif current_word in {'and', 'then'}:
+                continue
+            else:
+                break
+        
+        # Need at least 3 finger terms for a pattern
+        if len(sequence) >= 3:
+            return MusicalCountingPattern(
+                pattern_type="fingerpicking_pattern",
+                words=sequence,
+                start_index=start_index,
+                end_index=current_index,
+                confidence_boost=1.0,
+                description=f"Fingerpicking pattern: {'-'.join(sequence)}"
+            )
+        
+        return None
+
+    def _check_timing_pattern(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect timing/metronome patterns like 'tick-tick-tick-tick'"""
+        if start_index >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word.lower()
+        
+        # Timing/metronome sounds
+        timing_sounds = {
+            'tick', 'tock', 'click', 'beep', 'boop', 'pop',
+            'tap', 'clap', 'snap', 'beat'
+        }
+        
+        if first_word not in timing_sounds:
+            return None
+        
+        # Look for repetitive timing pattern
+        sequence = [first_word]
+        current_index = start_index
+        
+        for j in range(start_index + 1, min(start_index + 8, len(segments))):
+            current_word = segments[j].word.lower()
+            
+            if current_word in timing_sounds:
+                sequence.append(segments[j].word)
+                current_index = j
+                continue
+            else:
+                break
+        
+        # Need at least 3 timing sounds for a pattern
+        if len(sequence) >= 3:
+            return MusicalCountingPattern(
+                pattern_type="timing_pattern",
+                words=sequence,
+                start_index=start_index,
+                end_index=current_index,
+                confidence_boost=1.0,
+                description=f"Timing/metronome pattern: {'-'.join(sequence)}"
+            )
+        
+        return None
+
+    def _check_effect_sound_pattern(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect guitar effect sound patterns like 'wah-wah-wah'"""
+        if start_index >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word.lower()
+        
+        # Guitar effect sounds and onomatopoeia
+        effect_sounds = {
+            'wah', 'ring', 'buzz', 'twang', 'zing', 'ping',
+            'whoosh', 'screech', 'squeal', 'howl', 'whine',
+            'boom', 'crash', 'bang', 'thud', 'thump'
+        }
+        
+        if first_word not in effect_sounds:
+            return None
+        
+        # Look for repetitive effect pattern
+        sequence = [first_word]
+        current_index = start_index
+        
+        for j in range(start_index + 1, min(start_index + 6, len(segments))):
+            current_word = segments[j].word.lower()
+            
+            if current_word in effect_sounds:
+                sequence.append(segments[j].word)
+                current_index = j
+                continue
+            else:
+                break
+        
+        # Need at least 2 effect sounds for a pattern (effects often repeat)
+        if len(sequence) >= 2:
+            return MusicalCountingPattern(
+                pattern_type="effect_sound_pattern",
+                words=sequence,
+                start_index=start_index,
+                end_index=current_index,
+                confidence_boost=1.0,
+                description=f"Guitar effect sound pattern: {'-'.join(sequence)}"
+            )
+        
+        return None
 
 # Simple usage function for integration
 def enhance_guitar_terminology(transcription_result: Dict[str, Any], 

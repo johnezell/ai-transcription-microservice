@@ -24,11 +24,11 @@ use Illuminate\Support\Facades\Cache;
 */
 
 Route::get('/', function () {
-    return redirect()->route('videos.index');
+    return redirect()->route('truefire-courses.index');
 });
 
 Route::get('/dashboard', function () {
-    return redirect()->route('videos.index');
+    return redirect()->route('truefire-courses.index');
 })->name('dashboard');
 
 // Video management routes - no auth required

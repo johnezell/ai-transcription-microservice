@@ -353,6 +353,7 @@ export default {
       confidenceThreshold: 0.5, // Default confidence threshold at 50%
       fontSize: 18, // Default subtitle font size
       updateInterval: null,
+      highFrequencyInterval: null, // High-frequency timer for smooth word highlighting
       lastTime: 0,
       loadError: null,
       setupDone: false, // Flag to prevent multiple setups
@@ -433,6 +434,7 @@ export default {
   
   beforeUnmount() {
     this.cleanupVideoListeners();
+    this.stopHighFrequencyUpdates();
   },
   
   methods: {
@@ -445,16 +447,19 @@ export default {
       if (this.videoRef) {
         this.videoRef.addEventListener('play', () => {
           this.videoPlaying = true;
+          this.startHighFrequencyUpdates();
         });
         
         this.videoRef.addEventListener('pause', () => {
           this.videoPlaying = false;
+          this.stopHighFrequencyUpdates();
           // Update position immediately when paused to show current scrubhead position
           this.updateCurrentPosition();
         });
         
         this.videoRef.addEventListener('ended', () => {
           this.videoPlaying = false;
+          this.stopHighFrequencyUpdates();
           // Update position when ended
           this.updateCurrentPosition();
         });
@@ -476,11 +481,34 @@ export default {
     },
     
         cleanupVideoListeners() {
+      // Stop high-frequency updates
+      this.stopHighFrequencyUpdates();
+      
       // Note: Arrow function event listeners cannot be removed with removeEventListener
       // They will be cleaned up automatically when the component unmounts
       // This is acceptable as the media elements are tied to component lifecycle
       
       this.setupDone = false;
+    },
+    
+    startHighFrequencyUpdates() {
+      // Stop any existing high-frequency timer
+      this.stopHighFrequencyUpdates();
+      
+      // Start high-frequency position updates for smooth word highlighting
+      // Check every 16ms (60fps) for very smooth highlighting
+      this.highFrequencyInterval = setInterval(() => {
+        if (this.videoRef && !this.videoRef.paused && !this.videoRef.ended) {
+          this.updateActiveWords(this.videoRef.currentTime);
+        }
+      }, 16); // 60fps for ultra-smooth highlighting
+    },
+    
+    stopHighFrequencyUpdates() {
+      if (this.highFrequencyInterval) {
+        clearInterval(this.highFrequencyInterval);
+        this.highFrequencyInterval = null;
+      }
     },
     
         processTranscriptData(data = null) {
@@ -541,14 +569,7 @@ export default {
       
       const currentTime = mediaElement.currentTime;
       
-      // ONLY update word highlighting when media is actively playing
-      // This prevents automatic cycling when paused
-      if (mediaElement.paused || mediaElement.ended) {
-        // Clear active words when not playing
-        this.activeWordIndices = [];
-        return;
-      }
-      
+      // Find current segment (this happens regardless of play state)
       let newSegmentIndex = -1;
       
       // Find the current segment using direct video time (no offset needed)
@@ -588,8 +609,12 @@ export default {
         this.currentSegmentIndex = newSegmentIndex;
       }
       
-      // Now find active words within the current segment using direct video time
-      this.updateActiveWords(currentTime);
+      // Handle word highlighting based on play state
+      if (mediaElement.paused || mediaElement.ended) {
+        // Clear active words when not playing (or update once for current position)
+        this.updateActiveWords(currentTime);
+      }
+      // When playing, word highlighting is handled by high-frequency timer
     },
     
     updateActiveWords(currentTime) {

@@ -20,7 +20,7 @@ const showingNavigationDropdown = ref(false);
                         <div class="flex">
                             <!-- Logo -->
                             <div class="flex shrink-0 items-center">
-                                <Link :href="route('videos.index')">
+                                <Link :href="route('truefire-courses.index')">
                                     <ApplicationLogo
                                         class="block h-9 w-auto fill-current text-gray-800"
                                     />
@@ -32,28 +32,16 @@ const showingNavigationDropdown = ref(false);
                                 class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex"
                             >
                                 <NavLink
-                                    :href="route('videos.index')"
-                                    :active="route().current('videos.*')"
+                                    :href="route('truefire-courses.index')"
+                                    :active="route().current('truefire-courses.*')"
                                 >
-                                    Videos
-                                </NavLink>
-                                <NavLink
-                                    :href="route('courses.index')"
-                                    :active="route().current('courses.*')"
-                                >
-                                    Courses
+                                    TrueFire Courses
                                 </NavLink>
                                 <NavLink
                                     :href="route('jobs.index')"
                                     :active="route().current('jobs.*')"
                                 >
                                     Jobs
-                                </NavLink>
-                                <NavLink
-                                    :href="route('truefire-courses.index')"
-                                    :active="route().current('truefire-courses.*')"
-                                >
-                                    TrueFire Courses
                                 </NavLink>
                                 <NavLink
                                     :href="route('enhancement-ideas.index')"
@@ -123,28 +111,16 @@ const showingNavigationDropdown = ref(false);
                 >
                     <div class="space-y-1 pb-3 pt-2">
                         <ResponsiveNavLink
-                            :href="route('videos.index')"
-                            :active="route().current('videos.*')"
+                            :href="route('truefire-courses.index')"
+                            :active="route().current('truefire-courses.*')"
                         >
-                            Videos
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            :href="route('courses.index')"
-                            :active="route().current('courses.*')"
-                        >
-                            Courses
+                            TrueFire Courses
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
                             :href="route('jobs.index')"
                             :active="route().current('jobs.*')"
                         >
                             Jobs
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            :href="route('truefire-courses.index')"
-                            :active="route().current('truefire-courses.*')"
-                        >
-                            TrueFire Courses
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
                             :href="route('enhancement-ideas.index')"

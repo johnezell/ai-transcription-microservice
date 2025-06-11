@@ -238,7 +238,7 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                         $processing->startAudioExtraction();
                         
                         // Dispatch TrueFire-specific job for automatic transcription pipeline
-                        TruefireSegmentAudioExtractionJob::dispatch($processing);
+                        TruefireSegmentAudioExtractionJob::dispatch($processing)->onQueue('audio-extraction');
                         
                         Log::info('Dispatched TrueFire segment audio extraction job for transcription pipeline', [
                             'course_id' => $this->course->id,

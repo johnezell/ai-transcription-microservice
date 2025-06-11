@@ -202,75 +202,47 @@ class TruefireSegmentController extends Controller
     public function approveAudioExtraction($courseId, $segmentId, Request $request)
     {
         try {
-            $segment = LocalTruefireSegment::findOrFail($segmentId);
-            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
-            
-            if (!$processing) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No processing record found for this segment'
-                ], 400);
-            }
-            
-            // Validate that the segment is in the correct state for approval
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->firstOrFail();
+
             if ($processing->status !== 'audio_extracted') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Segment is not in audio_extracted status. Current status: ' . $processing->status
+                    'message' => 'Audio must be extracted before it can be approved for transcription. Current status: ' . $processing->status
                 ], 400);
             }
             
-            // Validate request data
-            $validated = $request->validate([
-                'approved_by' => 'required|string|max:255',
-                'notes' => 'nullable|string|max:1000'
-            ]);
-            
-            // Update the processing record with approval information
+            // Mark as approved (will be picked up by transcription process)
             $processing->update([
-                'audio_extraction_approved' => true,
-                'audio_extraction_approved_at' => now(),
-                'audio_extraction_approved_by' => $validated['approved_by'],
-                'audio_extraction_notes' => $validated['notes'] ?? null,
-                'status' => 'transcribing'
+                'status' => 'approved_for_transcription',
+                'progress_percentage' => 50
             ]);
-            
+
             // Dispatch the transcription job
-            \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing);
+            \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing)->onQueue('transcription');
             
             Log::info('TrueFire segment audio extraction approved and transcription job dispatched', [
-                'segment_id' => $segment->id,
                 'course_id' => $courseId,
-                'approved_by' => $validated['approved_by'],
-                'notes' => $validated['notes'] ?? null
+                'segment_id' => $segmentId,
+                'approved_by' => $request->input('approved_by'),
+                'notes' => $request->input('notes')
             ]);
             
             return response()->json([
                 'success' => true,
                 'message' => 'Audio extraction approved and transcription process started',
                 'segment' => [
-                    'id' => $segment->id,
+                    'id' => $segmentId,
                     'status' => $processing->status,
-                    'audio_extraction_approved' => $processing->audio_extraction_approved,
-                    'audio_extraction_approved_at' => $processing->audio_extraction_approved_at,
-                    'audio_extraction_approved_by' => $processing->audio_extraction_approved_by,
-                    'audio_extraction_notes' => $processing->audio_extraction_notes
                 ]
             ]);
-            
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
+
         } catch (\Exception $e) {
             Log::error('Error approving TrueFire segment audio extraction', [
-                'segment_id' => $segmentId,
                 'course_id' => $courseId,
+                'segment_id' => $segmentId,
                 'error' => $e->getMessage()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error approving audio extraction: ' . $e->getMessage()
@@ -653,7 +625,7 @@ class TruefireSegmentController extends Controller
                     
                     // Auto-start transcription with the specified preset
                     $processing->startTranscription();
-                    \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing, $transcriptionPreset);
+                    \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing, $transcriptionPreset)->onQueue('transcription');
                 } else {
                     Log::info('TrueFire segment audio extraction completed - waiting for manual transcription trigger', [
                         'segment_id' => $segmentId,

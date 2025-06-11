@@ -23,6 +23,14 @@ else
     echo "No package.json found, skipping npm install"
 fi
 
-# Start supervisor
-echo "Starting supervisor..."
+# Start php-fpm in the background
+echo "Starting PHP-FPM..."
+php-fpm -D
+
+# Start nginx in the background
+echo "Starting nginx..."
+nginx
+
+# Start supervisor for queue workers only
+echo "Starting supervisor for queue workers..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf 

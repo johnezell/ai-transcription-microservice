@@ -3407,7 +3407,7 @@ class TruefireCourseController extends Controller
             $processing->startTranscription();
             
             // Dispatch transcription job
-            TruefireSegmentTranscriptionJob::dispatch($processing);
+            TruefireSegmentTranscriptionJob::dispatch($processing)->onQueue('transcription');
             
             Log::info('TrueFire segment audio extraction approved', [
                 'course_id' => $truefireCourse->id,

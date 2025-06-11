@@ -38,7 +38,6 @@ RUN ln -sf /dev/stdout /var/log/nginx/access.log \
 
 # Set up Supervisor
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/supervisor/queue-workers.conf /etc/supervisor/conf.d/queue-workers.conf
 
 # Copy vite startup script
 COPY docker/scripts/start-vite.sh /usr/local/bin/start-vite.sh

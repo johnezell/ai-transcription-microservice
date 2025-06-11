@@ -34,13 +34,58 @@ return [
             'driver' => 'sync',
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Database Queue Driver
+        |--------------------------------------------------------------------------
+        |
+        | Here you may configure the database queue driver. This driver keeps
+        | track of all your queued jobs inside of a database table. You may
+        | configure the table, queue, and retry time for this driver.
+        |
+        */
+
         'database' => [
             'driver' => 'database',
-            'connection' => env('DB_QUEUE_CONNECTION'),
-            'table' => env('DB_QUEUE_TABLE', 'jobs'),
-            'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            'table' => 'jobs',
+            'queue' => 'default',
+            'retry_after' => 90,
             'after_commit' => false,
+        ],
+
+        /*
+        |--------------------------------------------------------------------------
+        | Redis Queue Driver
+        |--------------------------------------------------------------------------
+        |
+        | Here you may configure the Redis queue driver. This driver is based
+        | on the Redis list data structure, and provides a robust queue
+        | solution for production applications. You may configure the
+        | connection, queue, and retry time for this driver.
+        |
+        */
+
+        'redis' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => env('REDIS_QUEUE', 'default'),
+            'retry_after' => 90,
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+        
+        'redis-audio' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'audio-extraction',
+            'retry_after' => 360, // Longer timeout for audio jobs
+        ],
+        
+        'redis-transcription' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'transcription',
+            'retry_after' => 1800, // Long timeout for transcription jobs
         ],
 
         'batch' => [
@@ -78,15 +123,6 @@ return [
             'queue' => env('SQS_QUEUE', 'default'),
             'suffix' => env('SQS_SUFFIX'),
             'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'after_commit' => false,
-        ],
-
-        'redis' => [
-            'driver' => 'redis',
-            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
-            'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
-            'block_for' => null,
             'after_commit' => false,
         ],
 

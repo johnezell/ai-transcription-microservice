@@ -649,7 +649,7 @@ class TranscriptionController extends Controller
 
         // Auto-start transcription (same behavior as callback methods)
         $processing->startTranscription();
-        \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing);
+        \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing)->onQueue('transcription');
     }
 
     /**

@@ -74,7 +74,21 @@ class TruefireSegmentAudioExtractionJob implements ShouldQueue
             // The service will automatically callback to /api/transcription/{job_id}/status
             $requestData = [
                 'job_id' => "truefire_segment_{$this->processing->segment_id}",
-                'video_path' => $containerVideoPath
+                'video_path' => $containerVideoPath,
+                // Add TrueFire-specific parameters so the service knows to use the correct callback
+                'segment_id' => $this->processing->segment_id,
+                'course_id' => $this->processing->course_id,
+                // Include extraction settings for automatic transcription triggering
+                'extraction_settings' => [
+                    'follow_with_transcription' => true,
+                    'transcription_preset' => 'balanced',
+                    'complete_pipeline_restart' => false,
+                    'for_transcription' => true,
+                    'output_format' => 'wav',
+                    'sample_rate' => 16000,
+                    'channels' => 1,
+                    'bit_rate' => '128k'
+                ]
             ];
 
             Log::info('Sending TrueFire segment audio extraction request', [

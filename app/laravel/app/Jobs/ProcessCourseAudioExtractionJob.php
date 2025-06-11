@@ -5,6 +5,8 @@ namespace App\Jobs;
 use App\Models\LocalTruefireCourse;
 use App\Models\TranscriptionLog;
 use App\Jobs\AudioExtractionTestJob;
+use App\Models\TruefireSegmentProcessing;
+use App\Jobs\TruefireSegmentAudioExtractionJob;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -202,26 +204,70 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                         'complete_pipeline_restart' => $this->settings['complete_pipeline_restart'] ?? false
                     ]);
 
-                    // Dispatch individual audio extraction job
-                    AudioExtractionTestJob::dispatch(
-                        $videoFilePath,
-                        $videoFilename,
-                        $this->course->getAudioExtractionPreset(),
-                        $extractionSettings,
-                        $segment->id,
-                        $this->course->id
-                    );
+                    // For transcription workflow, use TruefireSegmentAudioExtractionJob for proper pipeline
+                    if ($this->forTranscription) {
+                        // Get or create processing record for TrueFire segment
+                        $processing = TruefireSegmentProcessing::where('segment_id', $segment->id)->first();
+                        
+                        if (!$processing) {
+                            $processing = TruefireSegmentProcessing::create([
+                                'segment_id' => $segment->id,
+                                'course_id' => $this->course->id,
+                                'status' => 'ready',
+                                'progress_percentage' => 0
+                            ]);
+                        }
+                        
+                        // Reset processing record for restart if needed
+                        if ($this->settings['force_restart'] ?? false) {
+                            $processing->update([
+                                'status' => 'ready',
+                                'progress_percentage' => 0,
+                                'error_message' => null,
+                                'audio_path' => null,
+                                'audio_size' => null,
+                                'audio_duration' => null,
+                                'audio_extraction_started_at' => null,
+                                'audio_extraction_completed_at' => null,
+                                'transcription_started_at' => null,
+                                'transcription_completed_at' => null
+                            ]);
+                        }
+                        
+                        // Start audio extraction
+                        $processing->startAudioExtraction();
+                        
+                        // Dispatch TrueFire-specific job for automatic transcription pipeline
+                        TruefireSegmentAudioExtractionJob::dispatch($processing);
+                        
+                        Log::info('Dispatched TrueFire segment audio extraction job for transcription pipeline', [
+                            'course_id' => $this->course->id,
+                            'segment_id' => $segment->id,
+                            'processing_id' => $processing->id,
+                            'pipeline_mode' => 'automatic_transcription',
+                            'workflow_step' => 'truefire_segment_job_dispatched'
+                        ]);
+                    } else {
+                        // For testing workflow, use regular AudioExtractionTestJob
+                        AudioExtractionTestJob::dispatch(
+                            $videoFilePath,
+                            $videoFilename,
+                            $this->course->getAudioExtractionPreset(),
+                            $extractionSettings,
+                            $segment->id,
+                            $this->course->id
+                        );
+                        
+                        Log::info('Dispatched audio extraction test job for testing workflow', [
+                            'course_id' => $this->course->id,
+                            'segment_id' => $segment->id,
+                            'video_file_path' => $videoFilePath,
+                            'quality_level' => $this->course->getAudioExtractionPreset(),
+                            'workflow_step' => 'test_job_dispatched'
+                        ]);
+                    }
 
                     $processedCount++;
-
-                    Log::info('Dispatched audio extraction job for course segment', [
-                        'course_id' => $this->course->id,
-                        'segment_id' => $segment->id,
-                        'video_file_path' => $videoFilePath,
-                        'quality_level' => $this->course->getAudioExtractionPreset(),
-                        'for_transcription' => $this->forTranscription,
-                        'workflow_step' => 'segment_job_dispatched'
-                    ]);
 
                 } catch (\Exception $e) {
                     Log::error('Error processing segment in course audio extraction', [

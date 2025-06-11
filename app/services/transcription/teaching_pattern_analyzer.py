@@ -89,7 +89,7 @@ class TeachingPatternAnalyzer:
             content_keywords = self._get_content_keywords()
             
             # ENHANCED: Include full data provenance for reprocessing
-            return {
+            result = {
                 # Core analysis results
                 'temporal_analysis': temporal_analysis,
                 'detected_patterns': [self._pattern_to_dict(p) for p in detected_patterns],
@@ -138,12 +138,16 @@ class TeachingPatternAnalyzer:
                 }
             }
             
+            # CRITICAL: Ensure entire result is JSON serializable
+            logger.debug("🔄 Teaching pattern analyzer ensuring JSON serialization...")
+            return self._ensure_json_serializable(result)
+            
         except Exception as e:
             error_timestamp = datetime.now().isoformat()
             logger.error(f"Teaching pattern analysis failed: {str(e)}")
             
             # Include error metadata for debugging
-            return {
+            error_result = {
                 'error': f'Teaching pattern analysis failed: {str(e)}',
                 'algorithm_metadata': {
                     'version': ALGORITHM_VERSION,
@@ -157,6 +161,10 @@ class TeachingPatternAnalyzer:
                     'error_details': str(e)
                 }
             }
+            
+            # CRITICAL: Ensure error result is also JSON serializable
+            logger.debug("🔄 Teaching pattern analyzer error result ensuring JSON serialization...")
+            return self._ensure_json_serializable(error_result)
     
     def _analyze_temporal_patterns(self, segments: List[Dict], speech_activity_data: Dict) -> Dict:
         """Analyze temporal patterns in speech/non-speech segments."""

@@ -111,7 +111,7 @@ class AdvancedQualityAnalyzer:
             'word_time_coverage_seconds': word_time_coverage,
             'word_coverage_ratio': word_time_coverage / total_duration if total_duration > 0 else 0,
             'pause_count': len(pauses),
-            'average_pause_duration': np.mean(pauses) if pauses else 0,
+            'average_pause_duration': float(np.mean(pauses)) if pauses else 0.0,
             'max_pause_duration': max(pauses) if pauses else 0,
             'speaking_rate_wpm': speaking_rate,
             'segment_count': len(segments),
@@ -147,7 +147,7 @@ class AdvancedQualityAnalyzer:
         word_repetitions = self.analyze_word_repetitions(words)
         
         # Sentence structure analysis
-        avg_sentence_length = np.mean([len(s.split()) for s in sentences]) if sentences else 0
+        avg_sentence_length = float(np.mean([len(s.split()) for s in sentences])) if sentences else 0.0
         
         return {
             'total_words': len(words),
@@ -192,20 +192,20 @@ class AdvancedQualityAnalyzer:
         
         return {
             'segment_duration_stats': {
-                'mean': np.mean(segment_durations) if segment_durations else 0,
-                'std': np.std(segment_durations) if segment_durations else 0,
-                'min': min(segment_durations) if segment_durations else 0,
-                'max': max(segment_durations) if segment_durations else 0
+                'mean': float(np.mean(segment_durations)) if segment_durations else 0.0,
+                'std': float(np.std(segment_durations)) if segment_durations else 0.0,
+                'min': float(min(segment_durations)) if segment_durations else 0.0,
+                'max': float(max(segment_durations)) if segment_durations else 0.0
             },
             'word_duration_stats': {
-                'mean': np.mean(word_durations) if word_durations else 0,
-                'std': np.std(word_durations) if word_durations else 0,
-                'min': min(word_durations) if word_durations else 0,
-                'max': max(word_durations) if word_durations else 0
+                'mean': float(np.mean(word_durations)) if word_durations else 0.0,
+                'std': float(np.std(word_durations)) if word_durations else 0.0,
+                'min': float(min(word_durations)) if word_durations else 0.0,
+                'max': float(max(word_durations)) if word_durations else 0.0
             },
             'word_gap_stats': {
-                'mean': np.mean(word_gaps) if word_gaps else 0,
-                'std': np.std(word_gaps) if word_gaps else 0,
+                'mean': float(np.mean(word_gaps)) if word_gaps else 0.0,
+                'std': float(np.std(word_gaps)) if word_gaps else 0.0,
                 'count': len(word_gaps)
             },
             'timing_consistency_score': timing_consistency,
@@ -272,18 +272,18 @@ class AdvancedQualityAnalyzer:
             
             # Audio quality indicators
             signal_to_noise_ratio = self.estimate_snr(y)
-            dynamic_range = np.max(rms_energy) - np.min(rms_energy)
-            audio_consistency = 1.0 - np.std(rms_energy) / np.mean(rms_energy)
+            dynamic_range = float(np.max(rms_energy) - np.min(rms_energy))
+            audio_consistency = 1.0 - float(np.std(rms_energy) / np.mean(rms_energy))
             
             return {
-                'signal_to_noise_ratio': signal_to_noise_ratio,
+                'signal_to_noise_ratio': float(signal_to_noise_ratio),
                 'dynamic_range': dynamic_range,
-                'audio_consistency_score': max(0, min(1, audio_consistency)),
-                'average_energy': np.mean(rms_energy),
-                'energy_variance': np.var(rms_energy),
-                'spectral_complexity': np.std(spectral_centroid),
-                'voice_activity_estimation': 1.0 - np.mean(zero_crossing_rate < 0.1),
-                'frequency_balance': np.mean(spectral_rolloff) / (sr / 2)  # Normalized
+                'audio_consistency_score': float(max(0, min(1, audio_consistency))),
+                'average_energy': float(np.mean(rms_energy)),
+                'energy_variance': float(np.var(rms_energy)),
+                'spectral_complexity': float(np.std(spectral_centroid)),
+                'voice_activity_estimation': float(1.0 - np.mean(zero_crossing_rate < 0.1)),
+                'frequency_balance': float(np.mean(spectral_rolloff) / (sr / 2))  # Normalized
             }
             
         except Exception as e:
@@ -394,11 +394,11 @@ class AdvancedQualityAnalyzer:
             return {'error': 'No confidence scores available'}
         
         return {
-            'mean': np.mean(confidences),
-            'std': np.std(confidences),
-            'min': min(confidences),
-            'max': max(confidences),
-            'median': np.median(confidences),
+            'mean': float(np.mean(confidences)),
+            'std': float(np.std(confidences)),
+            'min': float(min(confidences)),
+            'max': float(max(confidences)),
+            'median': float(np.median(confidences)),
             'count': len(confidences)
         }
     
@@ -444,10 +444,10 @@ class AdvancedQualityAnalyzer:
             else:
                 if len(current_cluster) >= 3:  # Cluster of 3+ low confidence words
                     clusters.append({
-                        'start_time': current_cluster[0].get('start', 0),
-                        'end_time': current_cluster[-1].get('end', 0),
+                        'start_time': float(current_cluster[0].get('start', 0)),
+                        'end_time': float(current_cluster[-1].get('end', 0)),
                         'word_count': len(current_cluster),
-                        'avg_confidence': np.mean([w.get('score', 0) for w in current_cluster]),
+                        'avg_confidence': float(np.mean([w.get('score', 0) for w in current_cluster])),
                         'words': [w.get('word', '') for w in current_cluster]
                     })
                 current_cluster = []
@@ -455,10 +455,10 @@ class AdvancedQualityAnalyzer:
         # Check final cluster
         if len(current_cluster) >= 3:
             clusters.append({
-                'start_time': current_cluster[0].get('start', 0),
-                'end_time': current_cluster[-1].get('end', 0),
+                'start_time': float(current_cluster[0].get('start', 0)),
+                'end_time': float(current_cluster[-1].get('end', 0)),
                 'word_count': len(current_cluster),
-                'avg_confidence': np.mean([w.get('score', 0) for w in current_cluster]),
+                'avg_confidence': float(np.mean([w.get('score', 0) for w in current_cluster])),
                 'words': [w.get('word', '') for w in current_cluster]
             })
         
@@ -471,12 +471,12 @@ class AdvancedQualityAnalyzer:
         energy_sorted = np.sort(energy)
         
         # Assume bottom 10% is noise, top 10% is signal
-        noise_level = np.mean(energy_sorted[:int(len(energy_sorted) * 0.1)])
-        signal_level = np.mean(energy_sorted[int(len(energy_sorted) * 0.9):])
+        noise_level = float(np.mean(energy_sorted[:int(len(energy_sorted) * 0.1)]))
+        signal_level = float(np.mean(energy_sorted[int(len(energy_sorted) * 0.9):]))
         
         if noise_level > 0:
-            snr_db = 10 * np.log10(signal_level / noise_level)
-            return max(0, min(60, snr_db))  # Clamp between 0-60 dB
+            snr_db = float(10 * np.log10(signal_level / noise_level))
+            return float(max(0, min(60, snr_db)))  # Clamp between 0-60 dB
         
         return 30.0  # Default reasonable SNR
     
@@ -662,8 +662,8 @@ class AdvancedQualityAnalyzer:
             return {'trend': 'insufficient_data'}
         
         # Simple trend analysis
-        first_half_avg = np.mean(confidences[:len(confidences)//2])
-        second_half_avg = np.mean(confidences[len(confidences)//2:])
+        first_half_avg = float(np.mean(confidences[:len(confidences)//2]))
+        second_half_avg = float(np.mean(confidences[len(confidences)//2:]))
         
         trend_direction = 'improving' if second_half_avg > first_half_avg else 'declining'
         trend_magnitude = abs(second_half_avg - first_half_avg)
@@ -726,7 +726,7 @@ class AdvancedQualityAnalyzer:
         
         # Consistency indicators
         segment_confidences = [seg.get('confidence', 0) for seg in segments if 'confidence' in seg]
-        confidence_consistency = 1.0 - np.std(segment_confidences) if len(segment_confidences) > 1 else 1.0
+        confidence_consistency = 1.0 - float(np.std(segment_confidences)) if len(segment_confidences) > 1 else 1.0
         
         # Model stress indicators
         processing_times = result.get('whisperx_processing', {}).get('processing_times', {})

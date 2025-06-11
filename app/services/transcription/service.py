@@ -948,19 +948,20 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
     segments = result.get("segments", [])
     
     # Add segment-level confidence scores
+    # CRITICAL: Convert numpy float32 values to Python float to prevent JSON serialization errors
     for segment in segments:
         segment_words = segment.get('words', [])
         if segment_words:
             # Calculate segment confidence as average of word confidences
-            word_scores = [word.get('score', 0.0) for word in segment_words if word.get('score') is not None]
+            word_scores = [float(word.get('score', 0.0)) for word in segment_words if word.get('score') is not None]
             if word_scores:
-                segment['confidence'] = sum(word_scores) / len(word_scores)
+                segment['confidence'] = float(sum(word_scores) / len(word_scores))
             else:
                 segment['confidence'] = 0.0
         else:
             # Fallback: estimate from text quality if no word-level data
             text_length = len(segment.get('text', ''))
-            segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
+            segment['confidence'] = float(min(0.8, max(0.3, text_length / 100.0)))
     
     # CRITICAL FIX: Generate complete text from segments (WhisperX doesn't provide top-level 'text' field)
     segments = result.get("segments", [])
@@ -972,14 +973,15 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
     logger.info(f"Generated complete transcript text: {len(complete_text)} characters")
     
     # ENHANCED: Create clean word_segments array for real-time highlighting
+    # CRITICAL: Convert numpy float32 values to Python float to prevent JSON serialization errors
     word_segments = []
     for segment in segments:
         for word in segment.get('words', []):
             word_segments.append({
                 'word': word.get('word', ''),
-                'start': word.get('start', 0),
-                'end': word.get('end', 0), 
-                'score': word.get('score', 0.0)
+                'start': float(word.get('start', 0)),
+                'end': float(word.get('end', 0)), 
+                'score': float(word.get('score', 0.0))
             })
     
     result["word_segments"] = word_segments
@@ -990,23 +992,27 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
     # This preserves the baseline metrics for comparison with enhanced scores
     
     # Calculate segment-level confidence scores with original word scores
+    # CRITICAL: Convert numpy float32 values to Python float to prevent JSON serialization errors
     for segment in segments:
         segment_words = segment.get('words', [])
         if segment_words:
             # Calculate segment confidence as average of word confidences
-            word_scores = [word.get('score', 0.0) for word in segment_words if word.get('score') is not None]
+            word_scores = [float(word.get('score', 0.0)) for word in segment_words if word.get('score') is not None]
             if word_scores:
-                segment['confidence'] = sum(word_scores) / len(word_scores)
+                segment['confidence'] = float(sum(word_scores) / len(word_scores))
             else:
                 segment['confidence'] = 0.0
         else:
             # Fallback: estimate from text quality if no word-level data
             text_length = len(segment.get('text', ''))
-            segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
+            segment['confidence'] = float(min(0.8, max(0.3, text_length / 100.0)))
     
-    # Calculate original overall confidence score and quality metrics
+    # Calculate original overall confidence score and quality metrics using AdvancedQualityAnalyzer
+    from quality_metrics import AdvancedQualityAnalyzer
+    quality_analyzer = AdvancedQualityAnalyzer()
+    
     original_confidence_score = calculate_confidence(segments)
-    original_quality_metrics = calculate_comprehensive_quality_metrics(result, segments, word_segments)
+    original_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
     
     # Store original metrics for comparison
     result["original_metrics"] = {
@@ -1066,9 +1072,9 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
             text_length = len(segment.get('text', ''))
             segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
     
-    # Calculate enhanced overall confidence score and quality metrics
+    # Calculate enhanced overall confidence score and quality metrics using AdvancedQualityAnalyzer
     enhanced_confidence_score = calculate_confidence(segments)
-    enhanced_quality_metrics = calculate_comprehensive_quality_metrics(result, segments, word_segments)
+    enhanced_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
     
     # Set the final metrics (these are the enhanced versions)
     result["confidence_score"] = enhanced_confidence_score
@@ -1689,15 +1695,37 @@ def save_srt(segments, output_path):
             f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
     logger.info(f"SRT file saved to: {output_path}")
 
+def ensure_json_serializable(obj):
+    """Ensure all values in object are JSON serializable, converting numpy types to Python types."""
+    import numpy as np
+    
+    if isinstance(obj, dict):
+        return {k: ensure_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [ensure_json_serializable(item) for item in obj]
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif hasattr(obj, 'item'):  # Handle numpy scalars
+        return obj.item()
+    else:
+        return obj
+
 def update_job_status(job_id, status, response_data=None, error_message=None):
     """Update the job status in Laravel."""
     try:
         url = f"{LARAVEL_API_URL}/transcription/{job_id}/status"
         logger.info(f"Sending status update to Laravel: {url}")
         
+        # Ensure all data is JSON serializable before sending
+        safe_response_data = ensure_json_serializable(response_data) if response_data else None
+        
         payload = {
             'status': status,
-            'response_data': response_data,
+            'response_data': safe_response_data,
             'error_message': error_message,
             'completed_at': datetime.now().isoformat() if status in ['completed', 'failed'] else None
         }
@@ -1986,6 +2014,10 @@ def process_transcription():
         if transcription_result.get('word_segments'):
             response_data['word_segments'] = transcription_result['word_segments']
         
+        # CRITICAL: Ensure response_data is JSON serializable before sending to Laravel
+        response_data = ensure_json_serializable(response_data)
+        logger.debug("✅ Response data serialized successfully for Laravel callback")
+        
         # Update job status in Laravel
         update_job_status(job_id, 'completed', response_data)
         
@@ -2210,6 +2242,10 @@ def transcribe_audio():
         response_data['enhanced_format'] = True
         response_data['whisperx_version'] = True
         
+        # CRITICAL: Ensure response_data is JSON serializable before returning
+        response_data = ensure_json_serializable(response_data)
+        logger.debug("✅ Response data serialized successfully for direct response")
+        
         logger.info(f"Transcription test completed successfully for job: {job_id}")
         
         return jsonify(response_data)
@@ -2366,6 +2402,10 @@ def transcribe_parallel():
                 result['batch_metadata'] = {}
             result['batch_metadata']['original_path'] = audio_paths[i]
             result['batch_metadata']['file_index'] = i
+        
+        # CRITICAL: Ensure response_data is JSON serializable before returning
+        response_data = ensure_json_serializable(response_data)
+        logger.debug("✅ Parallel response data serialized successfully")
         
         logger.info(f"Parallel transcription completed for job: {job_id} - "
                    f"Success: {batch_summary.get('successful_files', 0)}/{len(audio_paths)} files")
@@ -2540,8 +2580,17 @@ def get_service_capabilities():
                 'description': 'AI-powered guitar terminology evaluator that boosts musical terms to 100% confidence',
                 'fallback_dictionary': 'Comprehensive guitar terms for offline operation'
             },
+            'teaching_pattern_analysis': {
+                'enabled': True,
+                'endpoint': '/test-teaching-patterns',
+                'features': ['speech_activity_patterns', 'teaching_style_classification', 'content_type_detection'],
+                'supported_patterns': ['demonstration', 'instructional', 'overview', 'performance'],
+                'analysis_metrics': ['speech_ratio', 'alternation_cycles', 'temporal_distribution', 'content_focus'],
+                'description': 'NEW: Analyzes speech/non-speech patterns to identify guitar lesson teaching styles and content types',
+                'use_cases': ['Teaching effectiveness assessment', 'Content categorization', 'Lesson structure optimization']
+            },
             'api_endpoints': {
-                'transcription': ['/process', '/transcribe', '/transcribe-parallel', '/test-optimal-selection', '/test-enhancement-modes', '/test-guitar-term-evaluator'],
+                'transcription': ['/process', '/transcribe', '/transcribe-parallel', '/test-optimal-selection', '/test-enhancement-modes', '/test-guitar-term-evaluator', '/test-teaching-patterns'],
                 'management': ['/health', '/models/info', '/models/clear-cache'],
                 'monitoring': ['/performance/metrics', '/connectivity-test'],
                 'information': ['/presets/info', '/features/capabilities']
@@ -3396,6 +3445,211 @@ def transcribe_with_enhanced_features(whisperx_model, audio_file, base_params, i
 
 
 # Removed duplicate load_whisperx_model function - using imported version from whisperx_models
+
+@app.route('/test-teaching-patterns', methods=['POST'])
+def test_teaching_pattern_analysis():
+    """
+    Test endpoint for teaching pattern analysis.
+    
+    This endpoint demonstrates the new capability to analyze speech/non-speech patterns
+    and classify guitar lesson teaching styles based on voice activity patterns.
+    
+    Expected JSON payload:
+    {
+        "audio_path": "path_to_audio_file",  // optional - will use mock data if not provided
+        "preset": "balanced"  // optional
+    }
+    """
+    data = request.json or {}
+    
+    audio_path = data.get('audio_path')
+    preset_name = data.get('preset', 'balanced')
+    
+    try:
+        if audio_path and os.path.exists(audio_path):
+            # Process real audio file
+            logger.info(f"Testing teaching pattern analysis with real audio: {audio_path}")
+            
+            # Get preset configuration and process audio
+            preset_config = get_preset_config(preset_name)
+            result = _process_audio_core(
+                audio_path, 
+                preset_config=preset_config,
+                preset_name=preset_name
+            )
+            
+            logger.info(f"Transcription completed, analyzing teaching patterns...")
+            
+        else:
+            # Use mock transcription data with different teaching patterns
+            logger.info("Testing teaching pattern analysis with mock transcription data...")
+            
+            # Create mock data that represents different teaching patterns
+            result = {
+                "text": "Hi everyone, today we're going to learn the C major chord. Watch how I position my fingers on the fretboard. Notice the finger placement on each string. Now let's practice strumming this chord together. Try to keep your rhythm steady. Great! Now let's play a simple chord progression.",
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 3.5,
+                        "text": "Hi everyone, today we're going to learn the C major chord."
+                    },
+                    {
+                        "start": 3.6,
+                        "end": 7.2,
+                        "text": "Watch how I position my fingers on the fretboard."
+                    },
+                    # Gap for demonstration (7.2 to 12.8 = 5.6 seconds of playing)
+                    {
+                        "start": 12.8,
+                        "end": 16.1,
+                        "text": "Notice the finger placement on each string."
+                    },
+                    {
+                        "start": 16.2,
+                        "end": 20.5,
+                        "text": "Now let's practice strumming this chord together."
+                    },
+                    # Gap for practice (20.5 to 28.3 = 7.8 seconds of playing)
+                    {
+                        "start": 28.3,
+                        "end": 31.1,
+                        "text": "Try to keep your rhythm steady."
+                    },
+                    # Short gap (31.1 to 33.2 = 2.1 seconds)
+                    {
+                        "start": 33.2,
+                        "end": 34.8,
+                        "text": "Great!"
+                    },
+                    {
+                        "start": 34.9,
+                        "end": 39.2,
+                        "text": "Now let's play a simple chord progression."
+                    }
+                    # Ends with demonstration gap
+                ],
+                "word_segments": [
+                    {"word": "Hi", "start": 0.0, "end": 0.2, "score": 0.95},
+                    {"word": "everyone", "start": 0.3, "end": 0.8, "score": 0.92},
+                    {"word": "today", "start": 0.9, "end": 1.2, "score": 0.88},
+                    {"word": "we're", "start": 1.3, "end": 1.5, "score": 0.91},
+                    {"word": "going", "start": 1.6, "end": 1.9, "score": 0.89},
+                    {"word": "to", "start": 2.0, "end": 2.1, "score": 0.94},
+                    {"word": "learn", "start": 2.2, "end": 2.5, "score": 0.87},
+                    {"word": "the", "start": 2.6, "end": 2.7, "score": 0.96},
+                    {"word": "C", "start": 2.8, "end": 2.9, "score": 0.82},
+                    {"word": "major", "start": 3.0, "end": 3.2, "score": 0.85},
+                    {"word": "chord", "start": 3.3, "end": 3.5, "score": 0.83}
+                ],
+                "confidence_score": 0.87
+            }
+        
+        # Perform comprehensive quality analysis which includes teaching patterns
+        from quality_metrics import AdvancedQualityAnalyzer
+        
+        quality_analyzer = AdvancedQualityAnalyzer()
+        comprehensive_analysis = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
+        
+        # Extract teaching pattern analysis
+        teaching_patterns = comprehensive_analysis.get('teaching_patterns', {})
+        
+        # Prepare response data
+        response_data = {
+            'success': True,
+            'message': 'Teaching pattern analysis completed',
+            'test_type': 'real_audio' if audio_path and os.path.exists(audio_path) else 'mock_data',
+            'audio_analysis': {
+                'total_duration': comprehensive_analysis.get('speech_activity', {}).get('total_duration_seconds', 0),
+                'speech_duration': comprehensive_analysis.get('speech_activity', {}).get('speech_duration_seconds', 0),
+                'silence_duration': comprehensive_analysis.get('speech_activity', {}).get('silence_duration_seconds', 0),
+                'speech_ratio': comprehensive_analysis.get('speech_activity', {}).get('speech_activity_ratio', 0),
+                'segment_count': len(result.get('segments', [])),
+                'speaking_rate_wpm': comprehensive_analysis.get('speech_activity', {}).get('speaking_rate_wpm', 0)
+            },
+            'teaching_pattern_analysis': teaching_patterns,
+            'quality_scores': {
+                'overall_quality': comprehensive_analysis.get('overall_quality_score', 0),
+                'speech_activity_score': comprehensive_analysis.get('speech_activity', {}).get('speech_activity_ratio', 0),
+                'content_quality_score': comprehensive_analysis.get('content_quality', {}).get('vocabulary_richness', 0),
+                'confidence_score': result.get('confidence_score', 0)
+            },
+            'transcript_sample': {
+                'text': result.get('text', ''),
+                'segment_count': len(result.get('segments', [])),
+                'word_count': len(result.get('word_segments', []))
+            },
+            'settings': {
+                'preset': preset_name,
+                'audio_path': audio_path if audio_path else 'mock_data'
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Add pattern interpretation for better understanding
+        if teaching_patterns and 'detected_patterns' in teaching_patterns:
+            patterns = teaching_patterns['detected_patterns']
+            if patterns:
+                primary_pattern = patterns[0]
+                response_data['pattern_interpretation'] = {
+                    'primary_teaching_style': primary_pattern.get('pattern_type', 'unknown'),
+                    'confidence': primary_pattern.get('confidence', 0),
+                    'description': primary_pattern.get('description', ''),
+                    'recommendations': teaching_patterns.get('summary', {}).get('recommendations', []),
+                    'teaching_effectiveness': {
+                        'pattern_strength': teaching_patterns.get('summary', {}).get('pattern_strength', 'Unknown'),
+                        'content_focus': teaching_patterns.get('content_classification', {}).get('content_focus', 'general'),
+                        'effectiveness_notes': teaching_patterns.get('summary', {}).get('effectiveness_notes', [])
+                    }
+                }
+            else:
+                response_data['pattern_interpretation'] = {
+                    'primary_teaching_style': 'No clear pattern detected',
+                    'confidence': 0,
+                    'description': 'No distinct teaching pattern could be identified',
+                    'recommendations': ['Consider establishing clearer speech/demonstration alternation patterns'],
+                    'teaching_effectiveness': {
+                        'pattern_strength': 'Weak',
+                        'content_focus': 'general',
+                        'effectiveness_notes': ['Lesson structure could be improved with more defined patterns']
+                    }
+                }
+        
+        # Add example interpretations for different scenarios
+        speech_ratio = response_data['audio_analysis']['speech_ratio']
+        response_data['pattern_examples'] = {
+            'current_ratio': f"{speech_ratio:.1%} speech, {1-speech_ratio:.1%} non-speech",
+            'interpretations': {
+                'demonstration_heavy': 'If >70% non-speech: Demonstration-focused lesson with extensive playing examples',
+                'instructional_balanced': 'If 40-70% speech: Balanced instructional approach with explanation-demonstration cycles',
+                'overview_style': 'If >50% speech concentrated at beginning/end: Overview-style lesson structure',
+                'performance_focused': 'If >80% non-speech: Performance-focused content with minimal verbal instruction'
+            },
+            'recommendations_by_pattern': {
+                'demonstration': ['Add brief verbal explanations before playing', 'Include summary statements after demonstrations'],
+                'instructional': ['Excellent balance maintained', 'Consider adding practice segments for engagement'],
+                'overview': ['Good lesson structure', 'Consider more interactive middle sections'],
+                'performance': ['Add brief introductions', 'Break long performances into teachable segments']
+            }
+        }
+        
+        logger.info(f"Teaching pattern analysis completed successfully")
+        if teaching_patterns and 'detected_patterns' in teaching_patterns and teaching_patterns['detected_patterns']:
+            primary_pattern = teaching_patterns['detected_patterns'][0]
+            logger.info(f"Primary pattern detected: {primary_pattern.get('pattern_type')} (confidence: {primary_pattern.get('confidence', 0):.2f})")
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"Teaching pattern analysis test failed ({error_type}): {error_msg}")
+        
+        return jsonify({
+            'success': False,
+            'error_type': error_type,
+            'error_message': error_msg,
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

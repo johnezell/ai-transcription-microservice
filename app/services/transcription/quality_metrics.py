@@ -12,6 +12,9 @@ import re
 from datetime import timedelta
 import logging
 
+# Import the new teaching pattern analyzer
+from teaching_pattern_analyzer import TeachingPatternAnalyzer
+
 logger = logging.getLogger(__name__)
 
 class AdvancedQualityAnalyzer:
@@ -28,6 +31,9 @@ class AdvancedQualityAnalyzer:
             'instruction_words': ['play', 'practice', 'try', 'listen', 'watch', 'remember', 'notice'],
             'quality_indicators': ['clear', 'clean', 'smooth', 'precise', 'accurate', 'careful']
         }
+        
+        # Initialize teaching pattern analyzer
+        self.teaching_pattern_analyzer = TeachingPatternAnalyzer()
     
     def analyze_comprehensive_quality(self, transcription_result: Dict, audio_path: str = None) -> Dict:
         """Perform comprehensive quality analysis on transcription results."""
@@ -40,6 +46,20 @@ class AdvancedQualityAnalyzer:
             'linguistic_quality': self.analyze_linguistic_quality(transcription_result),
             'model_performance': self.analyze_model_performance(transcription_result)
         }
+        
+        # Add teaching pattern analysis for educational content
+        try:
+            speech_activity_data = quality_metrics['speech_activity']
+            if 'error' not in speech_activity_data:
+                teaching_patterns = self.teaching_pattern_analyzer.analyze_teaching_patterns(
+                    transcription_result, speech_activity_data
+                )
+                quality_metrics['teaching_patterns'] = teaching_patterns
+            else:
+                quality_metrics['teaching_patterns'] = {'error': 'Speech activity analysis failed - cannot analyze teaching patterns'}
+        except Exception as e:
+            logger.warning(f"Teaching pattern analysis failed: {e}")
+            quality_metrics['teaching_patterns'] = {'error': f'Teaching pattern analysis failed: {str(e)}'}
         
         # Add audio-based metrics if audio path provided
         if audio_path:

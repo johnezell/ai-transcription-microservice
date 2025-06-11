@@ -385,6 +385,20 @@ const guitarEnhancementAnalysis = computed(() => {
     };
 });
 
+// Calculate teaching pattern analysis
+const teachingPatternAnalysis = computed(() => {
+    const patterns = qualityMetrics.value?.teaching_patterns;
+    if (!patterns) return null;
+    
+    return {
+        detected_patterns: patterns.detected_patterns || [],
+        content_classification: patterns.content_classification || {},
+        summary: patterns.summary || {},
+        temporal_analysis: patterns.temporal_analysis || {},
+        algorithm_metadata: patterns.algorithm_metadata || {}
+    };
+});
+
 
 
 // Calculate detailed confidence analysis
@@ -504,6 +518,63 @@ function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Helper function to get teaching pattern styling
+function getPatternStyle(patternType) {
+    const styles = {
+        'instructional': {
+            color: 'blue',
+            bgColor: 'bg-blue-50',
+            borderColor: 'border-blue-200',
+            textColor: 'text-blue-800',
+            icon: '🎯',
+            description: 'Balanced instruction with clear teaching cycles'
+        },
+        'demonstration': {
+            color: 'purple',
+            bgColor: 'bg-purple-50',
+            borderColor: 'border-purple-200',
+            textColor: 'text-purple-800',
+            icon: '🎸',
+            description: 'Demo-heavy with extensive playing examples'
+        },
+        'overview': {
+            color: 'green',
+            bgColor: 'bg-green-50',
+            borderColor: 'border-green-200',
+            textColor: 'text-green-800',
+            icon: '📖',
+            description: 'Overview-style with structured introduction'
+        },
+        'performance': {
+            color: 'amber',
+            bgColor: 'bg-amber-50',
+            borderColor: 'border-amber-200',
+            textColor: 'text-amber-800',
+            icon: '🎵',
+            description: 'Performance-focused with minimal verbal instruction'
+        }
+    };
+    
+    return styles[patternType] || {
+        color: 'gray',
+        bgColor: 'bg-gray-50',
+        borderColor: 'border-gray-200',
+        textColor: 'text-gray-800',
+        icon: '❓',
+        description: 'Unknown pattern type'
+    };
+}
+
+// Helper function to get pattern strength color
+function getPatternStrengthColor(strength) {
+    const colors = {
+        'Strong': 'text-green-700',
+        'Moderate': 'text-yellow-700',
+        'Weak': 'text-red-700'
+    };
+    return colors[strength] || 'text-gray-700';
 }
 
 // Function to jump to specific time in video
@@ -852,7 +923,8 @@ const summaryMetrics = computed(() => {
         duration: segmentData.value?.formatted_duration || formatTime(segmentData.value?.runtime || 0),
         confidence: 0,
         musicTerms: 0,
-        issues: 0
+        issues: 0,
+        teachingPattern: null
     };
     
     // Word count from transcript or confidence analysis
@@ -875,6 +947,15 @@ const summaryMetrics = computed(() => {
     // Count issues (low confidence words)
     if (confidenceAnalysis.value?.lowConfidenceWords) {
         metrics.issues = confidenceAnalysis.value.lowConfidenceWords;
+    }
+    
+    // Teaching pattern
+    if (teachingPatternAnalysis.value?.content_classification?.primary_type) {
+        metrics.teachingPattern = {
+            type: teachingPatternAnalysis.value.content_classification.primary_type,
+            confidence: teachingPatternAnalysis.value.content_classification.confidence,
+            icon: getPatternStyle(teachingPatternAnalysis.value.content_classification.primary_type).icon
+        };
     }
     
     return metrics;
@@ -1061,6 +1142,16 @@ function getStatusTitle(status) {
                                         <div v-if="summaryMetrics.musicTerms > 0" class="bg-white rounded-lg p-3 border border-gray-200 text-center">
                                             <div class="text-lg font-bold text-purple-600">{{ summaryMetrics.musicTerms }}</div>
                                             <div class="text-xs text-gray-600">Music Terms</div>
+                                        </div>
+                                        
+                                        <div v-if="summaryMetrics.teachingPattern" class="bg-white rounded-lg p-3 border border-gray-200 text-center col-span-2">
+                                            <div class="flex items-center justify-center">
+                                                <span class="text-lg mr-2">{{ summaryMetrics.teachingPattern.icon }}</span>
+                                                <div class="text-left">
+                                                    <div class="text-sm font-bold text-indigo-600 capitalize">{{ summaryMetrics.teachingPattern.type }}</div>
+                                                    <div class="text-xs text-gray-600">Teaching Pattern</div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1357,6 +1448,146 @@ function getStatusTitle(status) {
                                                         <div class="font-medium text-gray-700">{{ qualityMetrics.content_quality.music_term_count || 0 }}</div>
                                                         <div class="text-gray-600">Music Terms</div>
                                                     </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Teaching Pattern Analysis -->
+                                            <div v-if="teachingPatternAnalysis" class="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
+                                                <h5 class="font-medium text-indigo-800 mb-3 flex items-center">
+                                                    <span class="mr-2">🎯</span>
+                                                    Teaching Pattern Analysis
+                                                </h5>
+                                                
+                                                <!-- Primary Pattern Display -->
+                                                <div v-if="teachingPatternAnalysis.content_classification.primary_type" class="mb-4">
+                                                    <div class="flex items-center justify-between mb-3">
+                                                        <div class="flex items-center">
+                                                            <div class="text-2xl mr-3">{{ getPatternStyle(teachingPatternAnalysis.content_classification.primary_type).icon }}</div>
+                                                            <div>
+                                                                <div class="font-semibold text-lg text-indigo-900 capitalize">
+                                                                    {{ teachingPatternAnalysis.content_classification.primary_type }} Pattern
+                                                                </div>
+                                                                <div class="text-sm text-indigo-700">
+                                                                    {{ getPatternStyle(teachingPatternAnalysis.content_classification.primary_type).description }}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div class="text-right">
+                                                            <div class="text-2xl font-bold text-indigo-700">
+                                                                {{ (teachingPatternAnalysis.content_classification.confidence * 100).toFixed(0) }}%
+                                                            </div>
+                                                            <div class="text-xs text-indigo-600">Confidence</div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Pattern Strength -->
+                                                    <div v-if="teachingPatternAnalysis.summary.pattern_strength" class="mb-3">
+                                                        <div class="flex items-center justify-between">
+                                                            <span class="text-sm text-indigo-700">Pattern Strength:</span>
+                                                            <span class="font-medium" :class="getPatternStrengthColor(teachingPatternAnalysis.summary.pattern_strength)">
+                                                                {{ teachingPatternAnalysis.summary.pattern_strength }}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Speech/Non-Speech Analysis -->
+                                                <div v-if="teachingPatternAnalysis.temporal_analysis" class="mb-4 bg-white rounded-lg p-3 border border-indigo-200">
+                                                    <h6 class="font-medium text-indigo-800 mb-3">Speech vs. Playing Analysis</h6>
+                                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                                        <div class="text-center">
+                                                            <div class="text-lg font-bold text-blue-700">
+                                                                {{ (teachingPatternAnalysis.temporal_analysis.speech_ratio * 100).toFixed(1) }}%
+                                                            </div>
+                                                            <div class="text-blue-600">Speech</div>
+                                                        </div>
+                                                        <div class="text-center">
+                                                            <div class="text-lg font-bold text-purple-700">
+                                                                {{ (teachingPatternAnalysis.temporal_analysis.non_speech_ratio * 100).toFixed(1) }}%
+                                                            </div>
+                                                            <div class="text-purple-600">Playing</div>
+                                                        </div>
+                                                        <div class="text-center">
+                                                            <div class="text-lg font-bold text-green-700">
+                                                                {{ teachingPatternAnalysis.temporal_analysis.alternation_cycles || 0 }}
+                                                            </div>
+                                                            <div class="text-green-600">Teaching Cycles</div>
+                                                        </div>
+                                                        <div class="text-center">
+                                                            <div class="text-lg font-bold text-orange-700">
+                                                                {{ (teachingPatternAnalysis.temporal_analysis.total_duration / 60).toFixed(1) }}m
+                                                            </div>
+                                                            <div class="text-orange-600">Duration</div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Visual Speech/Playing Bar -->
+                                                    <div class="mt-3">
+                                                        <div class="flex text-xs mb-1 justify-between">
+                                                            <span class="text-blue-600">Speech</span>
+                                                            <span class="text-purple-600">Guitar Playing</span>
+                                                        </div>
+                                                        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                                            <div class="h-full flex">
+                                                                <div 
+                                                                    class="bg-blue-500"
+                                                                    :style="{ width: (teachingPatternAnalysis.temporal_analysis.speech_ratio * 100) + '%' }"
+                                                                ></div>
+                                                                <div 
+                                                                    class="bg-purple-500"
+                                                                    :style="{ width: (teachingPatternAnalysis.temporal_analysis.non_speech_ratio * 100) + '%' }"
+                                                                ></div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Detected Patterns -->
+                                                <div v-if="teachingPatternAnalysis.detected_patterns.length > 0" class="mb-4">
+                                                    <h6 class="font-medium text-indigo-800 mb-2">All Detected Patterns</h6>
+                                                    <div class="space-y-2">
+                                                        <div v-for="(pattern, index) in teachingPatternAnalysis.detected_patterns" :key="index"
+                                                             class="flex items-center justify-between p-2 rounded-lg border"
+                                                             :class="[
+                                                                 getPatternStyle(pattern.pattern_type).bgColor,
+                                                                 getPatternStyle(pattern.pattern_type).borderColor
+                                                             ]">
+                                                            <div class="flex items-center">
+                                                                <span class="text-lg mr-2">{{ getPatternStyle(pattern.pattern_type).icon }}</span>
+                                                                <div>
+                                                                    <div class="font-medium text-sm capitalize" :class="getPatternStyle(pattern.pattern_type).textColor">
+                                                                        {{ pattern.pattern_type }}
+                                                                    </div>
+                                                                    <div class="text-xs text-gray-600">{{ pattern.description }}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div class="text-sm font-medium" :class="getPatternStyle(pattern.pattern_type).textColor">
+                                                                {{ (pattern.confidence * 100).toFixed(0) }}%
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Teaching Recommendations -->
+                                                <div v-if="teachingPatternAnalysis.summary.recommendations && teachingPatternAnalysis.summary.recommendations.length > 0" class="bg-white rounded-lg p-3 border border-indigo-200">
+                                                    <h6 class="font-medium text-indigo-800 mb-2 flex items-center">
+                                                        <span class="mr-2">💡</span>
+                                                        Teaching Recommendations
+                                                    </h6>
+                                                    <ul class="space-y-1">
+                                                        <li v-for="(recommendation, index) in teachingPatternAnalysis.summary.recommendations" :key="index"
+                                                            class="text-sm text-gray-700 flex items-start">
+                                                            <span class="text-indigo-600 mr-2 mt-0.5">•</span>
+                                                            {{ recommendation }}
+                                                        </li>
+                                                    </ul>
+                                                </div>
+
+                                                <!-- Content Focus -->
+                                                <div v-if="teachingPatternAnalysis.content_classification.content_focus" class="mt-3 text-center">
+                                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                                                        {{ teachingPatternAnalysis.content_classification.content_focus.replace('_', ' ') }} focused lesson
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>

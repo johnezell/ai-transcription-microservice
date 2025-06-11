@@ -293,15 +293,17 @@ class GuitarTerminologyEvaluator:
         return segments
 
     def _create_word_segment(self, word_data: Dict[str, Any]) -> WordSegment:
-        """Create WordSegment from your service's JSON format"""
+        """Create WordSegment from your service's JSON format - ENSURE JSON SAFE VALUES"""
         word = word_data.get('word', '').strip()
-        start = word_data.get('start', 0)
-        end = word_data.get('end', 0)
-        confidence = word_data.get('score', word_data.get('confidence', 0))
+        
+        # CRITICAL: Convert numpy values to Python types to prevent JSON serialization errors
+        start = float(word_data.get('start', 0))
+        end = float(word_data.get('end', 0))
+        confidence = float(word_data.get('score', word_data.get('confidence', 0)))
         
         # ALWAYS use the current confidence as original_confidence
         # Don't trust any existing original_confidence values that might be 0 or corrupted
-        original_confidence = confidence
+        original_confidence = float(confidence)
         
         segment = WordSegment(word=word, start=start, end=end, confidence=confidence)
         segment.original_confidence = original_confidence
@@ -417,196 +419,286 @@ class GuitarTerminologyEvaluator:
         context_words = [seg.word for seg in segments[start_idx:end_idx]]
         return " ".join(context_words)
 
+    def _ensure_json_serializable(self, obj):
+        """Ensure all values in object are JSON serializable, converting numpy types to Python types."""
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {k: self._ensure_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._ensure_json_serializable(item) for item in obj]
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif hasattr(obj, 'item'):  # Handle numpy scalars
+            return obj.item()
+        else:
+            return obj
+
     def evaluate_and_boost(self, transcription_json: Dict[str, Any]) -> Dict[str, Any]:
         """
         Main method: evaluate guitar terms and musical counting patterns, set their confidence to 100%
         """
-        logger.info("Starting guitar terminology and musical counting pattern evaluation...")
-        segments = self.extract_words_from_json(transcription_json)
-        logger.info(f"Found {len(segments)} word segments for evaluation")
-        
-        # STEP 1: Detect musical counting patterns first
-        logger.info("Detecting musical counting patterns...")
-        musical_patterns = self._detect_musical_counting_patterns(segments)
-        logger.info(f"Found {len(musical_patterns)} musical counting patterns")
-        
-        # Apply musical counting pattern boosts
-        counting_boosted_count = self._apply_counting_pattern_boosts(segments, musical_patterns)
-        
-        # STEP 2: Individual guitar term evaluation (for non-pattern words)
-        logger.info("Starting individual guitar term evaluation...")
-        boosted_count = 0
-        unchanged_count = 0
-        dictionary_filtered_count = 0
-        evaluated_terms = []
-        llm_queries_made = 0
-        llm_successful_responses = 0
-        
-        # Track which words were already boosted by counting patterns
-        pattern_boosted_indices = set()
-        for pattern in musical_patterns:
-            for i in range(pattern.start_index, pattern.end_index + 1):
-                pattern_boosted_indices.add(i)
-        
-        for i, segment in enumerate(segments):
-            # Only skip truly empty words - let WhisperX handle word segmentation quality
-            if not segment.word or not segment.word.strip():
-                continue
+        try:
+            logger.info("Starting guitar terminology and musical counting pattern evaluation...")
+            segments = self.extract_words_from_json(transcription_json)
+            logger.info(f"Found {len(segments)} word segments for evaluation")
             
-            # Skip words that were already boosted by musical counting patterns
-            if i in pattern_boosted_indices:
-                logger.debug(f"Skipped '{segment.word}': already boosted by musical counting pattern")
-                continue
+            # STEP 1: Detect musical counting patterns first
+            logger.info("Detecting musical counting patterns...")
+            musical_patterns = self._detect_musical_counting_patterns(segments)
+            logger.info(f"Found {len(musical_patterns)} musical counting patterns")
             
-            # Original confidence is now preserved in _create_word_segment
+            # Apply musical counting pattern boosts
+            counting_boosted_count = self._apply_counting_pattern_boosts(segments, musical_patterns)
             
-            # Only evaluate words with confidence below threshold (performance optimization)
-            if segment.confidence >= self.confidence_threshold:
-                unchanged_count += 1
-                logger.debug(f"Skipped '{segment.word}': {segment.original_confidence:.3f} (confidence already high)")
-                continue
+            # STEP 2: Individual guitar term evaluation (for non-pattern words)
+            logger.info("Starting individual guitar term evaluation...")
+            boosted_count = 0
+            unchanged_count = 0
+            dictionary_filtered_count = 0
+            evaluated_terms = []
+            llm_queries_made = 0
+            llm_successful_responses = 0
             
-            # Evaluate low-confidence words to see if they're guitar terms
-            context = self.get_context_window(segments, i)
-            
-            is_guitar_term, llm_was_used = self.query_local_llm(segment.word, context)
-            
-            # Track LLM usage statistics
-            if llm_was_used:
-                llm_queries_made += 1
-                if is_guitar_term:
-                    llm_successful_responses += 1
-            
-            if is_guitar_term:
-                # Store original confidence if not already meaningfully stored
-                if segment.original_confidence is None or segment.original_confidence <= 0:
-                    segment.original_confidence = segment.confidence
+            for i, segment in enumerate(segments):
+                # Skip words that are below confidence threshold (they need evaluation)
+                if segment.confidence >= self.confidence_threshold:
+                    unchanged_count += 1
+                    logger.debug(f"Skipped high-confidence word '{segment.word}': {segment.confidence:.3f} (above threshold)")
+                    continue
                 
-                # ONLY guitar terms get boosted to 100% confidence
-                segment.confidence = self.target_confidence
-                boosted_count += 1
-                evaluated_terms.append({
-                    'word': segment.word,
-                    'normalized_word': self._normalize_word(segment.word),
-                    'original_confidence': segment.original_confidence,
-                    'new_confidence': segment.confidence,
-                    'start': segment.start,
-                    'end': segment.end,
-                    'boost_reason': 'guitar_terminology'
-                })
-                logger.debug(f"Boosted guitar term '{segment.word}': {segment.original_confidence:.3f} -> {segment.confidence:.3f}")
-            else:
-                # Non-guitar terms are left completely unchanged at their original confidence
-                # (This includes dictionary words filtered out by _is_common_english_word)
-                unchanged_count += 1
-                if self._is_common_english_word(segment.word):
-                    dictionary_filtered_count += 1
-                    logger.debug(f"Left unchanged dictionary word '{segment.word}': {segment.original_confidence:.3f} (common English word)")
-                else:
-                    logger.debug(f"Left unchanged '{segment.word}': {segment.original_confidence:.3f} (not a guitar term)")
-        
-        # Add counting pattern terms to evaluated_terms for reporting
-        for pattern in musical_patterns:
-            for i in range(pattern.start_index, pattern.end_index + 1):
-                if i < len(segments):
-                    segment = segments[i]
+                # Get surrounding context for better LLM evaluation
+                context = self.get_context_window(segments, i)
+                
+                # Query LLM or use fallback library
+                is_guitar_term, llm_was_used = self.query_local_llm(segment.word, context)
+                
+                if llm_was_used:
+                    llm_queries_made += 1
+                    if is_guitar_term:
+                        llm_successful_responses += 1
+                
+                if is_guitar_term:
+                    # Store original confidence if not already meaningfully stored
+                    if segment.original_confidence is None or segment.original_confidence <= 0:
+                        segment.original_confidence = segment.confidence
+                    
+                    # ONLY guitar terms get boosted to 100% confidence
+                    segment.confidence = self.target_confidence
+                    boosted_count += 1
                     evaluated_terms.append({
                         'word': segment.word,
                         'normalized_word': self._normalize_word(segment.word),
-                        'original_confidence': segment.original_confidence,
-                        'new_confidence': segment.confidence,
-                        'start': segment.start,
-                        'end': segment.end,
-                        'boost_reason': 'musical_counting_pattern',
-                        'pattern_type': pattern.pattern_type,
-                        'pattern_description': pattern.description
+                        'original_confidence': float(segment.original_confidence),
+                        'new_confidence': float(segment.confidence),
+                        'start': float(segment.start),
+                        'end': float(segment.end),
+                        'boost_reason': 'guitar_terminology'
                     })
-        
-        total_boosted = boosted_count + counting_boosted_count
-        logger.info(f"Enhanced confidence for {total_boosted} terms total: "
-                   f"{boosted_count} guitar terms + {counting_boosted_count} musical counting words, "
-                   f"left {unchanged_count} non-musical terms unchanged ({dictionary_filtered_count} were dictionary words)")
-        
-        # Update the original JSON structure with enhanced confidence scores
-        updated_json = self._update_json_with_new_confidence(transcription_json, segments, evaluated_terms)
-        
-        # Get library statistics
-        library_stats = {}
-        if self.guitar_library:
-            library_stats = self.guitar_library.get_statistics()
-            library_stats['library_type'] = 'comprehensive'
-        else:
-            library_stats = {
-                'total_terms': len(self.basic_guitar_terms),
-                'library_type': 'basic_fallback'
-            }
-        
-        # Determine what AI model was actually used
-        if llm_queries_made > 0:
-            llm_used = f"{self.model_name} + Library"
-        elif self.llm_enabled:
-            llm_used = "Library Only (no unknown terms)"
-        else:
-            llm_used = "Library Only (LLM disabled)"
-
-        # Add evaluation metadata with musical counting pattern information
-        updated_json['guitar_term_evaluation'] = {
-            'evaluator_version': '3.4',  # Update: Added compound musical term detection
-            'total_words_evaluated': len(segments),
-            'musical_terms_found': boosted_count,
-            'musical_counting_words_found': counting_boosted_count,
-            'total_enhanced_words': total_boosted,
-            'non_musical_terms_unchanged': unchanged_count,
-            'dictionary_words_filtered': dictionary_filtered_count,
-            'confidence_threshold': self.confidence_threshold,
-            'target_confidence': self.target_confidence,
-            'evaluation_timestamp': json.dumps(evaluated_terms, default=str),  # For serialization
-            'enhanced_terms': evaluated_terms,
-            'musical_counting_patterns': [
-                {
-                    'pattern_type': pattern.pattern_type,
-                    'words': pattern.words,
-                    'description': pattern.description,
-                    'start_index': pattern.start_index,
-                    'end_index': pattern.end_index,
-                    'confidence_boost': pattern.confidence_boost
+                    logger.debug(f"Boosted guitar term '{segment.word}': {segment.original_confidence:.3f} -> {segment.confidence:.3f}")
+                else:
+                    # Non-guitar terms are left completely unchanged at their original confidence
+                    # (This includes dictionary words filtered out by _is_common_english_word)
+                    unchanged_count += 1
+                    if self._is_common_english_word(segment.word):
+                        dictionary_filtered_count += 1
+                        logger.debug(f"Left unchanged dictionary word '{segment.word}': {segment.original_confidence:.3f} (common English word)")
+                    else:
+                        logger.debug(f"Left unchanged '{segment.word}': {segment.original_confidence:.3f} (not a guitar term)")
+            
+            # Add counting pattern terms to evaluated_terms for reporting
+            for pattern in musical_patterns:
+                for i in range(pattern.start_index, pattern.end_index + 1):
+                    if i < len(segments):
+                        segment = segments[i]
+                        evaluated_terms.append({
+                            'word': segment.word,
+                            'normalized_word': self._normalize_word(segment.word),
+                            'original_confidence': float(segment.original_confidence),
+                            'new_confidence': float(segment.confidence),
+                            'start': float(segment.start),
+                            'end': float(segment.end),
+                            'boost_reason': 'musical_counting_pattern',
+                            'pattern_type': pattern.pattern_type,
+                            'pattern_description': pattern.description
+                        })
+            
+            total_boosted = boosted_count + counting_boosted_count
+            logger.info(f"Enhanced confidence for {total_boosted} terms total: "
+                       f"{boosted_count} guitar terms + {counting_boosted_count} musical counting words, "
+                       f"left {unchanged_count} non-musical terms unchanged ({dictionary_filtered_count} were dictionary words)")
+            
+            # Update the original JSON structure with enhanced confidence scores
+            updated_json = self._update_json_with_new_confidence(transcription_json, segments, evaluated_terms)
+            
+            # Get library statistics - ensure JSON serializable
+            library_stats = {}
+            try:
+                if self.guitar_library:
+                    logger.debug("📊 Getting guitar library statistics...")
+                    raw_stats = self.guitar_library.get_statistics()
+                    logger.debug(f"📊 Raw library stats type check: {[(k, type(v)) for k, v in raw_stats.items()]}")
+                    
+                    # Ensure all values are JSON serializable
+                    library_stats = self._ensure_json_serializable(raw_stats)
+                    library_stats['library_type'] = 'comprehensive'
+                    logger.debug(f"📊 Processed library stats: {library_stats}")
+                else:
+                    logger.warning("📊 No guitar library available, using basic fallback")
+                    library_stats = {
+                        'total_terms': len(self.basic_guitar_terms),
+                        'library_type': 'basic_fallback'
+                    }
+            except Exception as lib_error:
+                logger.error(f"📊 Error getting library statistics: {lib_error}")
+                library_stats = {
+                    'total_terms': 0,
+                    'library_type': 'error',
+                    'error': str(lib_error)
                 }
-                for pattern in musical_patterns
-            ],
-            'pattern_statistics': {
-                'total_patterns_found': len(musical_patterns),
-                'pattern_types': list(set(pattern.pattern_type for pattern in musical_patterns)),
-                'words_boosted_by_patterns': counting_boosted_count
-            },
-            'llm_used': llm_used,  # This is what the frontend displays
-            'llm_statistics': {
-                'queries_made': llm_queries_made,
-                'successful_responses': llm_successful_responses,
-                'cache_hits': len(self.evaluation_cache)
-            },
-            'llm_configuration': {
-                'endpoint': self.llm_endpoint,
-                'model': self.model_name,
-                'enabled': self.llm_enabled,
-                'cache_hits': len(self.evaluation_cache)
-            },
-            'dictionary_configuration': {
-                'dictionary_available': self.dictionary is not None,
-                'enchant_available': ENCHANT_AVAILABLE,
-                'filtering_method': 'dictionary_based' if self.dictionary else 'fallback_common_words'
-            },
-            'library_statistics': library_stats,
-            'punctuation_handling': 'enabled',
-            'confidence_filtering': 'enabled',  # Only evaluate low-confidence words
-            'strict_llm_parsing': 'enabled',   # Strict YES/NO parsing
-            'dictionary_filtering': 'enabled',  # Dictionary-based common word filtering
-            'musical_counting_detection': 'enabled',  # Musical counting pattern detection
-            'compound_musical_terms': 'enabled',  # NEW: Compound musical term detection
-            'docker_networking': 'configured',
-            'note': f'Enhanced {total_boosted} total words: {boosted_count} guitar terms + {counting_boosted_count} musical counting/pattern words from {len(musical_patterns)} detected patterns. Compound musical terms like "4 chord", "minor 7", "flat 5" are detected and boosted as units. Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common English dictionary words are automatically filtered out. Musical counting patterns like "1, 2, 3, 4, 5" and compound terms are detected and boosted to 100% confidence. Guitar terms with special characters (-, _, #, +) are preserved. LLM made {llm_queries_made} queries with {llm_successful_responses} successful guitar term identifications.'
-        }
-        
-        return updated_json
+            
+            # Determine what AI model was actually used
+            if llm_queries_made > 0:
+                llm_used = f"{self.model_name} + Library"
+            elif self.llm_enabled:
+                llm_used = "Library Only (no unknown terms)"
+            else:
+                llm_used = "Library Only (LLM disabled)"
+
+            # Add evaluation metadata with musical counting pattern information
+            updated_json['guitar_term_evaluation'] = {
+                'evaluator_version': '3.4',  # Update: Added compound musical term detection
+                'total_words_evaluated': len(segments),
+                'musical_terms_found': boosted_count,
+                'musical_counting_words_found': counting_boosted_count,
+                'total_enhanced_words': total_boosted,
+                'non_musical_terms_unchanged': unchanged_count,
+                'dictionary_words_filtered': dictionary_filtered_count,
+                'confidence_threshold': float(self.confidence_threshold),
+                'target_confidence': float(self.target_confidence),
+                'evaluation_timestamp': json.dumps(evaluated_terms, default=str),  # For serialization
+                'enhanced_terms': evaluated_terms,
+                'musical_counting_patterns': [
+                    {
+                        'pattern_type': pattern.pattern_type,
+                        'words': pattern.words,
+                        'description': pattern.description,
+                        'start_index': int(pattern.start_index),
+                        'end_index': int(pattern.end_index),
+                        'confidence_boost': float(pattern.confidence_boost)
+                    }
+                    for pattern in musical_patterns
+                ],
+                'pattern_statistics': {
+                    'total_patterns_found': len(musical_patterns),
+                    'pattern_types': list(set(pattern.pattern_type for pattern in musical_patterns)),
+                    'words_boosted_by_patterns': counting_boosted_count
+                },
+                'llm_used': llm_used,  # This is what the frontend displays
+                'llm_statistics': {
+                    'queries_made': llm_queries_made,
+                    'successful_responses': llm_successful_responses,
+                    'cache_hits': len(self.evaluation_cache)
+                },
+                'llm_configuration': {
+                    'endpoint': self.llm_endpoint,
+                    'model': self.model_name,
+                    'enabled': self.llm_enabled,
+                    'cache_hits': len(self.evaluation_cache)
+                },
+                'dictionary_configuration': {
+                    'dictionary_available': self.dictionary is not None,
+                    'enchant_available': ENCHANT_AVAILABLE,
+                    'filtering_method': 'dictionary_based' if self.dictionary else 'fallback_common_words'
+                },
+                'library_statistics': library_stats,
+                'punctuation_handling': 'enabled',
+                'confidence_filtering': 'enabled',  # Only evaluate low-confidence words
+                'strict_llm_parsing': 'enabled',   # Strict YES/NO parsing
+                'dictionary_filtering': 'enabled',  # Dictionary-based common word filtering
+                'musical_counting_detection': 'enabled',  # Musical counting pattern detection
+                'compound_musical_terms': 'enabled',  # NEW: Compound musical term detection
+                'docker_networking': 'configured',
+                'note': f'Enhanced {total_boosted} total words: {boosted_count} guitar terms + {counting_boosted_count} musical counting/pattern words from {len(musical_patterns)} detected patterns. Compound musical terms like "4 chord", "minor 7", "flat 5" are detected and boosted as units. Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common English dictionary words are automatically filtered out. Musical counting patterns like "1, 2, 3, 4, 5" and compound terms are detected and boosted to 100% confidence. Guitar terms with special characters (-, _, #, +) are preserved. LLM made {llm_queries_made} queries with {llm_successful_responses} successful guitar term identifications.'
+            }
+            
+            # Ensure entire result is JSON serializable before returning
+            logger.debug("Guitar term evaluation completed successfully, ensuring JSON serialization...")
+            try:
+                safe_result = self._ensure_json_serializable(updated_json)
+                logger.info("Guitar terminology enhancement completed successfully")
+                return safe_result
+            except Exception as json_error:
+                logger.error(f"JSON serialization failed after guitar term evaluation: {type(json_error).__name__}: {json_error}")
+                logger.debug(f"Problematic result keys: {list(updated_json.keys()) if isinstance(updated_json, dict) else type(updated_json)}")
+                
+                # Try to find the specific problematic value
+                import numpy as np
+                def find_numpy_values(obj, path="", max_depth=10):
+                    if max_depth <= 0:
+                        return
+                    
+                    if isinstance(obj, dict):
+                        for k, v in obj.items():
+                            current_path = f"{path}.{k}" if path else k
+                            # Check the key first
+                            if hasattr(v, 'dtype') or isinstance(v, (np.floating, np.integer)):
+                                logger.error(f"🔍 FOUND NUMPY VALUE at {current_path}: {type(v)} = {v}")
+                            find_numpy_values(v, current_path, max_depth-1)
+                    elif isinstance(obj, list):
+                        for i, item in enumerate(obj):
+                            current_path = f"{path}[{i}]"
+                            if hasattr(item, 'dtype') or isinstance(item, (np.floating, np.integer)):
+                                logger.error(f"🔍 FOUND NUMPY VALUE at {current_path}: {type(item)} = {item}")
+                            find_numpy_values(item, current_path, max_depth-1)
+                    elif isinstance(obj, (np.floating, np.integer)):
+                        logger.error(f"🔍 FOUND NUMPY VALUE at {path}: {type(obj)} = {obj}")
+                    elif hasattr(obj, 'dtype'):
+                        logger.error(f"🔍 FOUND NUMPY OBJECT at {path}: {type(obj)} = {obj}")
+                    elif isinstance(obj, (np.bool_, np.number)):
+                        logger.error(f"🔍 FOUND NUMPY TYPE at {path}: {type(obj)} = {obj}")
+                
+                logger.error("🔍 Searching for numpy values in guitar evaluator result...")
+                find_numpy_values(updated_json)
+                raise
+                
+        except Exception as e:
+            logger.error(f"Guitar terminology enhancement failed: {e}")
+            import traceback
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
+            
+            # Add debugging information about the error location
+            if "float32" in str(e):
+                logger.error("DEBUGGING: float32 JSON serialization error detected")
+                logger.error("This indicates a numpy float32 value that wasn't converted to Python float")
+                
+                # Try to debug by examining recent variables
+                try:
+                    if 'segments' in locals() and segments:
+                        logger.debug(f"Sample segment confidence type: {type(segments[0].confidence)}")
+                        logger.debug(f"Sample segment start type: {type(segments[0].start)}")
+                        logger.debug(f"Sample segment end type: {type(segments[0].end)}")
+                    if 'musical_patterns' in locals():
+                        logger.debug(f"Musical patterns count: {len(musical_patterns)}")
+                    if 'evaluated_terms' in locals():
+                        logger.debug(f"Evaluated terms count: {len(evaluated_terms)}")
+                        if evaluated_terms:
+                            sample_term = evaluated_terms[0]
+                            for key, value in sample_term.items():
+                                logger.debug(f"Sample term {key} type: {type(value)}")
+                    if 'library_stats' in locals():
+                        logger.debug(f"Library stats type: {type(library_stats)}")
+                        for key, value in library_stats.items():
+                            logger.debug(f"Library stat {key} type: {type(value)}")
+                except Exception as debug_error:
+                    logger.debug(f"Could not examine debug variables: {debug_error}")
+            
+            # Return original result if enhancement fails
+            return transcription_json
 
     def _update_json_with_new_confidence(self, original_json: Dict[str, Any], 
                                        segments: List[WordSegment], 
@@ -647,13 +739,13 @@ class GuitarTerminologyEvaluator:
                 enhanced_seg = find_enhanced_segment(word_data)
                 if enhanced_seg:
                     # Preserve original confidence
-                    word_data['original_confidence'] = enhanced_seg.original_confidence
+                    word_data['original_confidence'] = float(enhanced_seg.original_confidence)
                     
                     # Update current confidence
                     if 'score' in word_data:
-                        word_data['score'] = enhanced_seg.confidence
+                        word_data['score'] = float(enhanced_seg.confidence)
                     if 'confidence' in word_data:
-                        word_data['confidence'] = enhanced_seg.confidence
+                        word_data['confidence'] = float(enhanced_seg.confidence)
                     
                     # Add metadata if boosted
                     if enhanced_seg.original_confidence != enhanced_seg.confidence:
@@ -681,13 +773,13 @@ class GuitarTerminologyEvaluator:
                         enhanced_seg = find_enhanced_segment(word_data)
                         if enhanced_seg:
                             # Preserve original confidence
-                            word_data['original_confidence'] = enhanced_seg.original_confidence
+                            word_data['original_confidence'] = float(enhanced_seg.original_confidence)
                             
                             # Update current confidence
                             if 'score' in word_data:
-                                word_data['score'] = enhanced_seg.confidence
+                                word_data['score'] = float(enhanced_seg.confidence)
                             if 'confidence' in word_data:
-                                word_data['confidence'] = enhanced_seg.confidence
+                                word_data['confidence'] = float(enhanced_seg.confidence)
                             
                             # Add metadata if boosted
                             if enhanced_seg.original_confidence != enhanced_seg.confidence:

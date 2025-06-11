@@ -546,7 +546,7 @@ class GuitarTerminologyEvaluator:
 
         # Add evaluation metadata with musical counting pattern information
         updated_json['guitar_term_evaluation'] = {
-            'evaluator_version': '3.3',  # Update: Added musical counting pattern detection
+            'evaluator_version': '3.4',  # Update: Added compound musical term detection
             'total_words_evaluated': len(segments),
             'musical_terms_found': boosted_count,
             'musical_counting_words_found': counting_boosted_count,
@@ -595,9 +595,10 @@ class GuitarTerminologyEvaluator:
             'confidence_filtering': 'enabled',  # Only evaluate low-confidence words
             'strict_llm_parsing': 'enabled',   # Strict YES/NO parsing
             'dictionary_filtering': 'enabled',  # Dictionary-based common word filtering
-            'musical_counting_detection': 'enabled',  # NEW: Musical counting pattern detection
+            'musical_counting_detection': 'enabled',  # Musical counting pattern detection
+            'compound_musical_terms': 'enabled',  # NEW: Compound musical term detection
             'docker_networking': 'configured',
-            'note': f'Enhanced {total_boosted} total words: {boosted_count} guitar terms + {counting_boosted_count} musical counting words from {len(musical_patterns)} detected patterns. Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common English dictionary words are automatically filtered out. Musical counting patterns like "1, 2, 3, 4, 5" are detected and boosted to 100% confidence. Guitar terms with special characters (-, _, #, +) are preserved. LLM made {llm_queries_made} queries with {llm_successful_responses} successful guitar term identifications.'
+            'note': f'Enhanced {total_boosted} total words: {boosted_count} guitar terms + {counting_boosted_count} musical counting/pattern words from {len(musical_patterns)} detected patterns. Compound musical terms like "4 chord", "minor 7", "flat 5" are detected and boosted as units. Only low-confidence words (< {self.confidence_threshold:.0%}) are evaluated. Common English dictionary words are automatically filtered out. Musical counting patterns like "1, 2, 3, 4, 5" and compound terms are detected and boosted to 100% confidence. Guitar terms with special characters (-, _, #, +) are preserved. LLM made {llm_queries_made} queries with {llm_successful_responses} successful guitar term identifications.'
         }
         
         return updated_json
@@ -727,19 +728,41 @@ class GuitarTerminologyEvaluator:
         return number_mapping.get(word_clean)
 
     def _detect_musical_counting_patterns(self, segments: List[WordSegment]) -> List[MusicalCountingPattern]:
-        """Detect musical counting patterns in the word segments"""
+        """Detect musical counting patterns in the word segments (OPTIMIZED)"""
         patterns = []
+        processed_indices = set()  # Track processed word indices to avoid overlaps
         
         for i in range(len(segments)):
-            # Look for sequential counting patterns starting from this position
+            # Skip if this word was already processed as part of another pattern
+            if i in processed_indices:
+                continue
+            
+            # Try compound musical terms first (most specific)
+            compound_pattern = self._check_compound_musical_terms(segments, i)
+            if compound_pattern:
+                patterns.append(compound_pattern)
+                # Mark all words in this pattern as processed
+                for idx in range(compound_pattern.start_index, compound_pattern.end_index + 1):
+                    processed_indices.add(idx)
+                continue
+            
+            # Try sequential counting patterns (medium specificity)
             pattern = self._check_sequential_pattern(segments, i)
             if pattern:
                 patterns.append(pattern)
+                # Mark all words in this pattern as processed
+                for idx in range(pattern.start_index, pattern.end_index + 1):
+                    processed_indices.add(idx)
+                continue
             
-            # Look for other musical instruction patterns
+            # Try other musical instruction patterns (broader)
             musical_pattern = self._check_musical_instruction_patterns(segments, i)
             if musical_pattern:
                 patterns.append(musical_pattern)
+                # Mark all words in this pattern as processed
+                for idx in range(musical_pattern.start_index, musical_pattern.end_index + 1):
+                    processed_indices.add(idx)
+                continue
         
         return patterns
 
@@ -875,39 +898,68 @@ class GuitarTerminologyEvaluator:
         return boosted_count
 
     def _check_musical_instruction_patterns(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
-        """Check for various musical instruction patterns beyond counting"""
+        """Check for various musical instruction patterns beyond counting (OPTIMIZED)"""
         if start_index >= len(segments):
             return None
         
-        # Check for rhythm vocalization patterns
-        rhythm_pattern = self._check_rhythm_vocalization_pattern(segments, start_index)
-        if rhythm_pattern:
-            return rhythm_pattern
+        first_word_lower = segments[start_index].word.lower()
         
-        # Check for strumming pattern descriptions
-        strumming_pattern = self._check_strumming_pattern(segments, start_index)
-        if strumming_pattern:
-            return strumming_pattern
+        # OPTIMIZATION: Quick rejection for non-musical starting words
+        musical_starters = {
+            # Rhythm syllables
+            'da', 'dum', 'ta', 'ka', 'boom', 'chick', 'tick', 'tock', 'doo', 'dah', 'bah', 'pah', 'tsk', 'tik', 'tak', 'tuk',
+            # Strumming terms
+            'down', 'up', 'strum', 'pick', 'hit', 'miss', 'rest', 'mute', 'downstroke', 'upstroke', 'stroke', 'pluck', 'attack',
+            # Notes (handled in note sequence check)
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'do', 're', 'mi', 'fa', 'sol', 'la', 'ti', 'si',
+            # Fingerpicking
+            'thumb', 'index', 'middle', 'ring', 'pinky', 't', 'i', 'm', 'r', 'p',
+            # Timing
+            'click', 'beep', 'boop', 'pop', 'tap', 'clap', 'snap', 'beat',
+            # Effects
+            'wah', 'ring', 'buzz', 'twang', 'zing', 'ping', 'whoosh', 'screech', 'squeal', 'howl', 'whine', 'boom', 'crash', 'bang', 'thud', 'thump'
+        }
+        
+        if first_word_lower not in musical_starters:
+            return None
+        
+        # Check most common patterns first for efficiency
+        
+        # Check for rhythm vocalization patterns (most common)
+        if first_word_lower in {'da', 'dum', 'ta', 'ka', 'boom', 'chick', 'tick', 'tock', 'doo', 'dah', 'bah', 'pah', 'tsk', 'tik', 'tak', 'tuk'}:
+            rhythm_pattern = self._check_rhythm_vocalization_pattern(segments, start_index)
+            if rhythm_pattern:
+                return rhythm_pattern
+        
+        # Check for strumming patterns
+        if first_word_lower in {'down', 'up', 'strum', 'pick', 'hit', 'miss', 'rest', 'mute', 'downstroke', 'upstroke', 'stroke', 'pluck', 'attack'}:
+            strumming_pattern = self._check_strumming_pattern(segments, start_index)
+            if strumming_pattern:
+                return strumming_pattern
         
         # Check for note/chord sequences
-        note_sequence_pattern = self._check_note_sequence_pattern(segments, start_index)
-        if note_sequence_pattern:
-            return note_sequence_pattern
+        if self._is_note_or_chord_name(segments[start_index].word):
+            note_sequence_pattern = self._check_note_sequence_pattern(segments, start_index)
+            if note_sequence_pattern:
+                return note_sequence_pattern
         
         # Check for fingerpicking patterns
-        fingerpicking_pattern = self._check_fingerpicking_pattern(segments, start_index)
-        if fingerpicking_pattern:
-            return fingerpicking_pattern
+        if first_word_lower in {'thumb', 'index', 'middle', 'ring', 'pinky', 't', 'i', 'm', 'r', 'p'}:
+            fingerpicking_pattern = self._check_fingerpicking_pattern(segments, start_index)
+            if fingerpicking_pattern:
+                return fingerpicking_pattern
         
         # Check for timing/metronome patterns
-        timing_pattern = self._check_timing_pattern(segments, start_index)
-        if timing_pattern:
-            return timing_pattern
+        if first_word_lower in {'tick', 'tock', 'click', 'beep', 'boop', 'pop', 'tap', 'clap', 'snap', 'beat'}:
+            timing_pattern = self._check_timing_pattern(segments, start_index)
+            if timing_pattern:
+                return timing_pattern
         
         # Check for guitar effect sound patterns
-        effect_pattern = self._check_effect_sound_pattern(segments, start_index)
-        if effect_pattern:
-            return effect_pattern
+        if first_word_lower in {'wah', 'ring', 'buzz', 'twang', 'zing', 'ping', 'whoosh', 'screech', 'squeal', 'howl', 'whine', 'boom', 'crash', 'bang', 'thud', 'thump'}:
+            effect_pattern = self._check_effect_sound_pattern(segments, start_index)
+            if effect_pattern:
+                return effect_pattern
         
         return None
 
@@ -1221,6 +1273,164 @@ class GuitarTerminologyEvaluator:
             )
         
         return None
+
+    def _check_compound_musical_terms(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect compound musical terms like '4 chord', 'minor 7', 'flat 5', etc. (OPTIMIZED)"""
+        if start_index >= len(segments):
+            return None
+        
+        # Quick early exit if we don't have enough words for any compound term
+        if start_index + 1 >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word
+        first_word_lower = first_word.lower()
+        
+        # OPTIMIZATION: Quick rejection for words that can't start compound terms
+        compound_starters = {
+            # Roman numeral numbers
+            '1', '2', '3', '4', '5', '6', '7', 'i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii',
+            # Chord qualities
+            'major', 'minor', 'dominant', 'diminished', 'augmented', 'suspended', 'sus', 'add', 'maj', 'min', 'dim', 'aug',
+            # Accidentals
+            'flat', 'sharp', 'natural'
+        }
+        
+        if first_word_lower not in compound_starters and first_word not in compound_starters:
+            return None
+        
+        # Check for Roman numeral chord references (number + chord) - MOST COMMON
+        roman_chord_pattern = self._check_roman_numeral_chord(segments, start_index)
+        if roman_chord_pattern:
+            return roman_chord_pattern
+        
+        # Check for extended chord notation (quality + number [+ chord])
+        extended_chord_pattern = self._check_extended_chord_notation(segments, start_index)
+        if extended_chord_pattern:
+            return extended_chord_pattern
+        
+        # Check for altered chord notation (accidental + number [+ chord])
+        altered_chord_pattern = self._check_altered_chord_notation(segments, start_index)
+        if altered_chord_pattern:
+            return altered_chord_pattern
+        
+        return None
+
+    def _check_roman_numeral_chord(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect Roman numeral chord references like '4 chord', '5 chord', '1 chord'"""
+        if start_index + 1 >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word
+        second_word = segments[start_index + 1].word.lower()
+        
+        # Check for number + "chord" pattern
+        if self._is_chord_number(first_word) and second_word == "chord":
+            return MusicalCountingPattern(
+                pattern_type="roman_numeral_chord",
+                words=[first_word, segments[start_index + 1].word],
+                start_index=start_index,
+                end_index=start_index + 1,
+                confidence_boost=1.0,
+                description=f"Roman numeral chord: {first_word} chord"
+            )
+        
+        return None
+
+    def _check_extended_chord_notation(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect extended chord notation like 'minor 7', 'major 9', 'dominant 11'"""
+        if start_index + 1 >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word.lower()
+        second_word = segments[start_index + 1].word
+        
+        # Chord quality words
+        chord_qualities = {
+            'major', 'minor', 'dominant', 'diminished', 'augmented', 
+            'suspended', 'sus', 'add', 'maj', 'min', 'dim', 'aug'
+        }
+        
+        # Check for quality + number pattern
+        if first_word in chord_qualities and self._is_chord_extension_number(second_word):
+            sequence = [segments[start_index].word, second_word]
+            end_index = start_index + 1
+            
+            # Check if followed by "chord"
+            if start_index + 2 < len(segments) and segments[start_index + 2].word.lower() == "chord":
+                sequence.append(segments[start_index + 2].word)
+                end_index = start_index + 2
+            
+            return MusicalCountingPattern(
+                pattern_type="extended_chord_notation",
+                words=sequence,
+                start_index=start_index,
+                end_index=end_index,
+                confidence_boost=1.0,
+                description=f"Extended chord notation: {' '.join(sequence)}"
+            )
+        
+        return None
+
+    def _check_altered_chord_notation(self, segments: List[WordSegment], start_index: int) -> Optional[MusicalCountingPattern]:
+        """Detect altered chord notation like 'flat 7', 'sharp 11', 'flat 5'"""
+        if start_index + 1 >= len(segments):
+            return None
+        
+        first_word = segments[start_index].word.lower()
+        second_word = segments[start_index + 1].word
+        
+        # Accidental words
+        accidentals = {'flat', 'sharp', 'natural'}
+        
+        # Check for accidental + number pattern
+        if first_word in accidentals and self._is_chord_extension_number(second_word):
+            sequence = [segments[start_index].word, second_word]
+            end_index = start_index + 1
+            
+            # Check if followed by "chord"
+            if start_index + 2 < len(segments) and segments[start_index + 2].word.lower() == "chord":
+                sequence.append(segments[start_index + 2].word)
+                end_index = start_index + 2
+            
+            return MusicalCountingPattern(
+                pattern_type="altered_chord_notation",
+                words=sequence,
+                start_index=start_index,
+                end_index=end_index,
+                confidence_boost=1.0,
+                description=f"Altered chord notation: {' '.join(sequence)}"
+            )
+        
+        return None
+
+    def _is_chord_number(self, word: str) -> bool:
+        """Check if word is a number used in Roman numeral chord analysis"""
+        if not word:
+            return False
+        
+        # Common Roman numeral chord numbers (both digits and roman)
+        chord_numbers = {
+            '1', '2', '3', '4', '5', '6', '7',
+            'i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii',
+            'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'
+        }
+        
+        return word.strip().lower() in [n.lower() for n in chord_numbers] or word.strip() in chord_numbers
+
+    def _is_chord_extension_number(self, word: str) -> bool:
+        """Check if word is a number used in chord extensions"""
+        if not word:
+            return False
+        
+        # Common chord extension numbers
+        extension_numbers = {
+            '2', '4', '5', '6', '7', '9', '11', '13',
+            'add2', 'add4', 'add6', 'add9', 'add11', 'add13'
+        }
+        
+        word_clean = word.strip().lower()
+        return word_clean in extension_numbers or word.strip() in extension_numbers
 
 # Simple usage function for integration
 def enhance_guitar_terminology(transcription_result: Dict[str, Any], 

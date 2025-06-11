@@ -527,6 +527,133 @@ function formatTime(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Helper function to format file sizes
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return 'N/A';
+    
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+// Helper function to format timestamps
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'N/A';
+    
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+}
+
+// Helper function to format duration (for processing times)
+function formatDuration(seconds) {
+    if (!seconds || seconds === 0) return 'N/A';
+    
+    if (seconds < 60) {
+        return `${Math.round(seconds)}s`;
+    } else if (seconds < 3600) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.round(seconds % 60);
+        return `${mins}m ${secs}s`;
+    } else {
+        const hours = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        return `${hours}h ${mins}m`;
+    }
+}
+
+// Helper function to calculate individual processing step durations
+function getProcessingStepDurations() {
+    if (!segmentData.value) return {};
+    
+    const durations = {};
+    
+    // Audio extraction duration
+    if (segmentData.value.audio_extraction_started_at && segmentData.value.audio_extraction_completed_at) {
+        const start = new Date(segmentData.value.audio_extraction_started_at);
+        const end = new Date(segmentData.value.audio_extraction_completed_at);
+        durations.audioExtraction = Math.max(0, (end - start) / 1000);
+    }
+    
+    // Transcription duration
+    if (segmentData.value.transcription_started_at && segmentData.value.transcription_completed_at) {
+        const start = new Date(segmentData.value.transcription_started_at);
+        const end = new Date(segmentData.value.transcription_completed_at);
+        durations.transcription = Math.max(0, (end - start) / 1000);
+    }
+    
+    // Terminology processing duration
+    if (segmentData.value.terminology_started_at && segmentData.value.terminology_completed_at) {
+        const start = new Date(segmentData.value.terminology_started_at);
+        const end = new Date(segmentData.value.terminology_completed_at);
+        durations.terminology = Math.max(0, (end - start) / 1000);
+    }
+    
+    // Wait time between audio extraction and transcription
+    if (segmentData.value.audio_extraction_completed_at && segmentData.value.transcription_started_at) {
+        const audioEnd = new Date(segmentData.value.audio_extraction_completed_at);
+        const transcriptionStart = new Date(segmentData.value.transcription_started_at);
+        durations.queueWait = Math.max(0, (transcriptionStart - audioEnd) / 1000);
+    }
+    
+    // Total end-to-end duration
+    const firstStart = segmentData.value.audio_extraction_started_at || segmentData.value.transcription_started_at;
+    const lastEnd = segmentData.value.terminology_completed_at || segmentData.value.transcription_completed_at || segmentData.value.audio_extraction_completed_at;
+    
+    if (firstStart && lastEnd) {
+        const start = new Date(firstStart);
+        const end = new Date(lastEnd);
+        durations.total = Math.max(0, (end - start) / 1000);
+    }
+    
+    return durations;
+}
+
+// Helper function for backwards compatibility
+function getProcessingDuration() {
+    const durations = getProcessingStepDurations();
+    return durations.total || 0;
+}
+
+// Calculate processing efficiency metrics
+const processingMetrics = computed(() => {
+    if (!segmentData.value) return null;
+    
+    const durations = getProcessingStepDurations();
+    const videoDuration = segmentData.value.runtime || segmentData.value.audio_duration || 0;
+    
+    // Show metrics even with partial data
+    if (!durations.total && !durations.audioExtraction && !durations.transcription) return null;
+    
+    return {
+        durations,
+        videoDuration,
+        efficiencyRatio: durations.total && videoDuration > 0 ? (durations.total / videoDuration).toFixed(2) : 'N/A',
+        audioExtractionRatio: durations.audioExtraction && videoDuration > 0 ? (durations.audioExtraction / videoDuration).toFixed(2) : 'N/A',
+        transcriptionRatio: durations.transcription && videoDuration > 0 ? (durations.transcription / videoDuration).toFixed(2) : 'N/A',
+        bottleneck: getBiggestBottleneck(durations),
+        processingRate: durations.total && videoDuration > 0 ? (videoDuration / durations.total).toFixed(2) : 'N/A'
+    };
+});
+
+// Identify the biggest processing bottleneck
+function getBiggestBottleneck(durations) {
+    if (!durations || Object.keys(durations).length === 0) return null;
+    
+    const steps = {
+        'Audio Extraction': durations.audioExtraction || 0,
+        'Queue Wait': durations.queueWait || 0,
+        'Transcription': durations.transcription || 0,
+        'Terminology': durations.terminology || 0
+    };
+    
+    const maxStep = Object.entries(steps).reduce((max, [step, duration]) => 
+        duration > max.duration ? { step, duration } : max, 
+        { step: null, duration: 0 }
+    );
+    
+    return maxStep.duration > 0 ? maxStep : null;
+}
+
 // Helper function to get teaching pattern styling
 function getPatternStyle(patternType) {
     const styles = {
@@ -583,6 +710,32 @@ function getPatternStrengthColor(strength) {
     };
     return colors[strength] || 'text-gray-700';
 }
+
+// Check if we have any processing timestamps to show
+const hasProcessingTimestamps = computed(() => {
+    if (!segmentData.value) return false;
+    
+    return !!(
+        segmentData.value.audio_extraction_started_at ||
+        segmentData.value.audio_extraction_completed_at ||
+        segmentData.value.transcription_started_at ||
+        segmentData.value.transcription_completed_at ||
+        getProcessingDuration() > 0
+    );
+});
+
+// Check if we have advanced metrics data to show
+const hasAdvancedMetricsData = computed(() => {
+    if (!transcriptionSuccess.value.success) return false;
+    
+    return !!(
+        guitarEnhancementAnalysis.value ||
+        qualityMetrics.value ||
+        confidenceAnalysis.value ||
+        teachingPatternAnalysis.value ||
+        (transcriptData.value && transcriptData.value.segments)
+    );
+});
 
 // Function to jump to specific time in video
 function jumpToTime(timeInSeconds) {
@@ -1199,17 +1352,199 @@ function getStatusTitle(status) {
                                     </div>
                                 </div>
 
-                                <!-- Processing Timeline -->
-                                <div class="bg-gray-50 rounded-lg p-5 shadow-sm border border-gray-200 mb-6">
-                                    <h3 class="text-lg font-medium mb-3">Processing Timeline</h3>
-                                    <TranscriptionTimeline 
-                                        :status="timelineData.status || segmentData.status"
-                                        :timing="timelineData.timing"
-                                        :progress-percentage="timelineData.progress_percentage"
-                                        :error="segmentData.error_message"
-                                        :media-duration="segmentData.audio_duration"
-                                    />
+                                <!-- Compact Processing Status -->
+                                <div v-if="['processing', 'transcribing', 'transcribed', 'processing_terminology'].includes(segmentData.status)" 
+                                     class="bg-blue-50 rounded-lg p-4 border border-blue-200 mb-4">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="flex items-center">
+                                            <div class="w-3 h-3 bg-blue-500 rounded-full animate-pulse mr-2"></div>
+                                            <span class="text-sm font-medium text-blue-800">{{ getStatusTitle(segmentData.status) }}</span>
+                                        </div>
+                                        <span class="text-xs text-blue-600">{{ timelineData.progress_percentage || 0 }}%</span>
+                                    </div>
+                                    <div class="w-full bg-blue-200 rounded-full h-2">
+                                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                                             :style="{ width: (timelineData.progress_percentage || 0) + '%' }"></div>
+                                    </div>
+                                    <div class="text-xs text-blue-600 mt-1">{{ getStatusMessage(segmentData.status) }}</div>
                                 </div>
+
+                                <!-- Technical Details -->
+                                <div class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200 mb-4">
+                                    <h3 class="text-sm font-medium mb-3 text-gray-800">File Details</h3>
+                                    <div class="space-y-3">
+                                        <div v-if="segmentData.audio_size">
+                                            <div class="text-gray-500 text-xs mb-1">Audio File Size</div>
+                                            <div class="font-medium text-sm">{{ formatFileSize(segmentData.audio_size) }}</div>
+                                        </div>
+
+                                        <div v-if="segmentData.video_size || segmentData.filesize">
+                                            <div class="text-gray-500 text-xs mb-1">Video File Size</div>
+                                            <div class="font-medium text-sm">{{ formatFileSize(segmentData.video_size || segmentData.filesize) }}</div>
+                                        </div>
+
+                                        <div v-if="segmentData.audio_path">
+                                            <div class="text-gray-500 text-xs mb-1">Audio Path</div>
+                                            <div class="font-mono text-xs text-gray-700 break-all">{{ segmentData.audio_path }}</div>
+                                        </div>
+
+                                        <div v-if="segmentData.video_path || segmentData.localpath">
+                                            <div class="text-gray-500 text-xs mb-1">Video Path</div>
+                                            <div class="font-mono text-xs text-gray-700 break-all">{{ segmentData.video_path || segmentData.localpath }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Processing Performance Analysis -->
+                                <div v-if="hasProcessingTimestamps || segmentData.status === 'completed'" class="bg-gray-50 rounded-lg p-4 shadow-sm border border-gray-200 mb-4">
+                                    <h3 class="text-sm font-medium mb-3 text-gray-800">Processing Performance</h3>
+                                    
+                                    <!-- Performance Summary -->
+                                    <div v-if="processingMetrics" class="mb-4 p-3 bg-white rounded-lg border border-gray-200">
+                                        <div class="grid grid-cols-2 gap-3 text-xs">
+                                            <div>
+                                                <div class="text-gray-500 mb-1">Total Time</div>
+                                                <div class="font-medium">{{ formatDuration(processingMetrics.durations.total) }}</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-gray-500 mb-1">Efficiency</div>
+                                                <div class="font-medium" :class="getEfficiencyColor(processingMetrics.efficiencyRatio)">
+                                                    {{ processingMetrics.efficiencyRatio }}x real-time
+                                                </div>
+                                            </div>
+                                            <div v-if="processingMetrics.bottleneck">
+                                                <div class="text-gray-500 mb-1">Bottleneck</div>
+                                                <div class="font-medium text-red-600">{{ processingMetrics.bottleneck.step }}</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-gray-500 mb-1">Processing Rate</div>
+                                                <div class="font-medium text-blue-600">{{ processingMetrics.processingRate }}x speed</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Fallback when no detailed timing available -->
+                                    <div v-else-if="segmentData.status === 'completed'" class="mb-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                                        <div class="text-sm text-yellow-800 mb-2">
+                                            ⏱️ Processing completed but detailed timing data not available
+                                        </div>
+                                        <div class="text-xs text-yellow-700 mb-3">
+                                            Timing analytics aren't capturing data properly.
+                                            Available fields: {{ Object.keys(segmentData).filter(key => key.includes('_at')).join(', ') || 'None' }}
+                                        </div>
+                                        
+                                        <!-- Show any available timing info -->
+                                        <div v-if="segmentData.updated_at" class="text-xs text-gray-600">
+                                            <div><strong>Last Updated:</strong> {{ formatTimestamp(segmentData.updated_at) }}</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Step-by-Step Breakdown -->
+                                    <div v-if="processingMetrics" class="space-y-3">
+                                        <!-- Audio Extraction -->
+                                        <div v-if="processingMetrics?.durations.audioExtraction" class="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
+                                            <div class="flex items-center">
+                                                <div class="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
+                                                <span class="text-xs font-medium">Audio Extraction</span>
+                                            </div>
+                                            <div class="text-right">
+                                                <div class="text-xs font-medium">{{ formatDuration(processingMetrics.durations.audioExtraction) }}</div>
+                                                <div class="text-xs text-gray-500">{{ processingMetrics.audioExtractionRatio }}x</div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Queue Wait Time -->
+                                        <div v-if="processingMetrics?.durations.queueWait > 0" class="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
+                                            <div class="flex items-center">
+                                                <div class="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                                                <span class="text-xs font-medium">Queue Wait</span>
+                                            </div>
+                                            <div class="text-right">
+                                                <div class="text-xs font-medium text-yellow-600">{{ formatDuration(processingMetrics.durations.queueWait) }}</div>
+                                                <div class="text-xs text-gray-500">idle time</div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Transcription -->
+                                        <div v-if="processingMetrics?.durations.transcription" class="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
+                                            <div class="flex items-center">
+                                                <div class="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
+                                                <span class="text-xs font-medium">Transcription</span>
+                                            </div>
+                                            <div class="text-right">
+                                                <div class="text-xs font-medium">{{ formatDuration(processingMetrics.durations.transcription) }}</div>
+                                                <div class="text-xs text-gray-500">{{ processingMetrics.transcriptionRatio }}x</div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Terminology Processing -->
+                                        <div v-if="processingMetrics?.durations.terminology" class="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
+                                            <div class="flex items-center">
+                                                <div class="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                                                <span class="text-xs font-medium">Terminology Analysis</span>
+                                            </div>
+                                            <div class="text-right">
+                                                <div class="text-xs font-medium">{{ formatDuration(processingMetrics.durations.terminology) }}</div>
+                                                <div class="text-xs text-gray-500">enhancement</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Performance Insights -->
+                                    <div v-if="processingMetrics" class="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div class="text-xs">
+                                            <div class="font-medium text-blue-800 mb-2">📊 Performance Insights</div>
+                                            
+                                            <!-- Efficiency Analysis -->
+                                            <div v-if="processingMetrics.efficiencyRatio > 3" class="text-blue-700 mb-1">
+                                                ⚡ High efficiency: Processing took {{ processingMetrics.efficiencyRatio }}x longer than video duration
+                                            </div>
+                                            <div v-else-if="processingMetrics.efficiencyRatio > 1.5" class="text-blue-700 mb-1">
+                                                ⏱️ Good efficiency: Processing reasonably fast at {{ processingMetrics.efficiencyRatio }}x real-time
+                                            </div>
+                                            <div v-else class="text-green-700 mb-1">
+                                                🚀 Excellent efficiency: Near real-time processing at {{ processingMetrics.efficiencyRatio }}x
+                                            </div>
+
+                                            <!-- Bottleneck Warning -->
+                                            <div v-if="processingMetrics.bottleneck && processingMetrics.bottleneck.duration > 10" class="text-orange-700 mb-1">
+                                                ⚠️ Bottleneck detected: {{ processingMetrics.bottleneck.step }} took {{ formatDuration(processingMetrics.bottleneck.duration) }}
+                                            </div>
+
+                                            <!-- Queue Wait Warning -->
+                                            <div v-if="processingMetrics.durations.queueWait > 30" class="text-yellow-700">
+                                                ⏳ Long queue wait: {{ formatDuration(processingMetrics.durations.queueWait) }} between audio extraction and transcription
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Detailed Timestamps (Collapsible) -->
+                                    <details class="mt-4">
+                                        <summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-800">Show detailed timestamps</summary>
+                                        <div class="mt-2 space-y-2 text-xs">
+                                            <div v-if="segmentData.audio_extraction_started_at">
+                                                <span class="text-gray-500">Audio started:</span> {{ formatTimestamp(segmentData.audio_extraction_started_at) }}
+                                            </div>
+                                            <div v-if="segmentData.audio_extraction_completed_at">
+                                                <span class="text-gray-500">Audio completed:</span> {{ formatTimestamp(segmentData.audio_extraction_completed_at) }}
+                                            </div>
+                                            <div v-if="segmentData.transcription_started_at">
+                                                <span class="text-gray-500">Transcription started:</span> {{ formatTimestamp(segmentData.transcription_started_at) }}
+                                            </div>
+                                            <div v-if="segmentData.transcription_completed_at">
+                                                <span class="text-gray-500">Transcription completed:</span> {{ formatTimestamp(segmentData.transcription_completed_at) }}
+                                            </div>
+                                            <div v-if="segmentData.terminology_started_at">
+                                                <span class="text-gray-500">Terminology started:</span> {{ formatTimestamp(segmentData.terminology_started_at) }}
+                                            </div>
+                                            <div v-if="segmentData.terminology_completed_at">
+                                                <span class="text-gray-500">Terminology completed:</span> {{ formatTimestamp(segmentData.terminology_completed_at) }}
+                                            </div>
+                                        </div>
+                                    </details>
+                                </div>
+
+
                                 
                                 <!-- Error message -->
                                 <div v-if="segmentData.error_message" class="p-3 bg-red-50 text-red-800 rounded-md border border-red-200">
@@ -1260,7 +1595,7 @@ function getStatusTitle(status) {
                                 </div>
 
                                 <!-- ADVANCED METRICS - Hidden by Default -->
-                                <div v-if="transcriptionSuccess.success" class="mb-6">
+                                <div v-if="hasAdvancedMetricsData" class="mb-6">
                                     <button 
                                         @click="showAdvancedMetrics = !showAdvancedMetrics" 
                                         class="flex items-center text-sm px-3 py-2 rounded-md transition bg-gray-100 text-gray-700 hover:bg-gray-200 mb-4"
@@ -1754,6 +2089,15 @@ export default {
             if (confidence >= 0.8) return '#10b981'; // green-500
             if (confidence >= 0.5) return '#f59e0b'; // yellow-500
             return '#ef4444'; // red-500
+        },
+        getEfficiencyColor(ratio) {
+            if (ratio === 'N/A') return 'text-gray-500'; // No data available
+            const numRatio = parseFloat(ratio);
+            if (isNaN(numRatio)) return 'text-gray-500'; // Invalid data
+            if (numRatio <= 1) return 'text-green-600'; // Faster than real-time
+            if (numRatio <= 2) return 'text-blue-600';  // Good efficiency 
+            if (numRatio <= 3) return 'text-yellow-600'; // Moderate efficiency
+            return 'text-red-600'; // Slow processing
         }
     }
 }

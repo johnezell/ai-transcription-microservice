@@ -120,6 +120,14 @@ class TruefireSegmentController extends Controller
         $response['segment']['formatted_duration'] = $processing->formatted_duration;
         $response['segment']['is_processing'] = in_array($processing->status, ['processing', 'transcribing', 'processing_terminology']);
         
+        // Add processing timing data for analytics
+        $response['segment']['audio_extraction_started_at'] = $processing->audio_extraction_started_at;
+        $response['segment']['audio_extraction_completed_at'] = $processing->audio_extraction_completed_at;
+        $response['segment']['transcription_started_at'] = $processing->transcription_started_at;
+        $response['segment']['transcription_completed_at'] = $processing->transcription_completed_at;
+        $response['segment']['terminology_started_at'] = $processing->terminology_started_at;
+        $response['segment']['terminology_completed_at'] = $processing->terminology_completed_at;
+        
         return response()->json($response);
     }
     
@@ -188,6 +196,14 @@ class TruefireSegmentController extends Controller
             // Timestamps
             'created_at' => $processing->created_at,
             'updated_at' => $processing->updated_at,
+            
+            // Processing timing data for analytics
+            'audio_extraction_started_at' => $processing->audio_extraction_started_at,
+            'audio_extraction_completed_at' => $processing->audio_extraction_completed_at,
+            'transcription_started_at' => $processing->transcription_started_at,
+            'transcription_completed_at' => $processing->transcription_completed_at,
+            'terminology_started_at' => $processing->terminology_started_at,
+            'terminology_completed_at' => $processing->terminology_completed_at,
         ];
         
         return response()->json([
@@ -587,6 +603,7 @@ class TruefireSegmentController extends Controller
                 // Get settings from the request (passed from audio extraction job)
                 $extractionSettings = $request->input('extraction_settings', []);
 
+                // Preserve existing audio_extraction_started_at timestamp
                 $processing->update([
                     'status' => 'audio_extracted',
                     'audio_path' => $audioPath,

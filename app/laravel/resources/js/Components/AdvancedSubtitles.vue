@@ -20,101 +20,47 @@
       <div><strong>Active Word Indices:</strong> {{ activeWordIndices.join(', ') || 'None' }}</div>
     </div>
 
-    <!-- Simplified Subtitles Controls -->
-    <div class="subtitles-controls flex flex-wrap items-center gap-3 mt-2">
-      <!-- Confidence threshold control -->
-      <div class="flex items-center">
-        <span class="text-sm text-gray-700 mr-2">Min. Confidence:</span>
-        <input 
-          type="range" 
-          v-model="confidenceThreshold" 
-          min="0" 
-          max="1" 
-          step="0.05"
-          class="w-24"
-        />
-        <span class="text-sm text-gray-700 ml-1">{{ (confidenceThreshold * 100).toFixed(0) }}%</span>
-      </div>
-
-      <!-- Legend toggle button -->
-      <button 
-        @click="showLegend = !showLegend" 
-        class="flex items-center text-sm px-2 py-1 rounded-md transition bg-gray-200 text-gray-700 hover:bg-gray-300"
-      >
-        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        Legend
-      </button>
-      
-
-    </div>
+    <!-- Controls removed - not functional for this use case -->
     
-    <!-- Confidence Legend -->
-    <div v-if="showLegend" class="mt-3 p-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm border border-gray-200 dark:border-gray-700">
-      <h4 class="font-medium mb-2">Confidence Level Legend</h4>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div class="flex items-center bg-black bg-opacity-80 p-2 rounded">
-          <span class="word-inline mx-1 px-2 py-0.5 rounded high-confidence">High Confidence</span>
-          <span class="text-xs text-gray-300 ml-2">&gt; 80%</span>
-        </div>
-        <div class="flex items-center bg-black bg-opacity-80 p-2 rounded">
-          <span class="word-inline mx-1 px-2 py-0.5 rounded medium-confidence">Medium Confidence</span>
-          <span class="text-xs text-gray-300 ml-2">{{ (confidenceThreshold * 100).toFixed(0) }}% - 80%</span>
-        </div>
-        <div class="flex items-center bg-black bg-opacity-80 p-2 rounded">
-          <span class="word-inline mx-1 px-2 py-0.5 rounded low-confidence">Low Confidence</span>
-          <span class="text-xs text-gray-300 ml-2">&lt; {{ (confidenceThreshold * 100).toFixed(0) }}%</span>
-        </div>
-      </div>
-      <div class="mt-2 text-xs text-gray-600 dark:text-gray-400">
-        <p>The Min. Confidence slider adjusts the threshold for highlighting words with uncertain transcription. 
-        Edited words are automatically set to 100% confidence.</p>
-      </div>
-    </div>
-    
-    <!-- Always visible inline subtitles -->
+    <!-- Interactive subtitles - only show content during video playback -->
     <div 
       class="inline-subtitles mt-4 p-3 bg-black bg-opacity-80 text-white rounded-md text-center"
       v-if="transcriptData && segments.length > 0"
     >
-                <!-- Show current segment if media sync is available -->
-      <div v-if="currentMediaElement && currentSegment && currentSegment.words && currentSegment.words.length > 0">
-        <div v-if="videoPlaying" class="text-xs text-gray-300 mb-2 flex items-center justify-center">
-          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M2 6a2 2 0 012-2h6l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
-          </svg>
-          Video: {{ currentMediaElement ? currentMediaElement.currentTime.toFixed(2) : '0.00' }}s
-        </div>
-        <span 
-          v-for="(word, index) in currentSegment.words" 
-          :key="index" 
-          class="word-inline mx-0.5 px-1 py-0.5 rounded cursor-pointer"
-          :class="getWordClasses(word, index)"
-          @click="openWordEditor(word, index)"
-        >{{ word.word }}</span>
-      </div>
-      
-      <!-- Show first segment if no media sync, or fallback display -->
-      <div v-else-if="segments[0] && segments[0].words && segments[0].words.length > 0">
-        <div class="text-xs text-gray-300 mb-2">
-          {{ currentMediaElement ? 'No current segment' : 'Full transcript (media sync not available)' }}
-        </div>
-        <div class="text-left max-h-32 overflow-y-auto">
+      <!-- Show synchronized transcript only when video is playing -->
+      <div v-if="videoPlaying && currentMediaElement">
+        <!-- Show current segment words if we have an active segment -->
+        <div v-if="currentSegment && currentSegment.words && currentSegment.words.length > 0">
+          <div class="text-xs text-gray-300 mb-2 flex items-center justify-center">
+            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M2 6a2 2 0 012-2h6l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+            </svg>
+            {{ currentMediaElement.currentTime.toFixed(2) }}s
+          </div>
           <span 
-            v-for="(word, index) in segments[0].words.slice(0, 50)" 
+            v-for="(word, index) in currentSegment.words" 
             :key="index" 
-            class="word-inline mx-0.5 px-1 py-0.5 rounded cursor-pointer high-confidence"
+            class="word-inline mx-0.5 px-1 py-0.5 rounded cursor-pointer"
+            :class="getWordClasses(word, index)"
             @click="openWordEditor(word, index)"
           >{{ word.word }}</span>
-          <span v-if="segments[0].words.length > 50" class="text-gray-400">... ({{ segments[0].words.length - 50 }} more words)</span>
+        </div>
+        
+        <!-- Show message when video is playing but no current segment -->
+        <div v-else class="text-xs text-gray-400">
+          <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          {{ currentMediaElement.currentTime.toFixed(2) }}s - No active transcript segment
         </div>
       </div>
       
-      <!-- Fallback: show full text -->
-      <div v-else-if="transcriptData.text" class="text-left max-h-32 overflow-y-auto text-sm">
-        <div class="text-xs text-gray-300 mb-2">Full transcript text</div>
-        {{ transcriptData.text.substring(0, 500) }}{{ transcriptData.text.length > 500 ? '...' : '' }}
+      <!-- Show ready message when video is not playing -->
+      <div v-else class="text-sm text-gray-300">
+        <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h8m-5-3a3 3 0 11-6 0 3 3 0 016 0z M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        Interactive transcript ready - click play to see word-by-word highlighting
       </div>
     </div>
     
@@ -350,7 +296,6 @@ export default {
       currentSegmentIndex: -1,
       activeWordIndices: [], // Track all words active at current time
 
-      confidenceThreshold: 0.5, // Default confidence threshold at 50%
       fontSize: 18, // Default subtitle font size
       updateInterval: null,
       highFrequencyInterval: null, // High-frequency timer for smooth word highlighting
@@ -371,7 +316,6 @@ export default {
       editingWordIndex: -1,
       editingSegmentIndex: -1,
       allowTimeEditing: false,
-      showLegend: false,
       originalConfidence: 0
     };
   },
@@ -658,7 +602,7 @@ export default {
       }
       
       // Apply different styling based on confidence thresholds
-      if (word.probability < this.confidenceThreshold) {
+      if (word.probability < 0.5) {
         classes.push('low-confidence');
       } else if (word.probability < 0.8) {
         classes.push('medium-confidence');

@@ -972,18 +972,14 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                                     confidence = word.get('score', 0.0)
                                     duration = word.get('end', 0) - word.get('start', 0)
                                     
-                                    # Filter criteria for spurious words:
+                                    # Filter criteria for spurious words (minimal filtering for musical content):
                                     should_filter = (
-                                        # Single character words with low confidence, but keep legitimate articles ('a', 'I')
-                                        (len(word_text) == 1 and confidence < 0.5 and word_text.lower() not in ['a', 'i']) or
                                         # Single character punctuation-only words
                                         (len(word_text) == 1 and word_text in '.,!?;:') or
-                                        # Words shorter than 0.05 seconds with very low confidence
-                                        (duration < 0.05 and confidence < 0.3) or
                                         # Empty or whitespace-only words
                                         (not word_text or word_text.isspace()) or
-                                        # Extremely low confidence words regardless of length
-                                        (confidence < 0.1)
+                                        # Only extremely low confidence words (< 0.05 = 5%)
+                                        (confidence < 0.05)
                                     )
                                     
                                     if not should_filter:

@@ -299,9 +299,9 @@ class GuitarTerminologyEvaluator:
         end = word_data.get('end', 0)
         confidence = word_data.get('score', word_data.get('confidence', 0))
         
-        # ALWAYS use the current confidence as original_confidence
-        # Don't trust any existing original_confidence values that might be 0 or corrupted
-        original_confidence = confidence
+        # Check if original_confidence already exists from previous processing
+        # If so, preserve it; otherwise, use current confidence
+        original_confidence = word_data.get('original_confidence', confidence)
         
         segment = WordSegment(word=word, start=start, end=end, confidence=confidence)
         segment.original_confidence = original_confidence
@@ -449,8 +449,7 @@ class GuitarTerminologyEvaluator:
                 pattern_boosted_indices.add(i)
         
         for i, segment in enumerate(segments):
-            # Only skip truly empty words - let WhisperX handle word segmentation quality
-            if not segment.word or not segment.word.strip():
+            if not segment.word or len(segment.word.strip()) < 2:
                 continue
             
             # Skip words that were already boosted by musical counting patterns
@@ -478,10 +477,6 @@ class GuitarTerminologyEvaluator:
                     llm_successful_responses += 1
             
             if is_guitar_term:
-                # Store original confidence if not already meaningfully stored
-                if segment.original_confidence is None or segment.original_confidence <= 0:
-                    segment.original_confidence = segment.confidence
-                
                 # ONLY guitar terms get boosted to 100% confidence
                 segment.confidence = self.target_confidence
                 boosted_count += 1
@@ -614,56 +609,32 @@ class GuitarTerminologyEvaluator:
         """Update original JSON with new confidence scores, preserving structure"""
         updated_json = json.loads(json.dumps(original_json))  # Deep copy
         
-        # Create a lookup dictionary for enhanced segments by (word, start_time, end_time)
-        enhanced_lookup = {}
-        for seg in segments:
-            # Use word + timing as key for precise matching
-            key = (seg.word, round(seg.start, 3), round(seg.end, 3))
-            enhanced_lookup[key] = seg
-        
-        # Helper function to find matching enhanced segment
-        def find_enhanced_segment(word_data):
-            word = word_data.get('word', '')
-            start = round(word_data.get('start', 0), 3)
-            end = round(word_data.get('end', 0), 3)
-            
-            # Try exact match first
-            key = (word, start, end)
-            if key in enhanced_lookup:
-                return enhanced_lookup[key]
-            
-            # Try fuzzy timing match (within 0.1 seconds)
-            for (w, s, e), seg in enhanced_lookup.items():
-                if (w == word and 
-                    abs(s - start) < 0.1 and 
-                    abs(e - end) < 0.1):
-                    return seg
-            
-            return None
+        segment_idx = 0
         
         # Update word_segments at top level (your service format)
         if 'word_segments' in updated_json:
             for word_data in updated_json['word_segments']:
-                enhanced_seg = find_enhanced_segment(word_data)
-                if enhanced_seg:
+                if segment_idx < len(segments):
+                    seg = segments[segment_idx]
+                    
                     # Preserve original confidence
-                    word_data['original_confidence'] = enhanced_seg.original_confidence
+                    word_data['original_confidence'] = seg.original_confidence
                     
                     # Update current confidence
                     if 'score' in word_data:
-                        word_data['score'] = enhanced_seg.confidence
+                        word_data['score'] = seg.confidence
                     if 'confidence' in word_data:
-                        word_data['confidence'] = enhanced_seg.confidence
+                        word_data['confidence'] = seg.confidence
                     
                     # Add metadata if boosted
-                    if enhanced_seg.original_confidence != enhanced_seg.confidence:
+                    if seg.original_confidence != seg.confidence:
                         word_data['guitar_term_boosted'] = True
                         # Determine boost reason from evaluated_terms if available
                         boost_reason = 'musical_terminology'  # default
                         for term in evaluated_terms:
-                            if (term.get('word') == enhanced_seg.word and 
-                                abs(term.get('start', 0) - enhanced_seg.start) < 0.1 and 
-                                abs(term.get('end', 0) - enhanced_seg.end) < 0.1):
+                            if (term.get('word') == seg.word and 
+                                term.get('start') == seg.start and 
+                                term.get('end') == seg.end):
                                 boost_reason = term.get('boost_reason', 'musical_terminology')
                                 if boost_reason == 'musical_counting_pattern':
                                     word_data['musical_counting_pattern'] = True
@@ -671,33 +642,37 @@ class GuitarTerminologyEvaluator:
                                     word_data['pattern_description'] = term.get('pattern_description', '')
                                 break
                         word_data['boost_reason'] = boost_reason
-                        word_data['normalized_form'] = self._normalize_word(enhanced_seg.word)
+                        word_data['normalized_form'] = self._normalize_word(seg.word)
+                    
+                    segment_idx += 1
         
         # Also update segments->words structure for consistency
+        segment_idx = 0  # Reset for segments structure
         if 'segments' in updated_json:
             for segment in updated_json['segments']:
                 if 'words' in segment:
                     for word_data in segment['words']:
-                        enhanced_seg = find_enhanced_segment(word_data)
-                        if enhanced_seg:
+                        if segment_idx < len(segments):
+                            seg = segments[segment_idx]
+                            
                             # Preserve original confidence
-                            word_data['original_confidence'] = enhanced_seg.original_confidence
+                            word_data['original_confidence'] = seg.original_confidence
                             
                             # Update current confidence
                             if 'score' in word_data:
-                                word_data['score'] = enhanced_seg.confidence
+                                word_data['score'] = seg.confidence
                             if 'confidence' in word_data:
-                                word_data['confidence'] = enhanced_seg.confidence
+                                word_data['confidence'] = seg.confidence
                             
                             # Add metadata if boosted
-                            if enhanced_seg.original_confidence != enhanced_seg.confidence:
+                            if seg.original_confidence != seg.confidence:
                                 word_data['guitar_term_boosted'] = True
                                 # Determine boost reason from evaluated_terms if available
                                 boost_reason = 'musical_terminology'  # default
                                 for term in evaluated_terms:
-                                    if (term.get('word') == enhanced_seg.word and 
-                                        abs(term.get('start', 0) - enhanced_seg.start) < 0.1 and 
-                                        abs(term.get('end', 0) - enhanced_seg.end) < 0.1):
+                                    if (term.get('word') == seg.word and 
+                                        term.get('start') == seg.start and 
+                                        term.get('end') == seg.end):
                                         boost_reason = term.get('boost_reason', 'musical_terminology')
                                         if boost_reason == 'musical_counting_pattern':
                                             word_data['musical_counting_pattern'] = True
@@ -705,7 +680,9 @@ class GuitarTerminologyEvaluator:
                                             word_data['pattern_description'] = term.get('pattern_description', '')
                                         break
                                 word_data['boost_reason'] = boost_reason
-                                word_data['normalized_form'] = self._normalize_word(enhanced_seg.word)
+                                word_data['normalized_form'] = self._normalize_word(seg.word)
+                            
+                            segment_idx += 1
         
         return updated_json
 
@@ -896,41 +873,27 @@ class GuitarTerminologyEvaluator:
         """Apply confidence boosts to detected musical counting patterns"""
         boosted_count = 0
         
-        # Define compound musical term pattern types that should always be boosted
-        compound_musical_patterns = {
-            "roman_numeral_chord", 
-            "extended_chord_notation", 
-            "altered_chord_notation"
-        }
-        
         for pattern in patterns:
             logger.info(f"Applying musical counting pattern boost: {pattern.description}")
-            
-            # Check if this is a compound musical term
-            is_compound_musical_term = pattern.pattern_type in compound_musical_patterns
             
             # Boost confidence for all words in the pattern
             for i in range(pattern.start_index, pattern.end_index + 1):
                 if i < len(segments):
                     segment = segments[i]
                     
-                    # For compound musical terms, always boost regardless of threshold
-                    # For other patterns, only boost if current confidence is below threshold
-                    should_boost = is_compound_musical_term or segment.confidence < self.confidence_threshold
-                    
-                    if should_boost:
-                        # Store original confidence if not already meaningfully stored
-                        if segment.original_confidence is None or segment.original_confidence <= 0:
+                    # Only boost if current confidence is below threshold
+                    if segment.confidence < self.confidence_threshold:
+                        # Store original confidence if not already stored
+                        if segment.original_confidence is None:
                             segment.original_confidence = segment.confidence
                         
                         # Apply boost
                         segment.confidence = pattern.confidence_boost
                         boosted_count += 1
                         
-                        boost_reason = "compound_musical_term" if is_compound_musical_term else "musical_counting_pattern"
                         logger.debug(f"Boosted musical counting word '{segment.word}': "
                                    f"{segment.original_confidence:.3f} -> {segment.confidence:.3f} "
-                                   f"(pattern: {pattern.pattern_type}, reason: {boost_reason})")
+                                   f"(pattern: {pattern.pattern_type})")
         
         return boosted_count
 

@@ -2728,15 +2728,19 @@ def test_guitar_term_evaluator():
     Expected JSON payload:
     {
         "audio_path": "path/to/audio.wav",  # Optional - will use mock data if not provided
-        "llm_endpoint": "http://localhost:11434/api/generate",  # Optional
-        "model_name": "llama2"  # Optional
+        "llm_endpoint": "http://ollama-service:11434/api/generate",  # Optional
+        "model_name": "llama3:latest"  # Optional
     }
     """
     data = request.json or {}
     
     audio_path = data.get('audio_path')
-    llm_endpoint = data.get('llm_endpoint', 'http://localhost:11434/api/generate')
-    model_name = data.get('model_name', 'llama2')
+    # Use environment variable with fallback to containerized Ollama service
+    default_llm_endpoint = os.getenv('LLM_ENDPOINT', 'http://ollama-service:11434/api/generate')
+    default_model_name = os.getenv('LLM_MODEL', 'llama3:latest')
+    
+    llm_endpoint = data.get('llm_endpoint', default_llm_endpoint)
+    model_name = data.get('model_name', default_model_name)
     
     try:
         if audio_path and os.path.exists(audio_path):

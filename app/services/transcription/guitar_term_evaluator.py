@@ -44,7 +44,7 @@ class GuitarTerminologyEvaluator:
                  target_confidence: float = 1.0):    # Set to 100% as requested
         
         # Use environment variables with fallbacks for Docker container networking
-        self.llm_endpoint = llm_endpoint or os.getenv('LLM_ENDPOINT', 'http://host.docker.internal:11434/api/generate')
+        self.llm_endpoint = llm_endpoint or os.getenv('LLM_ENDPOINT', 'http://ollama-service:11434/api/generate')
         self.model_name = model_name or os.getenv('LLM_MODEL', 'llama3:latest')
         self.llm_enabled = os.getenv('LLM_ENABLED', 'true').lower() == 'true'
         

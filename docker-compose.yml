@@ -94,13 +94,14 @@ services:
     depends_on:
       - laravel
       - audio-extraction-service
+      - ollama-service
     networks:
       - app-network
     environment:
       - LARAVEL_API_URL=http://laravel/api
-      # LLM Configuration for guitar term evaluation
-      - LLM_ENDPOINT=http://host.docker.internal:11434/api/generate
-      - LLM_MODEL=llama3
+      # LLM Configuration for guitar term evaluation - Now using containerized Ollama
+      - LLM_ENDPOINT=http://ollama-service:11434/api/generate
+      - LLM_MODEL=llama3:latest
       - LLM_ENABLED=true
       # MODEL CACHE CONFIGURATION - Prevents re-downloading
       - WHISPERX_CACHE_DIR=/app/models
@@ -108,8 +109,6 @@ services:
       - TORCH_HOME=/app/models/torch
     ports:
       - "5051:5000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   music-term-recognition-service:
     build:
@@ -130,6 +129,37 @@ services:
     ports:
       - "5052:5000"
 
+  ollama-service:
+    image: ollama/ollama:latest
+    container_name: ollama-service
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./docker/ollama/entrypoint.sh:/entrypoint.sh:ro
+    networks:
+      - app-network
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+      # GPU configuration
+      - CUDA_VISIBLE_DEVICES=0
+    ports:
+      - "11434:11434"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -148,6 +178,9 @@ volumes:
   whisperx_models:
     driver: local
   huggingface_cache:
+    driver: local
+  # Ollama model storage - Prevent re-downloading models on restart
+  ollama_data:
     driver: local
 
 networks:

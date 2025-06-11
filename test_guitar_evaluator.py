@@ -13,9 +13,9 @@ import os
 from datetime import datetime
 
 # Configuration
-TRANSCRIPTION_SERVICE_URL = "http://localhost:5000"
-LLM_ENDPOINT = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama2"
+TRANSCRIPTION_SERVICE_URL = "http://localhost:5051"  # Updated to match transcription service port
+LLM_ENDPOINT = "http://localhost:11434/api/generate"  # External testing endpoint (Ollama exposed on host)
+MODEL_NAME = "llama3:latest"  # Updated to match containerized model
 
 def test_with_mock_data():
     """Test the guitar terminology evaluator with mock data"""

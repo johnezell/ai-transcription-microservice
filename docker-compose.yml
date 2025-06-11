@@ -33,7 +33,7 @@ services:
       - REDIS_DB=0
       - AUDIO_SERVICE_URL=http://audio-extraction-service:5000
       - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
-      - MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000
+      # - MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000  # DISABLED - analytics service
       # AWS Configuration for credential resolution
       - AWS_PROFILE=truefire
       - AWS_SHARED_CREDENTIALS_FILE=/mnt/aws_creds_mounted/credentials
@@ -110,24 +110,28 @@ services:
     ports:
       - "5051:5000"
 
-  music-term-recognition-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.music-service
-    container_name: music-service
-    restart: unless-stopped
-    volumes:
-      - ./app/services/music-term-recognition:/app
-      - ./app/shared:/var/www/storage/app/public/s3:delegated
-    depends_on:
-      - laravel
-      - transcription-service
-    networks:
-      - app-network
-    environment:
-      - LARAVEL_API_URL=http://laravel/api
-    ports:
-      - "5052:5000"
+  # music-term-recognition-service: DISABLED - Reserved for future course analytics
+  # This service provides categorized music term analysis and course insights.
+  # Re-enable when ready to implement analytics dashboard and course analysis features.
+  # 
+  # music-term-recognition-service:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.music-service
+  #   container_name: music-service
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./app/services/music-term-recognition:/app
+  #     - ./app/shared:/var/www/storage/app/public/s3:delegated
+  #   depends_on:
+  #     - laravel
+  #     - transcription-service
+  #   networks:
+  #     - app-network
+  #   environment:
+  #     - LARAVEL_API_URL=http://laravel/api
+  #   ports:
+  #     - "5052:5000"
 
   ollama-service:
     image: ollama/ollama:latest
@@ -151,7 +155,7 @@ services:
       # GPU configuration
       - CUDA_VISIBLE_DEVICES=0
     ports:
-      - "11434:11434"
+      - "11435:11434"  # Changed to avoid conflict with local Ollama (11434)
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     healthcheck:
       test: ["CMD", "ollama", "list"]

@@ -17,9 +17,9 @@ def test_ollama_health():
     print("🔍 Testing Ollama service health...")
     
     try:
-        # Test external access (host exposed port)
+        # Test external access (host exposed port - changed to avoid conflict)
         response = requests.post(
-            "http://localhost:11434/api/generate",
+            "http://localhost:11435/api/generate",
             json={
                 "model": "llama3:latest",
                 "prompt": "Test",

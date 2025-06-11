@@ -14,7 +14,7 @@ from datetime import datetime
 
 # Configuration
 TRANSCRIPTION_SERVICE_URL = "http://localhost:5051"  # Updated to match transcription service port
-LLM_ENDPOINT = "http://localhost:11434/api/generate"  # External testing endpoint (Ollama exposed on host)
+LLM_ENDPOINT = "http://localhost:11435/api/generate"  # External testing endpoint (Ollama exposed on host)
 MODEL_NAME = "llama3:latest"  # Updated to match containerized model
 
 def test_with_mock_data():

@@ -603,16 +603,8 @@ class TruefireSegmentController extends Controller
                 // Get settings from the request (passed from audio extraction job)
                 $extractionSettings = $request->input('extraction_settings', []);
 
-                // Preserve existing audio_extraction_started_at timestamp
-                $processing->update([
-                    'status' => 'audio_extracted',
-                    'audio_path' => $audioPath,
-                    'audio_duration' => $audioDuration,
-                    'audio_size' => $audioSize,
-                    'has_audio' => $hasAudio,
-                    'audio_extraction_completed_at' => now(),
-                    'progress_percentage' => 40
-                ]);
+                // Use model method to preserve audio_extraction_started_at timestamp  
+                $processing->completeAudioExtraction($audioPath, $audioSize, $audioDuration);
 
                 // Generate audio URL
                 if ($audioPath) {
@@ -715,13 +707,8 @@ class TruefireSegmentController extends Controller
                 $subtitlesPath = $responseData['subtitles_path'] ?? null;
                 $transcriptText = $responseData['transcript_text'] ?? null;
 
-                $processing->update([
-                    'status' => 'transcribed',
-                    'transcript_path' => $transcriptPath,
-                    'transcript_text' => $transcriptText,
-                    'transcription_completed_at' => now(),
-                    'progress_percentage' => 75
-                ]);
+                // Use model method to preserve transcription_started_at timestamp
+                $processing->completeTranscription($transcriptPath, $transcriptText);
 
                 // Generate URLs
                 if ($transcriptPath) {

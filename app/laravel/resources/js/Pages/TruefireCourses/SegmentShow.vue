@@ -3,6 +3,9 @@ import { Head, Link } from '@inertiajs/vue3';
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
+import SecondaryButton from '@/Components/SecondaryButton.vue';
+import DangerButton from '@/Components/DangerButton.vue';
+import Modal from '@/Components/Modal.vue';
 import TranscriptionTimeline from '@/Components/TranscriptionTimeline.vue';
 import SynchronizedTranscript from '@/Components/SynchronizedTranscript.vue';
 import AdvancedSubtitles from '@/Components/AdvancedSubtitles.vue';
@@ -33,8 +36,12 @@ const showSynchronizedTranscript = ref(false); // Hidden by default
 const showDetailedQualityMetrics = ref(false); // Hidden by default
 const showGuitarEnhancementDetails = ref(false); // Hidden by default
 
-// Simple restart options
-const showRestartConfirm = ref(false);
+// Modal state
+const showStartProcessingModal = ref(false);
+const showRestartProcessingModal = ref(false);
+const showErrorModal = ref(false);
+const errorMessage = ref('');
+const confirmAction = ref(null);
 
 // Check if this is a newly started processing that needs monitoring
 const isNewProcessing = computed(() => {
@@ -618,18 +625,25 @@ async function triggerTerminologyRecognition() {
             startPolling();
         } else {
             console.error('Failed to trigger terminology recognition:', data.message);
-            alert('Failed to start terminology recognition: ' + (data.message || 'Unknown error'));
+            showError('Failed to start terminology recognition: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error triggering terminology recognition:', error);
-        alert('Error: ' + (error.message || 'Failed to communicate with server'));
+        showError('Error: ' + (error.message || 'Failed to communicate with server'));
     } finally {
         processingTerminology.value = false;
     }
 }
 
-// Add transcription request method
-async function requestTranscription() {
+// Show start processing confirmation modal
+function showStartProcessingConfirmation() {
+    showStartProcessingModal.value = true;
+}
+
+// Add transcription request method for segments that haven't been processed yet
+async function startProcessing() {
+    showStartProcessingModal.value = false;
+    
     try {
         const response = await fetch(`/truefire-courses/${props.course.id}/segments/${segmentData.value.id}/transcription`, {
             method: 'POST',
@@ -643,16 +657,19 @@ async function requestTranscription() {
         const data = await response.json();
         
         if (response.ok && data.success) {
-            console.log('Transcription requested successfully');
-            // Start polling for segment status
+            console.log('Processing started successfully');
+            // Update status and start polling
+            segmentData.value.status = 'processing';
+            segmentData.value.error_message = null;
+            segmentData.value.progress_percentage = 0;
             startPolling();
         } else {
-            console.error('Failed to request transcription:', data.message);
-            alert('Failed to start transcription: ' + (data.message || 'Unknown error'));
+            console.error('Failed to start processing:', data.message);
+            showError('Failed to start processing: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
-        console.error('Error requesting transcription:', error);
-        alert('Error: ' + (error.message || 'Failed to communicate with server'));
+        console.error('Error starting processing:', error);
+        showError('Error: ' + (error.message || 'Failed to communicate with server'));
     }
 }
 
@@ -678,19 +695,17 @@ async function restartTranscription() {
             startPolling();
         } else {
             console.error('Failed to restart transcription:', data.message);
-            alert('Failed to restart transcription: ' + (data.message || 'Unknown error'));
+            showError('Failed to restart transcription: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error restarting transcription:', error);
-        alert('Error: ' + (error.message || 'Failed to communicate with server'));
+        showError('Error: ' + (error.message || 'Failed to communicate with server'));
     }
 }
 
 // Add abort processing method
 async function abortProcessing() {
-    if (!confirm('Are you sure you want to abort the current processing? This will stop all running jobs and reset the segment to ready status.')) {
-        return;
-    }
+    // This function is called after confirmation from modal
     
     try {
         const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${segmentData.value.id}/abort`, {
@@ -715,21 +730,30 @@ async function abortProcessing() {
             fetchStatus();
         } else {
             console.error('Failed to abort processing:', data.message);
-            alert('Failed to abort processing: ' + (data.message || 'Unknown error'));
+            showError('Failed to abort processing: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error aborting processing:', error);
-        alert('Error: ' + (error.message || 'Failed to communicate with server'));
+        showError('Error: ' + (error.message || 'Failed to communicate with server'));
     }
 }
 
 
 
+// Show restart processing confirmation modal
+function showRestartProcessingConfirmation() {
+    showRestartProcessingModal.value = true;
+}
+
+// Show error modal
+function showError(message) {
+    errorMessage.value = message;
+    showErrorModal.value = true;
+}
+
 // Simplified restart processing method using intelligent detection
 async function restartProcessing() {
-    if (!confirm('Are you sure you want to restart the entire processing? This will overwrite all existing audio, transcript, and terminology data for this segment using intelligent detection for optimal settings.')) {
-        return;
-    }
+    showRestartProcessingModal.value = false;
     
     try {
         const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${segmentData.value.id}/redo`, {
@@ -760,15 +784,14 @@ async function restartProcessing() {
             segmentData.value.transcript_json_api_url = null;
             segmentData.value.has_terminology = false;
             segmentData.value.terminology_url = null;
-            showRestartConfirm.value = false;
             startPolling();
         } else {
             console.error('Failed to start restart processing:', data.message);
-            alert('Failed to start restart processing: ' + (data.message || 'Unknown error'));
+            showError('Failed to start restart processing: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error starting restart processing:', error);
-        alert('Error: ' + (error.message || 'Failed to communicate with server'));
+        showError('Error: ' + (error.message || 'Failed to communicate with server'));
     }
 }
 
@@ -968,10 +991,12 @@ const showProcessingDetails = ref(false);
 // Helper functions for status messaging
 function getStatusMessage(status) {
     switch (status) {
-        case 'ready': return 'Ready to start processing';
+        case 'ready': return 'Click "Start Processing" to extract audio and create transcript';
         case 'processing': return 'Audio extraction and transcription in progress...';
         case 'transcribing': return 'Generating transcript from audio...';
         case 'transcribed': return 'Transcript generated, applying enhancements...';
+        case 'processing_terminology': return 'Analyzing musical terminology...';
+        case 'completed': return 'Processing completed successfully';
         case 'failed': return 'Processing failed - see error details below';
         default: return 'Processing status unknown';
     }
@@ -983,6 +1008,8 @@ function getStatusTitle(status) {
         case 'processing': return 'Processing in Progress';
         case 'transcribing': return 'Creating Transcript';
         case 'transcribed': return 'Enhancing Transcript';
+        case 'processing_terminology': return 'Analyzing Terminology';
+        case 'completed': return 'Processing Complete';
         case 'failed': return 'Processing Failed';
         default: return 'Processing Status Unknown';
     }
@@ -1066,14 +1093,30 @@ function getStatusTitle(status) {
                                                     }">{{ overallGrade.grade }}</div>
                                                 </div>
                                                 
-                                                <!-- Always show restart button -->
+                                                <!-- Show appropriate button based on segment status -->
                                                 <button 
-                                                    @click="restartProcessing" 
+                                                    v-if="segmentData.status === 'ready'"
+                                                    @click="showStartProcessingConfirmation" 
+                                                    class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+                                                    title="Start processing with intelligent detection"
+                                                >
+                                                    Start Processing
+                                                </button>
+                                                <button 
+                                                    v-else-if="segmentData.status === 'completed' || segmentData.status === 'failed'"
+                                                    @click="showRestartProcessingConfirmation" 
                                                     class="px-3 py-1 text-xs bg-gray-600 hover:bg-gray-700 text-white rounded transition"
                                                     title="Restart processing with intelligent detection"
                                                 >
                                                     Restart
                                                 </button>
+                                                <div 
+                                                    v-else-if="['processing', 'transcribing', 'transcribed', 'processing_terminology'].includes(segmentData.status)"
+                                                    class="px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-200"
+                                                    title="Processing in progress"
+                                                >
+                                                    Processing...
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -1500,24 +1543,39 @@ function getStatusTitle(status) {
                                                                 {{ (teachingPatternAnalysis.temporal_analysis.speech_ratio * 100).toFixed(1) }}%
                                                             </div>
                                                             <div class="text-blue-600">Speech</div>
+                                                            <div class="text-xs text-gray-500 mt-1">Instructor talking</div>
                                                         </div>
                                                         <div class="text-center">
                                                             <div class="text-lg font-bold text-purple-700">
                                                                 {{ (teachingPatternAnalysis.temporal_analysis.non_speech_ratio * 100).toFixed(1) }}%
                                                             </div>
                                                             <div class="text-purple-600">Playing</div>
+                                                            <div class="text-xs text-gray-500 mt-1">Guitar demonstration</div>
                                                         </div>
                                                         <div class="text-center">
                                                             <div class="text-lg font-bold text-green-700">
                                                                 {{ teachingPatternAnalysis.temporal_analysis.alternation_cycles || 0 }}
                                                             </div>
                                                             <div class="text-green-600">Teaching Cycles</div>
+                                                            <div class="text-xs text-gray-500 mt-1">Explain → Play → Explain</div>
                                                         </div>
                                                         <div class="text-center">
                                                             <div class="text-lg font-bold text-orange-700">
                                                                 {{ (teachingPatternAnalysis.temporal_analysis.total_duration / 60).toFixed(1) }}m
                                                             </div>
                                                             <div class="text-orange-600">Duration</div>
+                                                            <div class="text-xs text-gray-500 mt-1">Total lesson length</div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Explanatory Note -->
+                                                    <div class="mt-4 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                                                        <div class="text-xs text-indigo-700">
+                                                            <div class="font-medium mb-1">📊 Analysis Explanation:</div>
+                                                            <div class="space-y-1">
+                                                                <div><strong>Teaching Cycles:</strong> Number of times the lesson alternates between verbal instruction and guitar demonstration (optimal: 3+ cycles for balanced learning)</div>
+                                                                <div><strong>Speech/Playing Balance:</strong> Shows whether the lesson is explanation-heavy, demonstration-heavy, or well-balanced for different learning styles</div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     
@@ -1602,6 +1660,90 @@ function getStatusTitle(status) {
                 </div>
             </div>
         </div>
+
+        <!-- Start Processing Confirmation Modal -->
+        <Modal :show="showStartProcessingModal" @close="showStartProcessingModal = false" max-width="md">
+            <div class="p-6">
+                <div class="flex items-center mb-4">
+                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
+                        <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Start Processing</h3>
+                    <p class="text-sm text-gray-500 mb-6">
+                        Are you sure you want to start processing this segment? This will extract audio and create a transcript using intelligent detection for optimal settings.
+                    </p>
+                </div>
+                
+                <div class="flex justify-end space-x-3">
+                    <SecondaryButton @click="showStartProcessingModal = false">
+                        Cancel
+                    </SecondaryButton>
+                    <PrimaryButton @click="startProcessing" class="bg-blue-600 hover:bg-blue-700">
+                        Start Processing
+                    </PrimaryButton>
+                </div>
+            </div>
+        </Modal>
+
+        <!-- Restart Processing Confirmation Modal -->
+        <Modal :show="showRestartProcessingModal" @close="showRestartProcessingModal = false" max-width="md">
+            <div class="p-6">
+                <div class="flex items-center mb-4">
+                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100">
+                        <svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.734 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Restart Processing</h3>
+                    <p class="text-sm text-gray-500 mb-6">
+                        Are you sure you want to restart the entire processing? This will overwrite all existing audio, transcript, and terminology data for this segment using intelligent detection for optimal settings.
+                    </p>
+                </div>
+                
+                <div class="flex justify-end space-x-3">
+                    <SecondaryButton @click="showRestartProcessingModal = false">
+                        Cancel
+                    </SecondaryButton>
+                    <DangerButton @click="restartProcessing">
+                        Restart Processing
+                    </DangerButton>
+                </div>
+            </div>
+        </Modal>
+
+        <!-- Error Modal -->
+        <Modal :show="showErrorModal" @close="showErrorModal = false" max-width="md">
+            <div class="p-6">
+                <div class="flex items-center mb-4">
+                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                        <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Error</h3>
+                    <p class="text-sm text-gray-500 mb-6">
+                        {{ errorMessage }}
+                    </p>
+                </div>
+                
+                <div class="flex justify-end">
+                    <PrimaryButton @click="showErrorModal = false">
+                        OK
+                    </PrimaryButton>
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
 

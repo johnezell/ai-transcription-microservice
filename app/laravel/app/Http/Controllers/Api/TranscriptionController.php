@@ -549,25 +549,41 @@ class TranscriptionController extends Controller
                 $processingTime = now();
                 
                 // Determine which service is starting based on current status and data
-                if ($status === 'extracting_audio' && !$processing->audio_extraction_started_at) {
-                    // Audio service starting
+                if ($status === 'extracting_audio') {
+                    // Audio service starting - ALWAYS reset timestamp to handle restarts
                     \Log::info('WEBHOOK: Audio service started processing', [
                         'segment_id' => $segmentId,
                         'timestamp' => $processingTime->toISOString(),
                         'source' => 'service_status_update',
-                        'status' => $status
+                        'status' => $status,
+                        'previous_start_time' => $processing->audio_extraction_started_at,
+                        'previous_error' => $processing->error_message
                     ]);
-                    $processing->update(['audio_extraction_started_at' => $processingTime]);
                     
-                } elseif ($status === 'transcribing' && !$processing->transcription_started_at) {
-                    // Transcription service starting
+                    // Clear old error messages and reset state for fresh restart
+                    $processing->update([
+                        'audio_extraction_started_at' => $processingTime,
+                        'error_message' => null,
+                        'status' => 'processing'
+                    ]);
+                    
+                } elseif ($status === 'transcribing') {
+                    // Transcription service starting - ALWAYS reset timestamp to handle restarts
                     \Log::info('WEBHOOK: Transcription service started processing', [
                         'segment_id' => $segmentId,
                         'timestamp' => $processingTime->toISOString(),
                         'source' => 'service_status_update',
-                        'status' => $status
+                        'status' => $status,
+                        'previous_start_time' => $processing->transcription_started_at,
+                        'previous_error' => $processing->error_message
                     ]);
-                    $processing->update(['transcription_started_at' => $processingTime]);
+                    
+                    // Clear old error messages and reset state for fresh restart
+                    $processing->update([
+                        'transcription_started_at' => $processingTime,
+                        'error_message' => null,
+                        'status' => 'transcribing'
+                    ]);
                     
                 } elseif ($status === 'processing' && $processing->status === 'processing' && !$processing->audio_extraction_started_at) {
                     // Fallback: Audio service starting with generic 'processing' status
@@ -575,9 +591,16 @@ class TranscriptionController extends Controller
                         'segment_id' => $segmentId,
                         'timestamp' => $processingTime->toISOString(),
                         'source' => 'service_status_update',
-                        'status' => $status
+                        'status' => $status,
+                        'previous_error' => $processing->error_message
                     ]);
-                    $processing->update(['audio_extraction_started_at' => $processingTime]);
+                    
+                    // Clear old error messages and reset state for fresh restart
+                    $processing->update([
+                        'audio_extraction_started_at' => $processingTime,
+                        'error_message' => null,
+                        'status' => 'processing'
+                    ]);
                 }
                 
                 // Don't process further for start status updates - just capturing start time

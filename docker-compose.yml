@@ -40,6 +40,28 @@ services:
       - AWS_CONFIG_FILE=/mnt/aws_creds_mounted/config
       - AWS_DEFAULT_REGION=us-east-1
       - AWS_BUCKET=tfstream
+      # Custom ngrok domain (persistent URL)
+      - APP_URL=https://transcriptions.ngrok.dev
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok-tunnel
+    restart: unless-stopped
+    command:
+      - "start"
+      - "--all"
+      - "--config"
+      - "/etc/ngrok.yml"
+    volumes:
+      - ./docker/ngrok/ngrok.yml:/etc/ngrok.yml
+    ports:
+      - "4040:4040"  # Ngrok web interface
+    networks:
+      - app-network
+    environment:
+      - NGROK_AUTHTOKEN=2yQOMwYL7PiKqJm9NfDtbnfirkb_6obd1p4jNHYCmzLuXKk8N
+    depends_on:
+      - laravel
 
   audio-extraction-service:
     build:

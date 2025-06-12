@@ -18,6 +18,7 @@ class TruefireSegmentProcessing extends Model
         'status',
         'progress_percentage',
         'error_message',
+        'priority',
         
         // Audio extraction
         'audio_path',
@@ -55,6 +56,7 @@ class TruefireSegmentProcessing extends Model
         'segment_id' => 'integer',
         'course_id' => 'integer',
         'progress_percentage' => 'integer',
+        'priority' => 'string',
         'audio_size' => 'integer',
         'audio_duration' => 'float',
         'has_audio' => 'boolean',
@@ -247,11 +249,18 @@ class TruefireSegmentProcessing extends Model
      */
     public function startAudioExtraction()
     {
-        $this->update([
+        $updateData = [
             'status' => 'processing',
             'audio_extraction_started_at' => now(),
             'progress_percentage' => 25
-        ]);
+        ];
+        
+        // Set default priority if not already set
+        if (empty($this->priority)) {
+            $updateData['priority'] = 'normal';
+        }
+        
+        $this->update($updateData);
     }
 
     /**
@@ -325,5 +334,47 @@ class TruefireSegmentProcessing extends Model
             'completed_at' => now(),
             'progress_percentage' => 100
         ]);
+    }
+
+    /**
+     * Get queue name for audio extraction jobs (always main queue with single queue + priority system).
+     */
+    public function getAudioExtractionQueueName()
+    {
+        return 'audio-extraction';
+    }
+
+    /**
+     * Get queue name for transcription jobs (always main queue with single queue + priority system).
+     */
+    public function getTranscriptionQueueName()
+    {
+        return 'transcription';
+    }
+
+    /**
+     * Get Laravel job priority value based on priority level.
+     */
+    public function getJobPriority()
+    {
+        return match($this->priority) {
+            'high' => 10,     // High priority jobs processed first
+            'low' => -1,      // Low priority jobs processed last
+            default => 0      // Normal priority (default)
+        };
+    }
+
+    /**
+     * Set priority level for this processing record.
+     */
+    public function setPriority(string $priority)
+    {
+        $validPriorities = ['high', 'normal', 'low'];
+        
+        if (in_array($priority, $validPriorities)) {
+            $this->update(['priority' => $priority]);
+        } else {
+            throw new \InvalidArgumentException("Invalid priority: {$priority}. Must be one of: " . implode(', ', $validPriorities));
+        }
     }
 } 

@@ -1,0 +1,18 @@
+version: "2"
+authtoken: 2yQOMwYL7PiKqJm9NfDtbnfirkb_6obd1p4jNHYCmzLuXKk8N
+
+tunnels:
+  laravel-app:
+    proto: http
+    addr: laravel:80
+    domain: transcriptions.ngrok.dev
+    inspect: true
+    schemes:
+      - https
+      - http
+
+# Basic configuration
+web_addr: 0.0.0.0:4040
+console_ui: true
+log_level: info
+log_format: logfmt 

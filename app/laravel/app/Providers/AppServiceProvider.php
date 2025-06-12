@@ -12,7 +12,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Register custom priority queue connector
+        $this->app->resolving('queue', function ($manager) {
+            $manager->addConnector('priority-database', function () {
+                return new \App\Queue\Connectors\PriorityDatabaseConnector($this->app['db']);
+            });
+        });
     }
 
     /**

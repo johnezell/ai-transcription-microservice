@@ -4,6 +4,11 @@ sample_course
 app/shared/jobs/*
 app/laravel/storage/*
 
+# Ngrok configuration files (contain sensitive auth tokens)
+ngrok.env
+ngrok.env.local
+*.ngrok.env
+
 # Hugging Face model files and cache
 app/services/transcription/models/
 app/services/*/models/

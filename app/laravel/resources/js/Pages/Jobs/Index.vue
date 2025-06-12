@@ -11,10 +11,14 @@ const props = defineProps({
     failedJobs: Array,
     jobBatches: Array,
     queueStats: Object,
+    priorityQueueStats: Object,
     jobTypeBreakdown: Object,
     recentActivity: Object,
     queueHealth: Object,
     processingTimes: Object,
+    segmentContext: Object,
+    pipelineStatus: Object,
+    workerStatus: Object,
 });
 
 const lastUpdated = ref(new Date());
@@ -25,6 +29,7 @@ const expandedFailedJobs = ref(new Set());
 const searchTerm = ref('');
 const selectedJobType = ref('');
 const selectedStatus = ref('');
+const selectedPriority = ref('');
 const sortField = ref('created_at');
 const sortDirection = ref('desc');
 
@@ -64,9 +69,16 @@ const filteredActiveJobs = computed(() => {
     let jobs = props.activeJobs || [];
     
     if (searchTerm.value) {
+        const searchLower = searchTerm.value.toLowerCase();
         jobs = jobs.filter(job => 
-            job.job_class.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
-            job.queue.toLowerCase().includes(searchTerm.value.toLowerCase())
+            job.job_class.toLowerCase().includes(searchLower) ||
+            job.queue.toLowerCase().includes(searchLower) ||
+            (job.payload_data?.job_description && job.payload_data.job_description.toLowerCase().includes(searchLower)) ||
+            (job.payload_data?.context && job.payload_data.context.toLowerCase().includes(searchLower)) ||
+            (job.payload_data?.priority && job.payload_data.priority.toLowerCase().includes(searchLower)) ||
+            (job.payload_data?.segment_id && job.payload_data.segment_id.toString().includes(searchLower)) ||
+            (job.payload_data?.course_id && job.payload_data.course_id.toString().includes(searchLower)) ||
+            (job.payload_data?.transcription_preset && job.payload_data.transcription_preset.toLowerCase().includes(searchLower))
         );
     }
     
@@ -78,8 +90,25 @@ const filteredActiveJobs = computed(() => {
         jobs = jobs.filter(job => job.status === selectedStatus.value);
     }
     
-    // Sort jobs
+    if (selectedPriority.value) {
+        jobs = jobs.filter(job => {
+            const jobPriority = job.payload_data?.priority || 'normal';
+            return jobPriority === selectedPriority.value;
+        });
+    }
+    
+    // Sort jobs with priority consideration
     jobs.sort((a, b) => {
+        // If sorting by priority, handle it specially
+        if (sortField.value === 'priority') {
+            const priorityOrder = { 'high': 3, 'normal': 2, 'low': 1 };
+            const aPriority = priorityOrder[a.payload_data?.priority || 'normal'];
+            const bPriority = priorityOrder[b.payload_data?.priority || 'normal'];
+            const modifier = sortDirection.value === 'asc' ? 1 : -1;
+            return (aPriority - bPriority) * modifier;
+        }
+        
+        // Default sorting
         const aVal = a[sortField.value];
         const bVal = b[sortField.value];
         const modifier = sortDirection.value === 'asc' ? 1 : -1;
@@ -236,6 +265,35 @@ const clearFailedJobs = async () => {
     }
 };
 
+const retryFailedJob = async (jobId) => {
+    try {
+        const response = await fetch(`/jobs/retry/${jobId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const context = data.data?.context ? ` (${data.data.context})` : '';
+            const queueInfo = data.data?.retry_queue ? ` to ${data.data.retry_queue} queue` : '';
+            showNotification(
+                `Job retried successfully with HIGH priority${queueInfo}${context}`, 
+                'success'
+            );
+            refreshData();
+        } else {
+            showNotification(data.message || 'Failed to retry job', 'error');
+        }
+    } catch (error) {
+        console.error('Error retrying job:', error);
+        showNotification('An error occurred while retrying the job', 'error');
+    }
+};
+
 const showNotification = (message, type = 'info') => {
     notification.value = { message, type };
     setTimeout(() => {
@@ -247,6 +305,35 @@ const dismissNotification = () => {
     notification.value = null;
 };
 
+// Quick filter functions
+const showHighPriorityOnly = () => {
+    selectedPriority.value = 'high';
+    searchTerm.value = '';
+    selectedJobType.value = '';
+    selectedStatus.value = '';
+};
+
+const showProcessingJobs = () => {
+    selectedStatus.value = 'processing';
+    selectedPriority.value = '';
+    searchTerm.value = '';
+    selectedJobType.value = '';
+};
+
+const showTranscriptionJobs = () => {
+    searchTerm.value = 'transcription';
+    selectedPriority.value = '';
+    selectedJobType.value = '';
+    selectedStatus.value = '';
+};
+
+const clearAllFilters = () => {
+    searchTerm.value = '';
+    selectedJobType.value = '';
+    selectedStatus.value = '';
+    selectedPriority.value = '';
+};
+
 // Computed properties for button states
 const hasFailedJobs = computed(() => {
     return props.failedJobs && props.failedJobs.length > 0;
@@ -256,13 +343,44 @@ const hasCompletedJobs = computed(() => {
     return props.queueStats && props.queueStats.total_active_jobs > 0;
 });
 
+// Keyboard shortcuts
+const handleKeyDown = (event) => {
+    // Only trigger if not typing in an input
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
+    
+    switch(event.key.toLowerCase()) {
+        case 'h':
+            event.preventDefault();
+            showHighPriorityOnly();
+            break;
+        case 'c':
+            event.preventDefault();
+            clearAllFilters();
+            break;
+        case 'p':
+            event.preventDefault();
+            showProcessingJobs();
+            break;
+        case 't':
+            event.preventDefault();
+            showTranscriptionJobs();
+            break;
+    }
+};
+
 // Lifecycle hooks
 onMounted(() => {
     startAutoRefresh();
+    
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', handleKeyDown);
 });
 
 onUnmounted(() => {
     stopAutoRefresh();
+    
+    // Remove keyboard shortcuts
+    document.removeEventListener('keydown', handleKeyDown);
 });
 
 // Get unique job types for filter
@@ -277,6 +395,18 @@ const uniqueStatuses = computed(() => {
     const statuses = new Set();
     props.activeJobs?.forEach(job => statuses.add(job.status));
     return Array.from(statuses).sort();
+});
+
+const uniquePriorities = computed(() => {
+    const priorities = new Set();
+    props.activeJobs?.forEach(job => {
+        const priority = job.payload_data?.priority || 'normal';
+        priorities.add(priority);
+    });
+    return Array.from(priorities).sort((a, b) => {
+        const order = { 'high': 1, 'normal': 2, 'low': 3 };
+        return order[a] - order[b];
+    });
 });
 </script>
 
@@ -487,6 +617,422 @@ const uniqueStatuses = computed(() => {
                     </div>
                 </div>
 
+                <!-- Worker Status -->
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg" v-if="workerStatus">
+                    <div class="p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-6 h-6 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                            </svg>
+                            Worker Status
+                        </h3>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                            <!-- Worker Health -->
+                            <div class="text-center p-4 rounded-lg"
+                                 :class="{
+                                     'bg-green-50 border border-green-200': workerStatus.worker_health === 'good',
+                                     'bg-yellow-50 border border-yellow-200': workerStatus.worker_health === 'warning',
+                                     'bg-red-50 border border-red-200': workerStatus.worker_health === 'critical'
+                                 }">
+                                <div class="text-2xl font-bold"
+                                     :class="{
+                                         'text-green-600': workerStatus.worker_health === 'good',
+                                         'text-yellow-600': workerStatus.worker_health === 'warning',
+                                         'text-red-600': workerStatus.worker_health === 'critical'
+                                     }">
+                                    {{ workerStatus.worker_health?.toUpperCase() || 'UNKNOWN' }}
+                                </div>
+                                <div class="text-sm text-gray-700">Worker Health</div>
+                            </div>
+
+                            <!-- Recent Activity -->
+                            <div class="text-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div class="text-2xl font-bold text-blue-600">{{ workerStatus.recent_processing_activity || 0 }}</div>
+                                <div class="text-sm text-blue-700">Jobs Processed (5min)</div>
+                            </div>
+
+                            <!-- Stuck Jobs -->
+                            <div class="text-center p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                                <div class="text-2xl font-bold text-orange-600">{{ workerStatus.stuck_jobs || 0 }}</div>
+                                <div class="text-sm text-orange-700">Stuck Jobs</div>
+                            </div>
+
+                            <!-- Health Score -->
+                            <div class="text-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                                <div class="text-lg font-bold"
+                                     :class="{
+                                         'text-green-600': workerStatus.health_score >= 80,
+                                         'text-yellow-600': workerStatus.health_score >= 60,
+                                         'text-red-600': workerStatus.health_score < 60
+                                     }">
+                                    {{ workerStatus.health_score || 0 }}/100
+                                </div>
+                                <div class="text-sm text-gray-700">Health Score</div>
+                                <div class="text-xs text-gray-500 mt-1">
+                                    Based on processing activity
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Worker Status Description -->
+                        <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div class="text-sm text-blue-800">
+                                <span class="font-medium">📊 Status Method:</span> {{ workerStatus.monitoring_method || 'Job processing activity monitoring' }}
+                            </div>
+                            <div class="text-sm text-blue-700 mt-1">
+                                {{ workerStatus.status_description || 'Monitoring workers based on actual job processing activity rather than supervisor socket monitoring.' }}
+                            </div>
+                            <div class="text-xs text-blue-600 mt-2">
+                                Last checked: {{ new Date(workerStatus.last_checked).toLocaleTimeString() }}
+                            </div>
+                        </div>
+
+                        <!-- Worker Troubleshooting -->
+                        <div v-if="workerStatus.worker_health !== 'good'" class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <h4 class="font-medium text-yellow-800 mb-2 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                                </svg>
+                                Worker Issues Detected
+                            </h4>
+                            <div class="text-sm text-yellow-700 space-y-1">
+                                <div v-if="!workerStatus.supervisor_running">• Supervisor is not running - workers may not be processing jobs</div>
+                                <div v-if="workerStatus.stuck_jobs > 0">• {{ workerStatus.stuck_jobs }} jobs are stuck (created over 1 hour ago)</div>
+                                <div v-if="!workerStatus.workers_likely_active">• No recent processing activity detected in the last 5 minutes</div>
+                                <div v-if="workerStatus.artisan_responsive === false">• Laravel artisan commands are not responding</div>
+                                <div class="mt-2 font-medium">💡 Try: <code class="px-1 py-0.5 bg-yellow-100 rounded text-xs">docker restart laravel-app</code></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Priority Queue Status -->
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg" v-if="priorityQueueStats && Object.keys(priorityQueueStats).length > 0">
+                    <div class="p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">Priority Queue Status</h3>
+                        <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div class="text-sm text-blue-800">
+                                <span class="font-medium">✨ New System:</span> Single Queue + Job Priority (simplified from 6 to 2 queues)
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Audio Extraction Queue -->
+                            <div>
+                                <h4 class="text-md font-medium text-gray-700 mb-3 flex items-center">
+                                    <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                    </svg>
+                                    Audio Extraction Queue
+                                </h4>
+                                <div class="space-y-3">
+                                    <!-- Main Queue Overview -->
+                                    <div v-if="priorityQueueStats['audio-extraction']" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <span class="text-sm font-medium text-blue-900">audio-extraction (main queue)</span>
+                                            <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">Priority-Aware</span>
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-4 text-center">
+                                            <div>
+                                                <div class="text-lg font-bold text-gray-900">{{ priorityQueueStats['audio-extraction'].total_jobs || 0 }}</div>
+                                                <div class="text-xs text-gray-600">Total</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-lg font-bold text-yellow-600">{{ priorityQueueStats['audio-extraction'].processing_jobs || 0 }}</div>
+                                                <div class="text-xs text-gray-600">Processing</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-lg font-bold text-blue-600">{{ priorityQueueStats['audio-extraction'].pending_jobs || 0 }}</div>
+                                                <div class="text-xs text-gray-600">Pending</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Priority Breakdown -->
+                                    <div class="text-xs font-medium text-gray-600 mb-2">Priority Breakdown:</div>
+                                    <div class="space-y-2">
+                                        <!-- High Priority -->
+                                        <div v-if="priorityQueueStats['audio-extraction-high']" 
+                                             class="flex justify-between items-center p-2 bg-red-50 border border-red-200 rounded">
+                                            <div class="flex items-center">
+                                                <span class="text-xs px-2 py-1 bg-red-100 text-red-800 rounded font-medium">HIGH</span>
+                                                <span class="ml-2 text-sm">⚡ Priority ≥5</span>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-gray-900">{{ priorityQueueStats['audio-extraction-high'].pending_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Pending</div>
+                                                </div>
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-yellow-600">{{ priorityQueueStats['audio-extraction-high'].processing_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Processing</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Normal Priority -->
+                                        <div v-if="priorityQueueStats['audio-extraction-normal']" 
+                                             class="flex justify-between items-center p-2 bg-blue-50 border border-blue-200 rounded">
+                                            <div class="flex items-center">
+                                                <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded font-medium">NORMAL</span>
+                                                <span class="ml-2 text-sm">🔵 Priority 0-4</span>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-gray-900">{{ priorityQueueStats['audio-extraction-normal'].pending_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Pending</div>
+                                                </div>
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-yellow-600">{{ priorityQueueStats['audio-extraction-normal'].processing_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Processing</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Transcription Queue -->
+                            <div>
+                                <h4 class="text-md font-medium text-gray-700 mb-3 flex items-center">
+                                    <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                                    </svg>
+                                    Transcription Queue
+                                </h4>
+                                <div class="space-y-3">
+                                    <!-- Main Queue Overview -->
+                                    <div v-if="priorityQueueStats['transcription']" class="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <span class="text-sm font-medium text-purple-900">transcription (main queue)</span>
+                                            <span class="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded">Priority-Aware</span>
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-4 text-center">
+                                            <div>
+                                                <div class="text-lg font-bold text-gray-900">{{ priorityQueueStats['transcription'].total_jobs || 0 }}</div>
+                                                <div class="text-xs text-gray-600">Total</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-lg font-bold text-yellow-600">{{ priorityQueueStats['transcription'].processing_jobs || 0 }}</div>
+                                                <div class="text-xs text-gray-600">Processing</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-lg font-bold text-purple-600">{{ priorityQueueStats['transcription'].pending_jobs || 0 }}</div>
+                                                <div class="text-xs text-gray-600">Pending</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Priority Breakdown -->
+                                    <div class="text-xs font-medium text-gray-600 mb-2">Priority Breakdown:</div>
+                                    <div class="space-y-2">
+                                        <!-- High Priority -->
+                                        <div v-if="priorityQueueStats['transcription-high']" 
+                                             class="flex justify-between items-center p-2 bg-red-50 border border-red-200 rounded">
+                                            <div class="flex items-center">
+                                                <span class="text-xs px-2 py-1 bg-red-100 text-red-800 rounded font-medium">HIGH</span>
+                                                <span class="ml-2 text-sm">⚡ Priority ≥5</span>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-gray-900">{{ priorityQueueStats['transcription-high'].pending_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Pending</div>
+                                                </div>
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-yellow-600">{{ priorityQueueStats['transcription-high'].processing_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Processing</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Normal Priority -->
+                                        <div v-if="priorityQueueStats['transcription-normal']" 
+                                             class="flex justify-between items-center p-2 bg-purple-50 border border-purple-200 rounded">
+                                            <div class="flex items-center">
+                                                <span class="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded font-medium">NORMAL</span>
+                                                <span class="ml-2 text-sm">🔵 Priority 0-4</span>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-gray-900">{{ priorityQueueStats['transcription-normal'].pending_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Pending</div>
+                                                </div>
+                                                <div class="text-center">
+                                                    <div class="text-sm font-bold text-yellow-600">{{ priorityQueueStats['transcription-normal'].processing_jobs || 0 }}</div>
+                                                    <div class="text-xs text-gray-500">Processing</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pipeline Status & Bottlenecks -->
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg" v-if="pipelineStatus">
+                    <div class="p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">Pipeline Status</h3>
+                        
+                        <!-- Pipeline Efficiency -->
+                        <div class="mb-6">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium text-gray-700">Pipeline Efficiency</span>
+                                <span class="text-sm font-bold" :class="{
+                                    'text-green-600': pipelineStatus.pipeline_efficiency >= 80,
+                                    'text-yellow-600': pipelineStatus.pipeline_efficiency >= 60,
+                                    'text-red-600': pipelineStatus.pipeline_efficiency < 60
+                                }">{{ pipelineStatus.pipeline_efficiency }}%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div class="h-3 rounded-full transition-all" 
+                                     :class="{
+                                         'bg-green-500': pipelineStatus.pipeline_efficiency >= 80,
+                                         'bg-yellow-500': pipelineStatus.pipeline_efficiency >= 60,
+                                         'bg-red-500': pipelineStatus.pipeline_efficiency < 60
+                                     }"
+                                     :style="{ width: pipelineStatus.pipeline_efficiency + '%' }"></div>
+                            </div>
+                        </div>
+
+                        <!-- Bottlenecks Alert -->
+                        <div v-if="pipelineStatus.bottlenecks && pipelineStatus.bottlenecks.length > 0" 
+                             class="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                            <h4 class="font-medium text-orange-800 mb-2 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                                </svg>
+                                Pipeline Bottlenecks Detected
+                            </h4>
+                            <div class="space-y-2">
+                                <div v-for="bottleneck in pipelineStatus.bottlenecks" :key="bottleneck.type" 
+                                     class="text-sm text-orange-700">
+                                    • {{ bottleneck.description }}
+                                    <span v-if="bottleneck.count" class="font-medium">({{ bottleneck.count }} jobs)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pipeline Flow -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="p-4 bg-blue-50 rounded-lg">
+                                <h4 class="font-medium text-blue-800 mb-3">Audio Extraction</h4>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-blue-700">Total Jobs:</span>
+                                        <span class="font-medium">{{ pipelineStatus.audio_extraction?.total_jobs || 0 }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-blue-700">Processing:</span>
+                                        <span class="font-medium text-yellow-600">{{ pipelineStatus.audio_extraction?.processing_jobs || 0 }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-blue-700">Pending:</span>
+                                        <span class="font-medium">{{ pipelineStatus.audio_extraction?.pending_jobs || 0 }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="p-4 bg-purple-50 rounded-lg">
+                                <h4 class="font-medium text-purple-800 mb-3">Transcription</h4>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-purple-700">Total Jobs:</span>
+                                        <span class="font-medium">{{ pipelineStatus.transcription?.total_jobs || 0 }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-purple-700">Processing:</span>
+                                        <span class="font-medium text-yellow-600">{{ pipelineStatus.transcription?.processing_jobs || 0 }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-purple-700">Pending:</span>
+                                        <span class="font-medium">{{ pipelineStatus.transcription?.pending_jobs || 0 }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Segment Processing Context -->
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg" v-if="segmentContext">
+                    <div class="p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">TrueFire Segment Processing</h3>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                            <div class="text-center p-4 bg-blue-50 rounded-lg">
+                                <div class="text-2xl font-bold text-blue-600">{{ segmentContext.processing_segments?.length || 0 }}</div>
+                                <div class="text-sm text-blue-700">Currently Processing</div>
+                            </div>
+                            <div class="text-center p-4 bg-green-50 rounded-lg">
+                                <div class="text-2xl font-bold text-green-600">{{ segmentContext.recent_completed_count || 0 }}</div>
+                                <div class="text-sm text-green-700">Completed (24h)</div>
+                            </div>
+                            <div class="text-center p-4 bg-red-50 rounded-lg">
+                                <div class="text-2xl font-bold text-red-600">{{ segmentContext.failed_segments?.length || 0 }}</div>
+                                <div class="text-sm text-red-700">Failed Segments</div>
+                            </div>
+                            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                                <div class="text-2xl font-bold text-gray-600">{{ segmentContext.total_segments_in_system || 0 }}</div>
+                                <div class="text-sm text-gray-700">Total in System</div>
+                            </div>
+                        </div>
+
+                        <!-- Currently Processing Segments -->
+                        <div v-if="segmentContext.processing_segments && segmentContext.processing_segments.length > 0" class="mb-6">
+                            <h4 class="font-medium text-gray-700 mb-3">Currently Processing Segments</h4>
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <div class="space-y-2">
+                                    <div v-for="segment in segmentContext.processing_segments.slice(0, 5)" :key="segment.segment_id" 
+                                         class="flex justify-between items-center p-2 bg-white rounded border">
+                                        <div class="flex items-center space-x-3">
+                                            <span class="text-xs px-2 py-1 rounded font-medium"
+                                                  :class="{
+                                                      'bg-red-100 text-red-800': segment.priority === 'high',
+                                                      'bg-blue-100 text-blue-800': segment.priority === 'normal',
+                                                      'bg-gray-100 text-gray-800': segment.priority === 'low'
+                                                  }">
+                                                {{ segment.priority?.toUpperCase() || 'NORMAL' }}
+                                            </span>
+                                            <span class="text-sm">Course {{ segment.course_id }}, Segment {{ segment.segment_id }}</span>
+                                            <span class="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">{{ segment.status }}</span>
+                                        </div>
+                                        <div class="text-sm font-medium">{{ segment.progress_percentage || 0 }}%</div>
+                                    </div>
+                                    <div v-if="segmentContext.processing_segments.length > 5" class="text-xs text-gray-500 text-center">
+                                        ... and {{ segmentContext.processing_segments.length - 5 }} more segments
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Failed Segments -->
+                        <div v-if="segmentContext.failed_segments && segmentContext.failed_segments.length > 0">
+                            <h4 class="font-medium text-gray-700 mb-3">Failed Segments</h4>
+                            <div class="bg-red-50 rounded-lg p-4">
+                                <div class="space-y-2">
+                                    <div v-for="segment in segmentContext.failed_segments.slice(0, 3)" :key="segment.segment_id" 
+                                         class="flex justify-between items-start p-2 bg-white rounded border border-red-200">
+                                        <div class="flex-1">
+                                            <div class="flex items-center space-x-2 mb-1">
+                                                <span class="text-sm font-medium">Course {{ segment.course_id }}, Segment {{ segment.segment_id }}</span>
+                                                <span v-if="segment.priority" class="text-xs px-2 py-1 rounded bg-red-100 text-red-800">
+                                                    {{ segment.priority.toUpperCase() }}
+                                                </span>
+                                            </div>
+                                            <div class="text-xs text-red-600">{{ segment.error_message || 'Unknown error' }}</div>
+                                        </div>
+                                    </div>
+                                    <div v-if="segmentContext.failed_segments.length > 3" class="text-xs text-red-600 text-center">
+                                        ... and {{ segmentContext.failed_segments.length - 3 }} more failed segments
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Job Type Breakdown Chart -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6">
@@ -558,18 +1104,95 @@ const uniqueStatuses = computed(() => {
                     </div>
                 </div>
 
-                <!-- Filters and Search -->
+                <!-- Enhanced Filters and Search -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6">
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">Search & Filter Jobs</h3>
+                        
+                        <!-- Quick Filter Buttons -->
+                        <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="text-sm font-medium text-gray-700">Quick Filters:</div>
+                                <details class="text-xs text-gray-500">
+                                    <summary class="cursor-pointer hover:text-gray-700">⌨️ Keyboard shortcuts</summary>
+                                    <div class="mt-2 p-2 bg-white rounded border border-gray-200 text-xs">
+                                        <div class="space-y-1">
+                                            <div><kbd class="px-1 py-0.5 bg-gray-100 rounded text-xs">H</kbd> - High Priority Only</div>
+                                            <div><kbd class="px-1 py-0.5 bg-gray-100 rounded text-xs">P</kbd> - Processing Jobs</div>
+                                            <div><kbd class="px-1 py-0.5 bg-gray-100 rounded text-xs">T</kbd> - Transcription Jobs</div>
+                                            <div><kbd class="px-1 py-0.5 bg-gray-100 rounded text-xs">C</kbd> - Clear All Filters</div>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button 
+                                    @click="showHighPriorityOnly"
+                                    class="inline-flex items-center px-3 py-2 border border-red-300 text-sm leading-4 font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition"
+                                    title="Keyboard shortcut: H"
+                                >
+                                    ⚡ High Priority Only
+                                </button>
+                                <button 
+                                    @click="showProcessingJobs"
+                                    class="inline-flex items-center px-3 py-2 border border-yellow-300 text-sm leading-4 font-medium rounded-md text-yellow-700 bg-yellow-50 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition"
+                                    title="Keyboard shortcut: P"
+                                >
+                                    🔄 Processing Jobs
+                                </button>
+                                <button 
+                                    @click="showTranscriptionJobs"
+                                    class="inline-flex items-center px-3 py-2 border border-purple-300 text-sm leading-4 font-medium rounded-md text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition"
+                                    title="Keyboard shortcut: T"
+                                >
+                                    🎤 Transcription Jobs
+                                </button>
+                                <button 
+                                    @click="clearAllFilters"
+                                    class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition"
+                                    title="Keyboard shortcut: C"
+                                >
+                                    🗑️ Clear All
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Search Section -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+                            <div class="relative">
                                 <input 
                                     v-model="searchTerm"
                                     type="text" 
-                                    placeholder="Search jobs..."
+                                    placeholder="Search by job type, queue, description, segment ID, course ID, priority, preset..."
+                                    class="w-full pl-10 pr-4 py-2 border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                >
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">
+                                Search includes: job descriptions, segment/course IDs, priority levels, presets, and queue names
+                            </div>
+                        </div>
+                        
+                        <!-- Filter Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                                <select 
+                                    v-model="selectedPriority"
                                     class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                 >
+                                    <option value="">All Priorities</option>
+                                    <option v-for="priority in uniquePriorities" :key="priority" :value="priority">
+                                        {{ priority.charAt(0).toUpperCase() + priority.slice(1) }}
+                                        <span v-if="priority === 'high'">⚡</span>
+                                        <span v-if="priority === 'low'">🔻</span>
+                                    </option>
+                                </select>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Job Type</label>
@@ -588,16 +1211,54 @@ const uniqueStatuses = computed(() => {
                                     class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                 >
                                     <option value="">All Statuses</option>
-                                    <option v-for="status in uniqueStatuses" :key="status" :value="status">{{ status }}</option>
+                                    <option v-for="status in uniqueStatuses" :key="status" :value="status">
+                                        {{ status.charAt(0).toUpperCase() + status.slice(1) }}
+                                    </option>
                                 </select>
                             </div>
                             <div class="flex items-end">
                                 <button 
-                                    @click="searchTerm = ''; selectedJobType = ''; selectedStatus = ''"
-                                    class="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                                    @click="clearAllFilters"
+                                    class="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition"
                                 >
-                                    Clear Filters
+                                    Clear All Filters
                                 </button>
+                            </div>
+                            <div class="flex items-end">
+                                <button 
+                                    @click="showHighPriorityOnly"
+                                    class="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition text-sm"
+                                    title="Show only high priority jobs"
+                                >
+                                    ⚡ High Priority Only
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Filter Summary -->
+                        <div v-if="searchTerm || selectedJobType || selectedStatus || selectedPriority" class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div class="text-sm text-blue-800">
+                                <span class="font-medium">Active filters:</span>
+                                <span v-if="searchTerm" class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    Search: "{{ searchTerm }}"
+                                </span>
+                                <span v-if="selectedPriority" class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                      :class="{
+                                          'bg-red-100 text-red-800': selectedPriority === 'high',
+                                          'bg-blue-100 text-blue-800': selectedPriority === 'normal',
+                                          'bg-gray-100 text-gray-800': selectedPriority === 'low'
+                                      }">
+                                    Priority: {{ selectedPriority.charAt(0).toUpperCase() + selectedPriority.slice(1) }}
+                                </span>
+                                <span v-if="selectedJobType" class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Type: {{ selectedJobType }}
+                                </span>
+                                <span v-if="selectedStatus" class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                    Status: {{ selectedStatus }}
+                                </span>
+                                <span class="ml-2 text-blue-600 font-medium">
+                                    ({{ filteredActiveJobs.length }} job{{ filteredActiveJobs.length !== 1 ? 's' : '' }} found)
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -612,23 +1273,23 @@ const uniqueStatuses = computed(() => {
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th @click="sortBy('job_class')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
-                                            Job Type
+                                            Job Description
                                             <span v-if="sortField === 'job_class'">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
                                         </th>
                                         <th @click="sortBy('queue')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
                                             Queue
                                             <span v-if="sortField === 'queue'">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
                                         </th>
+                                        <th @click="sortBy('priority')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                            Priority
+                                            <span v-if="sortField === 'priority'">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
+                                        </th>
                                         <th @click="sortBy('status')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
                                             Status
                                             <span v-if="sortField === 'status'">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
                                         </th>
-                                        <th @click="sortBy('attempts')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
-                                            Attempts
-                                            <span v-if="sortField === 'attempts'">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-                                        </th>
                                         <th @click="sortBy('wait_time')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
-                                            Wait Time
+                                            Timing
                                             <span v-if="sortField === 'wait_time'">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
                                         </th>
                                         <th @click="sortBy('created_at')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
@@ -643,22 +1304,62 @@ const uniqueStatuses = computed(() => {
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     <template v-for="job in filteredActiveJobs" :key="job.id">
                                         <tr class="hover:bg-gray-50">
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                {{ job.job_class }}
+                                            <td class="px-6 py-4 text-sm">
+                                                <div class="flex flex-col">
+                                                    <div class="font-medium text-gray-900">
+                                                        {{ job.payload_data?.job_description || job.job_class }}
+                                                    </div>
+                                                    <div class="text-xs text-gray-500">
+                                                        {{ job.job_class }}
+                                                        <span v-if="job.payload_data?.estimated_duration" class="ml-2">
+                                                            (~{{ job.payload_data.estimated_duration }})
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {{ job.queue }}
+                                            <td class="px-6 py-4 text-sm">
+                                                <div class="flex flex-col">
+                                                    <div class="font-medium">{{ job.queue }}</div>
+                                                    <div v-if="job.payload_data?.context" class="text-xs text-gray-500 mt-1">
+                                                        {{ job.payload_data.context }}
+                                                    </div>
+                                                </div>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="px-2 py-1 text-xs rounded-full" :class="getStatusColor(job.status)">
-                                                    {{ job.status }}
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                                <span v-if="job.payload_data?.priority" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                                      :class="{
+                                                          'bg-red-100 text-red-800': job.payload_data.priority === 'high',
+                                                          'bg-blue-100 text-blue-800': job.payload_data.priority === 'normal',
+                                                          'bg-gray-100 text-gray-800': job.payload_data.priority === 'low'
+                                                      }">
+                                                    <span v-if="job.payload_data.priority === 'high'" class="mr-1">⚡</span>
+                                                    <span v-if="job.payload_data.priority === 'low'" class="mr-1">🔻</span>
+                                                    {{ job.payload_data.priority.toUpperCase() }}
+                                                </span>
+                                                <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                                    NORMAL
                                                 </span>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {{ job.attempts }}
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="flex flex-col items-start">
+                                                    <span class="px-2 py-1 text-xs rounded-full" :class="getStatusColor(job.status)">
+                                                        {{ job.status }}
+                                                    </span>
+                                                    <span class="text-xs text-gray-500 mt-1">
+                                                        {{ job.attempts }} attempts
+                                                    </span>
+                                                </div>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {{ formatDuration(job.wait_time) }}
+                                            <td class="px-6 py-4 text-sm">
+                                                <div class="flex flex-col">
+                                                    <div class="text-gray-900">
+                                                        <span class="font-medium">{{ formatDuration(job.wait_time) }}</span>
+                                                        <span class="text-xs text-gray-500 ml-1">wait</span>
+                                                    </div>
+                                                    <div v-if="job.processing_time" class="text-xs text-gray-500">
+                                                        {{ formatDuration(job.processing_time) }} processing
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {{ formatTimeAgo(job.created_at) }}
@@ -674,12 +1375,69 @@ const uniqueStatuses = computed(() => {
                                         </tr>
                                         <tr v-if="expandedJobs.has(job.id)" class="bg-gray-50">
                                             <td colspan="7" class="px-6 py-4">
-                                                <div class="space-y-2">
-                                                    <div><strong>Job ID:</strong> {{ job.id }}</div>
-                                                    <div v-if="job.processing_time"><strong>Processing Time:</strong> {{ formatDuration(job.processing_time) }}</div>
+                                                <div class="space-y-4">
+                                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                        <div>
+                                                            <h5 class="font-medium text-gray-700 mb-2">Job Information</h5>
+                                                            <div class="space-y-1 text-sm">
+                                                                <div><strong>Job ID:</strong> {{ job.id }}</div>
+                                                                <div><strong>Queue:</strong> {{ job.queue }}</div>
+                                                                <div><strong>Attempts:</strong> {{ job.attempts }}</div>
+                                                                <div><strong>Status:</strong> {{ job.status }}</div>
+                                                                <div v-if="job.payload_data?.priority">
+                                                                    <strong>Priority:</strong> {{ job.payload_data.priority.toUpperCase() }}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div>
+                                                            <h5 class="font-medium text-gray-700 mb-2">Timing Information</h5>
+                                                            <div class="space-y-1 text-sm">
+                                                                <div><strong>Created:</strong> {{ new Date(job.created_at).toLocaleString() }}</div>
+                                                                <div><strong>Available:</strong> {{ new Date(job.available_at).toLocaleString() }}</div>
+                                                                <div v-if="job.reserved_at">
+                                                                    <strong>Reserved:</strong> {{ new Date(job.reserved_at).toLocaleString() }}
+                                                                </div>
+                                                                <div><strong>Wait Time:</strong> {{ formatDuration(job.wait_time) }}</div>
+                                                                <div v-if="job.processing_time">
+                                                                    <strong>Processing Time:</strong> {{ formatDuration(job.processing_time) }}
+                                                                </div>
+                                                                <div v-if="job.payload_data?.estimated_duration">
+                                                                    <strong>Estimated Duration:</strong> {{ job.payload_data.estimated_duration }}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div>
+                                                            <h5 class="font-medium text-gray-700 mb-2">Context Information</h5>
+                                                            <div class="space-y-1 text-sm">
+                                                                <div v-if="job.payload_data?.segment_id">
+                                                                    <strong>Segment:</strong> {{ job.payload_data.segment_id }}
+                                                                </div>
+                                                                <div v-if="job.payload_data?.course_id">
+                                                                    <strong>Course:</strong> {{ job.payload_data.course_id }}
+                                                                </div>
+                                                                <div v-if="job.payload_data?.transcription_preset">
+                                                                    <strong>Preset:</strong> {{ job.payload_data.transcription_preset }}
+                                                                </div>
+                                                                <div v-if="job.payload_data?.use_intelligent_detection">
+                                                                    <strong>Intelligent Detection:</strong> Yes
+                                                                </div>
+                                                                <div v-if="job.payload_data?.force_reextraction">
+                                                                    <strong>Force Re-extraction:</strong> Yes
+                                                                </div>
+                                                                <div v-if="job.payload_data?.batch_id">
+                                                                    <strong>Batch:</strong> {{ job.payload_data.batch_id }}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
                                                     <div v-if="job.payload_data && Object.keys(job.payload_data).length > 0">
-                                                        <strong>Payload Data:</strong>
-                                                        <pre class="mt-1 text-xs bg-gray-100 p-2 rounded">{{ JSON.stringify(job.payload_data, null, 2) }}</pre>
+                                                        <details class="mt-4">
+                                                            <summary class="font-medium text-gray-700 cursor-pointer">Raw Payload Data</summary>
+                                                            <pre class="mt-2 text-xs bg-gray-100 p-3 rounded overflow-x-auto">{{ JSON.stringify(job.payload_data, null, 2) }}</pre>
+                                                        </details>
                                                     </div>
                                                 </div>
                                             </td>
@@ -731,8 +1489,12 @@ const uniqueStatuses = computed(() => {
                                                 >
                                                     {{ expandedFailedJobs.has(job.id) ? 'Hide' : 'Details' }}
                                                 </button>
-                                                <button class="text-green-600 hover:text-green-900">
-                                                    Retry
+                                                <button 
+                                                    @click="retryFailedJob(job.id)"
+                                                    class="text-green-600 hover:text-green-900 inline-flex items-center"
+                                                    title="Retry this job with high priority"
+                                                >
+                                                    ⚡ Retry
                                                 </button>
                                             </td>
                                         </tr>

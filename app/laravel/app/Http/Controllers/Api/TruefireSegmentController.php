@@ -76,7 +76,7 @@ class TruefireSegmentController extends Controller
                 'has_transcript' => !empty($processing->transcript_path),
                 'has_terminology' => $processing->has_terminology,
                 'error_message' => $processing->error_message,
-                'video_url' => $segment->getSignedUrl(),
+                // Removed video_url generation from status endpoint - frontend already has this from initial load
             ]
         ];
         
@@ -170,7 +170,7 @@ class TruefireSegmentController extends Controller
             'is_processing' => in_array($processing->status, ['processing', 'transcribing', 'processing_terminology']),
             
             // Media files
-            'video_url' => $segment->getSignedUrl(),
+            // Note: video_url intentionally excluded from API response - use frontend routing for video access
             'audio_url' => $processing->audio_url,
             'audio_path' => $processing->audio_path,
             'audio_size' => $processing->audio_size,
@@ -233,8 +233,9 @@ class TruefireSegmentController extends Controller
                 'progress_percentage' => 50
             ]);
 
-            // Dispatch the transcription job
-            \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing)->onQueue('transcription');
+            // Dispatch the transcription job with priority context
+            \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing)
+                ->onConnection('priority-transcription');
             
             Log::info('TrueFire segment audio extraction approved and transcription job dispatched', [
                 'course_id' => $courseId,
@@ -674,7 +675,9 @@ class TruefireSegmentController extends Controller
                             'progress_percentage' => 60
                         ]);
                         
-                        \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing, $transcriptionPreset)->onQueue('transcription');
+                        // Dispatch with priority context
+                        \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing, $transcriptionPreset)
+                            ->onConnection('priority-transcription');
                     }
                 } else {
                     Log::info('TrueFire segment audio extraction completed - waiting for manual transcription trigger', [
@@ -1137,6 +1140,7 @@ class TruefireSegmentController extends Controller
                 'progress_percentage' => 0,
                 'error_message' => null,
                 'started_at' => now(),
+                'priority' => 'high', // Set high priority for user-initiated redo operations
                 'processing_metadata' => json_encode($processingMetadata),
                 
                 // Clear audio extraction data
@@ -1192,7 +1196,9 @@ class TruefireSegmentController extends Controller
                 $jobOptions['transcription_preset'] = $validated['transcription_preset'] ?? 'balanced';
             }
 
-            \App\Jobs\TruefireSegmentAudioExtractionJob::dispatch($processing, $jobOptions);
+            // Dispatch job with priority context
+            \App\Jobs\TruefireSegmentAudioExtractionJob::dispatch($processing, $jobOptions)
+                ->onConnection('priority-audio-extraction');
             
             Log::info('TrueFire segment redo processing started', [
                 'segment_id' => $segment->id,

@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+run commands from docker containers not the host for php, node, python
+
+use Invoke-WebRequest over curl

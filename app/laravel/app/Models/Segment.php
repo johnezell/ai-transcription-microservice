@@ -90,7 +90,7 @@ class Segment extends Model
                strlen($this->video) > 4; // Ensure there's content after 'mp4:'
     }
 
-    public function getSignedUrl($expirationSeconds = 604800)
+    public function getSignedUrl($expirationSeconds = 518400)
     {
         try {
             // Validate AWS credentials are available

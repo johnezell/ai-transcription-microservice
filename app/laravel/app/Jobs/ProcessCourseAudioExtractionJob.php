@@ -7,9 +7,8 @@ use App\Models\TranscriptionLog;
 use App\Jobs\AudioExtractionTestJob;
 use App\Models\TruefireSegmentProcessing;
 use App\Jobs\TruefireSegmentAudioExtractionJob;
-use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +16,7 @@ use Illuminate\Support\Facades\Storage;
 
 class ProcessCourseAudioExtractionJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use InteractsWithQueue, Queueable, SerializesModels;
 
     /**
      * The TrueFire course to process.
@@ -238,13 +237,15 @@ class ProcessCourseAudioExtractionJob implements ShouldQueue
                         $processing->startAudioExtraction();
                         
                         // Dispatch TrueFire-specific job for automatic transcription pipeline
-                        TruefireSegmentAudioExtractionJob::dispatch($processing)->onQueue('audio-extraction');
+                        TruefireSegmentAudioExtractionJob::dispatch($processing)
+                            ->onConnection('priority-audio-extraction');
                         
                         Log::info('Dispatched TrueFire segment audio extraction job for transcription pipeline', [
                             'course_id' => $this->course->id,
                             'segment_id' => $segment->id,
                             'processing_id' => $processing->id,
                             'pipeline_mode' => 'automatic_transcription',
+                            'priority_queue' => $processing->getAudioExtractionQueueName(),
                             'workflow_step' => 'truefire_segment_job_dispatched'
                         ]);
                     } else {

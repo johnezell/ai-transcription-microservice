@@ -31,6 +31,49 @@ php-fpm -D
 echo "Starting nginx..."
 nginx
 
-# Start supervisor for queue workers only
+# Ensure supervisor directories exist
+echo "Creating supervisor directories..."
+mkdir -p /var/run/supervisor
+mkdir -p /var/log/supervisor
+
+# Check supervisor configuration
+echo "Checking supervisor configuration..."
+if [ -f "/etc/supervisor/conf.d/supervisord.conf" ]; then
+    echo "Supervisor config found: /etc/supervisor/conf.d/supervisord.conf"
+    cat /etc/supervisor/conf.d/supervisord.conf | head -20
+else
+    echo "ERROR: Supervisor config not found!"
+    exit 1
+fi
+
+# Start supervisor for queue workers
 echo "Starting supervisor for queue workers..."
-exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf 
+echo "Command: /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
+
+# Try to start supervisor with debugging
+if /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf; then
+    echo "✅ Supervisor started successfully"
+    # Give supervisor a moment to start
+    sleep 3
+    # Check if supervisor is running
+    if supervisorctl status; then
+        echo "✅ Supervisor status check successful"
+    else
+        echo "⚠️ Supervisor status check failed, trying to start workers manually as fallback"
+        # Fallback: start workers manually
+        php /var/www/artisan queue:work --queue=audio-extraction-high,audio-extraction,audio-extraction-low,default --sleep=3 --tries=3 &
+        php /var/www/artisan queue:work --queue=transcription-high,transcription,transcription-low --sleep=3 --tries=3 &
+    fi
+else
+    echo "❌ Supervisor failed to start, starting workers manually as fallback"
+    # Fallback: start workers manually in background
+    php /var/www/artisan queue:work --queue=audio-extraction-high,audio-extraction,audio-extraction-low,default --sleep=3 --tries=3 &
+    php /var/www/artisan queue:work --queue=transcription-high,transcription,transcription-low --sleep=3 --tries=3 &
+fi
+
+# Keep container running
+echo "=== Container startup complete ==="
+echo "Entering daemon mode..."
+
+# Use tail to keep the container running
+tail -f /dev/null 

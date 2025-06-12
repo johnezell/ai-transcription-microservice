@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Inertia;
 use Carbon\Carbon;
 
@@ -20,10 +21,14 @@ class JobsController extends Controller
             'failedJobs' => $this->getFailedJobs(),
             'jobBatches' => $this->getJobBatches(),
             'queueStats' => $this->getQueueStatistics(),
+            'priorityQueueStats' => $this->getPriorityQueueStatistics(),
             'jobTypeBreakdown' => $this->getJobTypeBreakdown(),
             'recentActivity' => $this->getRecentJobActivity(),
             'queueHealth' => $this->getQueueHealth(),
             'processingTimes' => $this->getProcessingTimes(),
+            'segmentContext' => $this->getSegmentContextData(),
+            'pipelineStatus' => $this->getPipelineStatus(),
+            'workerStatus' => $this->getWorkerStatus(),
         ];
 
         return Inertia::render('Jobs/Index', $data);
@@ -103,6 +108,142 @@ class JobsController extends Controller
     }
 
     /**
+     * Retry a specific failed job with high priority.
+     */
+    public function retryFailedJob($jobId)
+    {
+        try {
+            // Get the failed job
+            $failedJob = DB::table('failed_jobs')->where('id', $jobId)->first();
+            
+            if (!$failedJob) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed job not found',
+                ], 404);
+            }
+
+            // Parse the original payload
+            $originalPayload = json_decode($failedJob->payload, true);
+            
+            if (!$originalPayload) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid job payload - cannot retry',
+                ], 422);
+            }
+
+            // Extract job information
+            $jobClass = $this->extractJobClass($originalPayload);
+            $payloadData = $this->extractPayloadData($originalPayload, $failedJob->queue, null); // Failed jobs don't have priority column
+            
+            // Determine the appropriate high-priority queue based on job type
+            $priorityQueue = $this->determinePriorityQueue($jobClass, $failedJob->queue);
+            
+            // Prepare new job payload with high priority
+            $newPayload = $originalPayload;
+            
+            // Add retry metadata
+            $newPayload['retry_metadata'] = [
+                'is_retry' => true,
+                'original_job_id' => $failedJob->id,
+                'original_failure_time' => $failedJob->failed_at,
+                'retry_time' => now()->toISOString(),
+                'retry_priority' => 'high',
+                'original_queue' => $failedJob->queue,
+                'retry_queue' => $priorityQueue
+            ];
+            
+            // Update priority in job data if it exists
+            if (isset($newPayload['data']['processing'])) {
+                $newPayload['data']['processing']['priority'] = 'high';
+            }
+
+            // Create new job entry in jobs table with HIGH PRIORITY
+            $newJobId = DB::table('jobs')->insertGetId([
+                'queue' => $priorityQueue,
+                'payload' => json_encode($newPayload),
+                'attempts' => 0,
+                'reserved_at' => null,
+                'available_at' => time(),
+                'created_at' => time(),
+                'priority' => 10, // HIGH PRIORITY (Laravel uses higher numbers for higher priority)
+            ]);
+
+            // Remove the failed job from failed_jobs table
+            DB::table('failed_jobs')->where('id', $jobId)->delete();
+
+            \Log::info('Failed job retried with high priority', [
+                'original_job_id' => $jobId,
+                'new_job_id' => $newJobId,
+                'job_class' => $jobClass,
+                'original_queue' => $failedJob->queue,
+                'retry_queue' => $priorityQueue,
+                'context' => $payloadData['context'] ?? null,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Job retried successfully with high priority",
+                'data' => [
+                    'original_job_id' => $jobId,
+                    'new_job_id' => $newJobId,
+                    'job_class' => $jobClass,
+                    'original_queue' => $failedJob->queue,
+                    'retry_queue' => $priorityQueue,
+                    'priority' => 'high',
+                    'context' => $payloadData['context'] ?? null,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to retry job', [
+                'job_id' => $jobId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retry job: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Determine the appropriate queue for a job type (using single queue + priority).
+     */
+    private function determinePriorityQueue($jobClass, $originalQueue)
+    {
+        // TrueFire segment jobs use main queues with high priority
+        if (str_contains($jobClass, 'TruefireSegment')) {
+            if (str_contains($jobClass, 'Transcription')) {
+                return 'transcription';
+            } elseif (str_contains($jobClass, 'AudioExtraction')) {
+                return 'audio-extraction';
+            }
+        }
+        
+        // Course-level jobs use main queues with high priority
+        if (str_contains($jobClass, 'Course') && str_contains($jobClass, 'Transcription')) {
+            return 'transcription';
+        } elseif (str_contains($jobClass, 'Course') && str_contains($jobClass, 'AudioExtraction')) {
+            return 'audio-extraction';
+        }
+        
+        // Default queue based on original queue (strip priority suffixes)
+        if (str_contains($originalQueue, 'transcription')) {
+            return 'transcription';
+        } elseif (str_contains($originalQueue, 'audio-extraction')) {
+            return 'audio-extraction';
+        }
+        
+        // Fallback: use audio extraction queue
+        return 'audio-extraction';
+    }
+
+    /**
      * Get active jobs from the jobs table.
      */
     private function getActiveJobs()
@@ -115,7 +256,8 @@ class JobsController extends Controller
                 'attempts',
                 'created_at',
                 'available_at',
-                'reserved_at'
+                'reserved_at',
+                'priority'
             ])
             ->orderBy('created_at', 'desc')
             ->limit(100)
@@ -132,7 +274,7 @@ class JobsController extends Controller
                     'created_at' => Carbon::createFromTimestamp($job->created_at)->toISOString(),
                     'available_at' => Carbon::createFromTimestamp($job->available_at)->toISOString(),
                     'reserved_at' => $job->reserved_at ? Carbon::createFromTimestamp($job->reserved_at)->toISOString() : null,
-                    'payload_data' => $this->extractPayloadData($payload),
+                    'payload_data' => $this->extractPayloadData($payload, $job->queue, $job->priority),
                     'wait_time' => $this->calculateWaitTime($job),
                     'processing_time' => $this->calculateProcessingTime($job),
                 ];
@@ -168,7 +310,7 @@ class JobsController extends Controller
                     'job_class' => $this->extractJobClass($payload),
                     'failed_at' => Carbon::parse($job->failed_at)->toISOString(),
                     'exception' => $this->formatException($job->exception),
-                    'payload_data' => $this->extractPayloadData($payload),
+                    'payload_data' => $this->extractPayloadData($payload, $job->queue, null), // Failed jobs don't have priority column
                 ];
             });
     }
@@ -250,6 +392,236 @@ class JobsController extends Controller
             'success_rate' => $this->calculateSuccessRate(),
             'average_processing_time' => $this->getAverageProcessingTime(),
         ];
+    }
+
+    /**
+     * Get worker status information based on actual job processing activity
+     * (Not relying on unreliable supervisor socket monitoring)
+     */
+    private function getWorkerStatus()
+    {
+        try {
+            // Focus on functional worker detection based on job processing activity
+            $currentTime = Carbon::now();
+            
+            // Check for actively processing jobs (strong indicator workers are running)
+            $processingJobs = DB::table('jobs')->whereNotNull('reserved_at')->count();
+            
+            // Check for recent job processing activity (last 5 minutes)
+            $recentProcessing = DB::table('jobs')
+                ->whereNotNull('reserved_at')
+                ->where('reserved_at', '>=', $currentTime->subMinutes(5)->timestamp)
+                ->count();
+            
+            // Check for very recent job processing (last 2 minutes) 
+            $veryRecentProcessing = DB::table('jobs')
+                ->whereNotNull('reserved_at')
+                ->where('reserved_at', '>=', $currentTime->subMinutes(2)->timestamp)
+                ->count();
+                
+            // Check for stuck jobs (jobs waiting over 30 minutes without processing)
+            $stuckJobs = DB::table('jobs')
+                ->where('created_at', '<', $currentTime->subMinutes(30)->timestamp)
+                ->whereNull('reserved_at')
+                ->count();
+            
+            // Check total pending jobs
+            $pendingJobs = DB::table('jobs')->whereNull('reserved_at')->count();
+            
+            // Determine if workers are functioning based on processing activity
+            $workersActive = false;
+            $workerStatus = 'inactive';
+            
+            if ($processingJobs > 0) {
+                // Jobs are currently being processed - workers definitely active
+                $workersActive = true;
+                $workerStatus = 'processing_jobs';
+            } elseif ($veryRecentProcessing > 0) {
+                // Recent processing activity (within 2 minutes) - workers likely active
+                $workersActive = true;
+                $workerStatus = 'recently_active';
+            } elseif ($pendingJobs === 0) {
+                // No pending jobs - workers may be idle but functioning
+                $workersActive = true;
+                $workerStatus = 'idle_no_jobs';
+            } elseif ($stuckJobs > 0) {
+                // Jobs stuck for 30+ minutes - workers likely not running
+                $workersActive = false;
+                $workerStatus = 'jobs_stuck';
+            } else {
+                // Jobs pending but recent activity unclear - uncertain status
+                $workersActive = $recentProcessing > 0;
+                $workerStatus = $workersActive ? 'uncertain_but_recent_activity' : 'uncertain_no_activity';
+            }
+            
+            // Calculate health score based on actual performance metrics
+            $healthScore = 100;
+            if (!$workersActive) {
+                $healthScore -= 60; // Major penalty for non-functional workers
+            }
+            if ($stuckJobs > 0) {
+                $healthScore -= min($stuckJobs * 5, 30); // Penalty for stuck jobs
+            }
+            if ($pendingJobs > 10) {
+                $healthScore -= min(($pendingJobs - 10) * 2, 10); // Small penalty for job backlog
+            }
+            
+            $healthScore = max($healthScore, 0);
+            $workerHealth = $healthScore >= 80 ? 'good' : ($healthScore >= 60 ? 'warning' : 'critical');
+            
+            // Return functional status information
+            return [
+                'workers_active' => $workersActive,
+                'worker_status' => $workerStatus,
+                'processing_jobs' => $processingJobs,
+                'pending_jobs' => $pendingJobs,
+                'stuck_jobs' => $stuckJobs,
+                'recent_processing_activity' => $recentProcessing,
+                'very_recent_activity' => $veryRecentProcessing,
+                'health_score' => $healthScore,
+                'worker_health' => $workerHealth,
+                'status_description' => $this->getWorkerStatusDescription($workerStatus, $processingJobs, $pendingJobs, $stuckJobs),
+                'last_checked' => $currentTime->toISOString(),
+                'monitoring_method' => 'job_processing_activity', // Not supervisor socket monitoring
+            ];
+            
+        } catch (\Exception $e) {
+            return [
+                'workers_active' => false,
+                'worker_status' => 'error',
+                'processing_jobs' => 0,
+                'pending_jobs' => 0,
+                'stuck_jobs' => 0,
+                'recent_processing_activity' => 0,
+                'very_recent_activity' => 0,
+                'health_score' => 0,
+                'worker_health' => 'critical',
+                'status_description' => 'Error checking worker status: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+                'last_checked' => now()->toISOString(),
+                'monitoring_method' => 'job_processing_activity',
+            ];
+        }
+    }
+    
+    /**
+     * Get human-readable description of worker status
+     */
+    private function getWorkerStatusDescription($status, $processingJobs, $pendingJobs, $stuckJobs)
+    {
+        switch ($status) {
+            case 'processing_jobs':
+                return "Workers are actively processing {$processingJobs} job(s)";
+                
+            case 'recently_active':
+                return "Workers recently processed jobs (within last 2 minutes)";
+                
+            case 'idle_no_jobs':
+                return "Workers appear to be running but no jobs in queue";
+                
+            case 'jobs_stuck':
+                return "Workers may not be running - {$stuckJobs} job(s) stuck for 30+ minutes";
+                
+            case 'uncertain_but_recent_activity':
+                return "Recent activity detected, workers likely running";
+                
+            case 'uncertain_no_activity':
+                return "No recent processing activity detected - workers may not be running";
+                
+            case 'inactive':
+                return "No worker activity detected";
+                
+            case 'error':
+                return "Unable to determine worker status due to error";
+                
+            default:
+                return "Unknown worker status: {$status}";
+        }
+    }
+
+    /**
+     * Get priority queue statistics (single queue + priority system).
+     */
+    private function getPriorityQueueStatistics()
+    {
+        $queues = ['audio-extraction', 'transcription'];
+        
+        $stats = [];
+        foreach ($queues as $queue) {
+            // Get priority breakdown within each queue
+            $highPriorityJobs = DB::table('jobs')
+                ->where('queue', $queue)
+                ->where('priority', '>=', 5) // High priority (5-10)
+                ->count();
+                
+            $normalPriorityJobs = DB::table('jobs')
+                ->where('queue', $queue)
+                ->where(function($query) {
+                    $query->where('priority', '<', 5)
+                          ->orWhereNull('priority'); // Default priority is 0
+                })
+                ->count();
+            
+            $totalJobs = $highPriorityJobs + $normalPriorityJobs;
+            
+            $processingJobs = DB::table('jobs')
+                ->where('queue', $queue)
+                ->whereNotNull('reserved_at')
+                ->count();
+            
+            $stats[$queue] = [
+                'total_jobs' => $totalJobs,
+                'processing_jobs' => $processingJobs,
+                'pending_jobs' => max(0, $totalJobs - $processingJobs),
+                'high_priority_jobs' => $highPriorityJobs,
+                'normal_priority_jobs' => $normalPriorityJobs,
+                'queue_type' => $this->extractQueueType($queue),
+            ];
+            
+            // Add virtual priority breakdowns for compatibility
+            $stats[$queue . '-high'] = [
+                'total_jobs' => $highPriorityJobs,
+                'processing_jobs' => DB::table('jobs')
+                    ->where('queue', $queue)
+                    ->where('priority', '>=', 5)
+                    ->whereNotNull('reserved_at')
+                    ->count(),
+                'pending_jobs' => $highPriorityJobs - DB::table('jobs')
+                    ->where('queue', $queue)
+                    ->where('priority', '>=', 5)
+                    ->whereNotNull('reserved_at')
+                    ->count(),
+                'priority_level' => 'high',
+                'queue_type' => $this->extractQueueType($queue),
+            ];
+            
+            $stats[$queue . '-normal'] = [
+                'total_jobs' => $normalPriorityJobs,
+                'processing_jobs' => DB::table('jobs')
+                    ->where('queue', $queue)
+                    ->where(function($query) {
+                        $query->where('priority', '<', 5)
+                              ->orWhereNull('priority');
+                    })
+                    ->whereNotNull('reserved_at')
+                    ->count(),
+                'pending_jobs' => $normalPriorityJobs - DB::table('jobs')
+                    ->where('queue', $queue)
+                    ->where(function($query) {
+                        $query->where('priority', '<', 5)
+                              ->orWhereNull('priority');
+                    })
+                    ->whereNotNull('reserved_at')
+                    ->count(),
+                'priority_level' => 'normal',
+                'queue_type' => $this->extractQueueType($queue),
+            ];
+        }
+
+        // Log for debugging
+        \Log::info('Priority Queue Statistics (Single Queue + Priority):', $stats);
+
+        return $stats;
     }
 
     /**
@@ -399,7 +771,7 @@ class JobsController extends Controller
     /**
      * Extract relevant data from job payload.
      */
-    private function extractPayloadData($payload)
+    private function extractPayloadData($payload, $queueName = null, $jobPriority = null)
     {
         if (!is_array($payload)) {
             return [];
@@ -420,6 +792,33 @@ class JobsController extends Controller
                 $data['course_id'] = $jobData['course']['id'] ?? null;
             }
             
+            // TrueFire segment processing information
+            if (isset($jobData['processing'])) {
+                $processing = $jobData['processing'];
+                $data['segment_id'] = $processing['segment_id'] ?? null;
+                $data['course_id'] = $processing['course_id'] ?? null;
+                $data['priority'] = $processing['priority'] ?? null;
+                $data['status'] = $processing['status'] ?? null;
+                $data['progress_percentage'] = $processing['progress_percentage'] ?? null;
+            }
+            
+            // Extract transcription preset information
+            if (isset($jobData['transcriptionPreset'])) {
+                $data['transcription_preset'] = $jobData['transcriptionPreset'];
+            }
+            
+            // Extract job options
+            if (isset($jobData['jobOptions'])) {
+                $options = $jobData['jobOptions'];
+                $data['use_intelligent_detection'] = $options['use_intelligent_detection'] ?? false;
+                $data['force_reextraction'] = $options['force_reextraction'] ?? false;
+            }
+            
+            // Extract batch information
+            if (isset($jobData['batch_id'])) {
+                $data['batch_id'] = $jobData['batch_id'];
+            }
+            
             // Extract any ID fields
             foreach ($jobData as $key => $value) {
                 if (str_ends_with($key, '_id') || $key === 'id') {
@@ -428,7 +827,123 @@ class JobsController extends Controller
             }
         }
 
+        // Extract priority from retry metadata if available (for retried jobs)
+        if (!isset($data['priority']) && isset($payload['retry_metadata']['retry_priority'])) {
+            $data['priority'] = $payload['retry_metadata']['retry_priority'];
+        }
+
+        // If no priority found yet, derive from context (job priority, queue name, etc.)
+        if (!isset($data['priority'])) {
+            $data['priority'] = $this->extractPriorityFromContext($payload, $queueName, $jobPriority);
+        }
+
+        // Ensure we always have a priority value
+        $data['priority'] = $data['priority'] ?? 'normal';
+
+        // Add context information if available
+        if (isset($data['segment_id']) && isset($data['course_id'])) {
+            $data['context'] = "Course {$data['course_id']}, Segment {$data['segment_id']}";
+        }
+        
+        // Always set priority display
+        $data['priority_display'] = strtoupper($data['priority']);
+
+        // Add enhanced context based on job class
+        $jobClass = $this->extractJobClass($payload);
+        $data['job_description'] = $this->getJobDescription($jobClass, $data);
+        $data['estimated_duration'] = $this->getEstimatedJobDuration($jobClass);
+
         return $data;
+    }
+
+    /**
+     * Extract priority from various contexts (job priority, retry metadata, job type, etc.)
+     */
+    private function extractPriorityFromContext($payload, $queueName = null, $jobPriority = null)
+    {
+        // Method 1: Check actual job priority column (most reliable for new system!)
+        if ($jobPriority !== null) {
+            if ($jobPriority >= 5) {
+                return 'high';
+            } elseif ($jobPriority < 0) {
+                return 'low';
+            } else {
+                return 'normal';
+            }
+        }
+        
+        // Method 2: Check for retry indicators (retried jobs should be high priority)
+        if (isset($payload['retry_metadata']['is_retry'])) {
+            return $payload['retry_metadata']['retry_priority'] ?? 'high';
+        }
+        
+        // Method 3: For TrueFire jobs, check if it's a high-priority job type
+        $jobClass = $this->extractJobClass($payload);
+        
+        // Course-level batch jobs are typically high priority
+        if (str_contains($jobClass, 'ProcessCourse')) {
+            return 'high';
+        }
+        
+        // Method 4: Legacy queue name check (for old jobs still in system)
+        if ($queueName) {
+            if (str_contains($queueName, '-high')) {
+                return 'high';
+            }
+            if (str_contains($queueName, '-low')) {
+                return 'low';
+            }
+        }
+        
+        // Default priority
+        return 'normal';
+    }
+
+    /**
+     * Get human-readable job description.
+     */
+    private function getJobDescription($jobClass, $data)
+    {
+        switch ($jobClass) {
+            case 'TruefireSegmentAudioExtractionJob':
+                $context = $data['context'] ?? 'Unknown segment';
+                $priority = $data['priority_display'] ?? 'NORMAL';
+                return "Extract audio from {$context} [Priority: {$priority}]";
+                
+            case 'TruefireSegmentTranscriptionJob':
+                $context = $data['context'] ?? 'Unknown segment';
+                $priority = $data['priority_display'] ?? 'NORMAL';
+                $preset = $data['transcription_preset'] ?? 'balanced';
+                return "Transcribe {$context} using {$preset} preset [Priority: {$priority}]";
+                
+            case 'ProcessCourseAudioExtractionJob':
+                $courseId = $data['course_id'] ?? 'Unknown';
+                return "Process course {$courseId} audio extraction batch";
+                
+            case 'ProcessCourseTranscriptionJob':
+                $courseId = $data['course_id'] ?? 'Unknown';
+                return "Process course {$courseId} transcription batch";
+                
+            default:
+                return $jobClass;
+        }
+    }
+
+    /**
+     * Get estimated job duration based on job type.
+     */
+    private function getEstimatedJobDuration($jobClass)
+    {
+        $durations = [
+            'TruefireSegmentAudioExtractionJob' => '30s',
+            'TruefireSegmentTranscriptionJob' => '2-5min',
+            'ProcessCourseAudioExtractionJob' => '5-30min',
+            'ProcessCourseTranscriptionJob' => '10-60min',
+            'AudioExtractionTestJob' => '30s',
+            'TranscriptionTestJob' => '1-3min',
+        ];
+
+        return $durations[$jobClass] ?? 'Unknown';
     }
 
     /**
@@ -558,13 +1073,171 @@ class JobsController extends Controller
      */
     private function calculateHealthScore($stuckJobs, $longRunningJobs, $highFailureQueues)
     {
-        $score = 100;
+        $baseScore = 100;
         
         // Deduct points for issues
-        $score -= min($stuckJobs * 5, 30); // Max 30 points for stuck jobs
-        $score -= min($longRunningJobs * 3, 20); // Max 20 points for long running
-        $score -= min($highFailureQueues * 10, 50); // Max 50 points for high failure queues
+        $baseScore -= min($stuckJobs * 10, 50); // Max 50 points deduction
+        $baseScore -= min($longRunningJobs * 5, 30); // Max 30 points deduction
+        $baseScore -= min($highFailureQueues * 5, 20); // Max 20 points deduction
         
-        return max($score, 0);
+        return max($baseScore, 0);
+    }
+
+    /**
+     * Get segment context data.
+     */
+    private function getSegmentContextData()
+    {
+        // Get segments currently being processed
+        $processingSegments = DB::table('truefire_segment_processing')
+            ->where('status', 'processing')
+            ->orWhere('status', 'transcribing')
+            ->get(['segment_id', 'course_id', 'status', 'priority', 'progress_percentage']);
+
+        // Get recent completed segments (last 24 hours)
+        $recentCompleted = DB::table('truefire_segment_processing')
+            ->where('status', 'completed')
+            ->where('updated_at', '>=', Carbon::now()->subDay())
+            ->count();
+
+        // Get failed segments
+        $failedSegments = DB::table('truefire_segment_processing')
+            ->where('status', 'failed')
+            ->get(['segment_id', 'course_id', 'error_message', 'priority']);
+
+        return [
+            'processing_segments' => $processingSegments,
+            'recent_completed_count' => $recentCompleted,
+            'failed_segments' => $failedSegments,
+            'total_segments_in_system' => DB::table('truefire_segment_processing')->count(),
+        ];
+    }
+
+    /**
+     * Get pipeline status showing the flow from audio extraction to transcription.
+     */
+    private function getPipelineStatus()
+    {
+        // Audio extraction pipeline
+        $audioExtractionStats = $this->getQueuePipelineStats(['audio-extraction']);
+        
+        // Transcription pipeline
+        $transcriptionStats = $this->getQueuePipelineStats(['transcription']);
+
+        // Processing bottlenecks
+        $bottlenecks = $this->detectPipelineBottlenecks();
+
+        return [
+            'audio_extraction' => $audioExtractionStats,
+            'transcription' => $transcriptionStats,
+            'bottlenecks' => $bottlenecks,
+            'pipeline_efficiency' => $this->calculatePipelineEfficiency(),
+        ];
+    }
+
+    /**
+     * Extract priority level from queue name.
+     */
+    private function extractPriorityLevel($queueName)
+    {
+        if (str_contains($queueName, '-high')) return 'high';
+        if (str_contains($queueName, '-low')) return 'low';
+        return 'normal';
+    }
+
+    /**
+     * Extract queue type from queue name.
+     */
+    private function extractQueueType($queueName)
+    {
+        if (str_contains($queueName, 'audio-extraction')) return 'audio_extraction';
+        if (str_contains($queueName, 'transcription')) return 'transcription';
+        return 'other';
+    }
+
+    /**
+     * Get pipeline statistics for a group of queues.
+     */
+    private function getQueuePipelineStats($queues)
+    {
+        $totalJobs = 0;
+        $processingJobs = 0;
+        $priorityBreakdown = ['high' => 0, 'normal' => 0, 'low' => 0];
+
+        foreach ($queues as $queue) {
+            $queueJobs = DB::table('jobs')->where('queue', $queue)->count();
+            $queueProcessing = DB::table('jobs')
+                ->where('queue', $queue)
+                ->whereNotNull('reserved_at')
+                ->count();
+
+            $totalJobs += $queueJobs;
+            $processingJobs += $queueProcessing;
+
+            $priority = $this->extractPriorityLevel($queue);
+            $priorityBreakdown[$priority] += $queueJobs;
+        }
+
+        return [
+            'total_jobs' => $totalJobs,
+            'processing_jobs' => $processingJobs,
+            'pending_jobs' => $totalJobs - $processingJobs,
+            'priority_breakdown' => $priorityBreakdown,
+        ];
+    }
+
+    /**
+     * Detect pipeline bottlenecks.
+     */
+    private function detectPipelineBottlenecks()
+    {
+        $bottlenecks = [];
+
+        // Check for high-priority jobs stuck (priority >= 5)
+        $stuckHighPriorityJobs = DB::table('jobs')
+            ->where('priority', '>=', 5)
+            ->where('created_at', '<', Carbon::now()->subMinutes(10)->timestamp)
+            ->whereNull('reserved_at')
+            ->count();
+
+        if ($stuckHighPriorityJobs > 0) {
+            $bottlenecks[] = [
+                'type' => 'stuck_high_priority',
+                'count' => $stuckHighPriorityJobs,
+                'description' => 'High priority jobs waiting more than 10 minutes'
+            ];
+        }
+
+        // Check for queue imbalance
+        $audioJobs = DB::table('jobs')->where('queue', 'audio-extraction')->count();
+        $transcriptionJobs = DB::table('jobs')->where('queue', 'transcription')->count();
+
+        if ($audioJobs > 0 && $transcriptionJobs / max($audioJobs, 1) > 3) {
+            $bottlenecks[] = [
+                'type' => 'transcription_backlog',
+                'audio_jobs' => $audioJobs,
+                'transcription_jobs' => $transcriptionJobs,
+                'description' => 'Transcription queue backing up relative to audio extraction'
+            ];
+        }
+
+        return $bottlenecks;
+    }
+
+    /**
+     * Calculate overall pipeline efficiency.
+     */
+    private function calculatePipelineEfficiency()
+    {
+        $totalPendingJobs = DB::table('jobs')->whereNull('reserved_at')->count();
+        $totalProcessingJobs = DB::table('jobs')->whereNotNull('reserved_at')->count();
+        $totalJobs = $totalPendingJobs + $totalProcessingJobs;
+
+        if ($totalJobs === 0) {
+            return 100; // No jobs = 100% efficient
+        }
+
+        $processingRatio = ($totalProcessingJobs / $totalJobs) * 100;
+        return round($processingRatio, 1);
     }
 }

@@ -78,14 +78,14 @@ return [
             'driver' => 'redis',
             'connection' => 'default',
             'queue' => 'audio-extraction',
-            'retry_after' => 360, // Longer timeout for audio jobs
+            'retry_after' => 360, // Long timeout for audio jobs
         ],
         
         'redis-transcription' => [
             'driver' => 'redis',
             'connection' => 'default',
             'queue' => 'transcription',
-            'retry_after' => 1800, // Long timeout for transcription jobs
+            'retry_after' => 360,
         ],
 
         'batch' => [
@@ -123,6 +123,57 @@ return [
             'queue' => env('SQS_QUEUE', 'default'),
             'suffix' => env('SQS_SUFFIX'),
             'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+            'after_commit' => false,
+        ],
+
+        // Audio extraction priority queues
+        'audio-extraction-high' => [
+            'driver' => 'database',
+            'table' => 'jobs',
+            'queue' => 'audio-extraction-high',
+            'retry_after' => 360,
+            'after_commit' => false,
+        ],
+
+        'audio-extraction-low' => [
+            'driver' => 'database',
+            'table' => 'jobs',
+            'queue' => 'audio-extraction-low',
+            'retry_after' => 360,
+            'after_commit' => false,
+        ],
+
+        // Transcription priority queues
+        'transcription-high' => [
+            'driver' => 'database',
+            'table' => 'jobs',
+            'queue' => 'transcription-high',
+            'retry_after' => 1800,
+            'after_commit' => false,
+        ],
+
+        'transcription-low' => [
+            'driver' => 'database',
+            'table' => 'jobs',
+            'queue' => 'transcription-low',
+            'retry_after' => 1800,
+            'after_commit' => false,
+        ],
+
+        // Priority database connections (single queue + priority system)
+        'priority-audio-extraction' => [
+            'driver' => 'priority-database',
+            'table' => 'jobs',
+            'queue' => 'audio-extraction',
+            'retry_after' => 360,
+            'after_commit' => false,
+        ],
+
+        'priority-transcription' => [
+            'driver' => 'priority-database',
+            'table' => 'jobs',
+            'queue' => 'transcription',
+            'retry_after' => 1800,
             'after_commit' => false,
         ],
 

@@ -133,7 +133,7 @@ class LocalTruefireSegment extends Model
      * @return string
      * @throws \Exception
      */
-    public function getSignedUrl($expirationSeconds = 604800)
+    public function getSignedUrl($expirationSeconds = 518400)
     {
         try {
             // Validate AWS credentials are available

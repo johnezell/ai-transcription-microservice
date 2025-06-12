@@ -3629,12 +3629,12 @@ class TruefireCourseController extends Controller
                 ], 422);
             }
 
-            // Dispatch the course processing job
+            // Dispatch the course processing job with high priority (coordinator job only)
             \App\Jobs\ProcessCourseAudioExtractionJob::dispatch(
                 $truefireCourse,
                 $forTranscription,
                 $settings
-            );
+            )->onConnection('priority-audio-extraction');
 
             $jobId = 'course_audio_extract_' . $truefireCourse->id . '_' . time() . '_' . uniqid();
 
@@ -4137,8 +4137,9 @@ class TruefireCourseController extends Controller
             // Start audio extraction first
             $processing->startAudioExtraction();
             
-            // Dispatch audio extraction job
-            TruefireSegmentAudioExtractionJob::dispatch($processing);
+            // Dispatch audio extraction job with priority context
+            TruefireSegmentAudioExtractionJob::dispatch($processing)
+                ->onQueue($processing->getAudioExtractionQueueName());
             
             Log::info('TrueFire segment transcription requested', [
                 'course_id' => $truefireCourse->id,
@@ -4233,8 +4234,9 @@ class TruefireCourseController extends Controller
             // Start audio extraction from the beginning
             $processing->startAudioExtraction();
             
-            // Dispatch audio extraction job
-            TruefireSegmentAudioExtractionJob::dispatch($processing);
+            // Dispatch audio extraction job with priority context
+            TruefireSegmentAudioExtractionJob::dispatch($processing)
+                ->onQueue($processing->getAudioExtractionQueueName());
             
             Log::info('TrueFire segment transcription restarted', [
                 'course_id' => $truefireCourse->id,
@@ -4303,8 +4305,9 @@ class TruefireCourseController extends Controller
             // Start transcription
             $processing->startTranscription();
             
-            // Dispatch transcription job
-            TruefireSegmentTranscriptionJob::dispatch($processing)->onQueue('transcription');
+            // Dispatch transcription job with priority context
+            TruefireSegmentTranscriptionJob::dispatch($processing)
+                ->onQueue($processing->getTranscriptionQueueName());
             
             Log::info('TrueFire segment audio extraction approved', [
                 'course_id' => $truefireCourse->id,
@@ -4705,6 +4708,7 @@ class TruefireCourseController extends Controller
             }
 
             // Dispatch job with only the segments that need processing (intelligent continuation)
+            // High priority for coordinator job so it starts immediately
             \App\Jobs\ProcessCourseAudioExtractionJob::dispatch(
                 $truefireCourse,
                 true, // for_transcription
@@ -4714,7 +4718,7 @@ class TruefireCourseController extends Controller
                     'continue_existing' => $continueExisting
                 ]),
                 $segmentsToProcess // Only process segments that need work
-            );
+            )->onConnection('priority-audio-extraction');
 
             $jobId = 'course_intelligent_audio_' . $truefireCourse->id . '_' . time() . '_' . uniqid();
 
@@ -4837,13 +4841,13 @@ class TruefireCourseController extends Controller
                 ], 422);
             }
 
-            // Dispatch the course transcription processing job
+            // Dispatch the course transcription processing job with high priority (coordinator job only)
             \App\Jobs\ProcessCourseTranscriptionJob::dispatch(
                 $truefireCourse,
                 $preset,
                 $settings,
                 $forceRestart
-            );
+            )->onConnection('priority-transcription');
 
             $jobId = 'course_transcription_' . $truefireCourse->id . '_' . time() . '_' . uniqid();
 
@@ -5129,6 +5133,7 @@ class TruefireCourseController extends Controller
                 'force_restart' => true,
                 'preset' => $preset,
                 'settings' => [
+                    'force_restart' => true,
                     'restart_operation' => true,
                     'cleared_existing' => $clearExisting,
                     'segments_filter' => $segmentsOnly
@@ -5258,6 +5263,7 @@ class TruefireCourseController extends Controller
                 'force_restart' => true,
                 'preset' => $preset,
                 'settings' => [
+                    'force_restart' => true,
                     'restart_operation' => true,
                     'cleared_existing' => $clearExisting,
                     'segments_filter' => $segmentsOnly
@@ -5395,6 +5401,7 @@ class TruefireCourseController extends Controller
                 'force_restart' => true,
                 'preset' => $audioPreset,
                 'settings' => [
+                    'force_restart' => true,
                     'restart_operation' => true,
                     'complete_pipeline_restart' => true,
                     'cleared_existing' => $clearExisting,

@@ -113,8 +113,8 @@ class TruefireSegmentAudioExtractionJob implements ShouldQueue
                 throw new \Exception('Audio extraction service did not return job_id');
             }
 
-            // Update processing record with job info (use model method to avoid duplicate timestamp setting)
-            $this->processing->startAudioExtraction();
+            // Processing record already updated with start time when job was dispatched
+            // Just log that we're starting the actual service call
 
             Log::info('TrueFire segment audio extraction request sent successfully', [
                 'segment_id' => $this->processing->segment_id,

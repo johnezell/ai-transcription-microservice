@@ -14,7 +14,8 @@ import TranscriptionTestResults from '@/Components/TranscriptionTestResults.vue'
 
 const props = defineProps({
     course: Object,
-    segmentsWithSignedUrls: Array
+    segmentsWithSignedUrls: Array,
+    qualityMetrics: Object
 });
 
 const notifications = ref([]); // For toast notifications
@@ -43,6 +44,68 @@ const hasSegments = computed(() => {
     return totalSegments.value > 0;
 });
 
+// Quality metrics computed properties
+const hasQualityData = computed(() => {
+    return props.qualityMetrics && props.qualityMetrics.segments_analyzed > 0;
+});
+
+const qualityGradeColor = computed(() => {
+    if (!hasQualityData.value) return 'text-gray-500';
+    
+    const color = props.qualityMetrics.grade_color;
+    switch (color) {
+        case 'green': return 'text-green-600';
+        case 'blue': return 'text-blue-600';
+        case 'yellow': return 'text-yellow-600';
+        case 'orange': return 'text-orange-600';
+        case 'red': return 'text-red-600';
+        default: return 'text-gray-500';
+    }
+});
+
+const qualityGradeBg = computed(() => {
+    if (!hasQualityData.value) return 'bg-gray-100';
+    
+    const color = props.qualityMetrics.grade_color;
+    switch (color) {
+        case 'green': return 'bg-green-500';
+        case 'blue': return 'bg-blue-500';
+        case 'yellow': return 'bg-yellow-500';
+        case 'orange': return 'bg-orange-500';
+        case 'red': return 'bg-red-500';
+        default: return 'bg-gray-500';
+    }
+});
+
+const getPatternIcon = (type) => {
+    const icons = {
+        'instructional': '🎯',
+        'demonstration': '🎸',
+        'overview': '📖',
+        'performance': '🎵'
+    };
+    return icons[type] || '❓';
+};
+
+const getRecommendationIcon = (type) => {
+    const icons = {
+        'completion': '📊',
+        'quality': '⚠️',
+        'confidence': '🔍',
+        'enhancement': '🎵',
+        'consistency': '📈'
+    };
+    return icons[type] || '💡';
+};
+
+const getRecommendationColor = (priority) => {
+    switch (priority) {
+        case 'high': return 'text-red-700 bg-red-50 border-red-200';
+        case 'medium': return 'text-yellow-700 bg-yellow-50 border-yellow-200';
+        case 'low': return 'text-blue-700 bg-blue-50 border-blue-200';
+        default: return 'text-gray-700 bg-gray-50 border-gray-200';
+    }
+};
 
 // Copy to clipboard function
 const copyToClipboard = async (text) => {
@@ -723,6 +786,170 @@ const showTranscriptionConfirm = ref(false);
                                                     <div class="text-xs text-red-500">⚠️ Clear ALL files and start fresh</div>
                                                 </div>
                                             </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Course Quality Assessment -->
+                        <div v-if="hasQualityData || qualityMetrics" class="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg p-6 mb-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0">
+                                        <svg class="h-8 w-8 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <h4 class="text-lg font-semibold text-purple-900">📊 Overall Course Quality</h4>
+                                        <p class="text-sm text-purple-700">Transcription quality assessment based on completed segments</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- Overall Grade Badge -->
+                                <div v-if="hasQualityData" class="text-center">
+                                    <div class="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white" :class="qualityGradeBg">
+                                        {{ qualityMetrics.grade }}
+                                    </div>
+                                    <div class="text-xs text-purple-600 mt-1">Overall Grade</div>
+                                </div>
+                                <div v-else class="text-center">
+                                    <div class="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-gray-500 bg-gray-200">
+                                        N/A
+                                    </div>
+                                    <div class="text-xs text-gray-500 mt-1">No Data</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Quality Metrics Grid -->
+                            <div v-if="hasQualityData" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                                <div class="bg-white rounded-lg p-4 border border-purple-100 text-center">
+                                    <div class="text-2xl font-bold" :class="qualityGradeColor">
+                                        {{ (qualityMetrics.average_confidence * 100).toFixed(0) }}%
+                                    </div>
+                                    <div class="text-sm text-gray-600">Avg Confidence</div>
+                                    <div class="text-xs text-gray-500 mt-1">{{ qualityMetrics.segments_analyzed }} segments</div>
+                                </div>
+                                
+                                <div class="bg-white rounded-lg p-4 border border-purple-100 text-center">
+                                    <div class="text-2xl font-bold text-purple-600">
+                                        {{ qualityMetrics.completion_rate }}%
+                                    </div>
+                                    <div class="text-sm text-gray-600">Completion</div>
+                                    <div class="text-xs text-gray-500 mt-1">{{ qualityMetrics.segments_analyzed }}/{{ qualityMetrics.total_segments }} segments</div>
+                                </div>
+                                
+                                <div class="bg-white rounded-lg p-4 border border-purple-100 text-center">
+                                    <div class="text-2xl font-bold text-indigo-600">
+                                        {{ qualityMetrics.music_terms_found }}
+                                    </div>
+                                    <div class="text-sm text-gray-600">Music Terms</div>
+                                    <div class="text-xs text-gray-500 mt-1">Guitar terminology found</div>
+                                </div>
+                                
+                                <div class="bg-white rounded-lg p-4 border border-purple-100 text-center">
+                                    <div class="text-2xl font-bold text-emerald-600">
+                                        {{ qualityMetrics.quality_distribution.excellent + qualityMetrics.quality_distribution.good }}
+                                    </div>
+                                    <div class="text-sm text-gray-600">High Quality</div>
+                                    <div class="text-xs text-gray-500 mt-1">A & B grade segments</div>
+                                </div>
+                            </div>
+                            
+                            <!-- No Data State -->
+                            <div v-else class="bg-white rounded-lg p-6 border border-purple-100 text-center">
+                                <div class="text-gray-500 mb-2">
+                                    <svg class="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                    </svg>
+                                    <h5 class="text-lg font-medium text-gray-700 mb-1">No Quality Data Available</h5>
+                                    <p class="text-sm text-gray-500">Complete some segment transcriptions to see course quality metrics</p>
+                                </div>
+                                <div class="mt-4">
+                                    <button @click="startBatchTranscription" class="inline-flex items-center px-4 py-2 bg-purple-600 border border-transparent rounded-md font-semibold text-sm text-white hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition ease-in-out duration-150">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                        </svg>
+                                        Start Transcription Analysis
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Quality Distribution (if data available) -->
+                            <div v-if="hasQualityData" class="mt-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h5 class="text-sm font-medium text-purple-800">Quality Distribution</h5>
+                                    <span class="text-xs text-purple-600">{{ qualityMetrics.grade_description }}</span>
+                                </div>
+                                <div class="flex w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                    <div 
+                                        class="bg-green-500 transition-all duration-300" 
+                                        :style="{ width: (qualityMetrics.quality_distribution.excellent / qualityMetrics.segments_analyzed * 100) + '%' }"
+                                        :title="`${qualityMetrics.quality_distribution.excellent} excellent segments (A grade)`"
+                                    ></div>
+                                    <div 
+                                        class="bg-blue-500 transition-all duration-300" 
+                                        :style="{ width: (qualityMetrics.quality_distribution.good / qualityMetrics.segments_analyzed * 100) + '%' }"
+                                        :title="`${qualityMetrics.quality_distribution.good} good segments (B grade)`"
+                                    ></div>
+                                    <div 
+                                        class="bg-yellow-500 transition-all duration-300" 
+                                        :style="{ width: (qualityMetrics.quality_distribution.fair / qualityMetrics.segments_analyzed * 100) + '%' }"
+                                        :title="`${qualityMetrics.quality_distribution.fair} fair segments (C grade)`"
+                                    ></div>
+                                    <div 
+                                        class="bg-red-500 transition-all duration-300" 
+                                        :style="{ width: (qualityMetrics.quality_distribution.poor / qualityMetrics.segments_analyzed * 100) + '%' }"
+                                        :title="`${qualityMetrics.quality_distribution.poor} poor segments (D/F grade)`"
+                                    ></div>
+                                </div>
+                                <div class="flex justify-between text-xs text-gray-600 mt-1">
+                                    <span class="flex items-center"><div class="w-3 h-3 bg-green-500 rounded mr-1"></div>Excellent ({{ qualityMetrics.quality_distribution.excellent }})</span>
+                                    <span class="flex items-center"><div class="w-3 h-3 bg-blue-500 rounded mr-1"></div>Good ({{ qualityMetrics.quality_distribution.good }})</span>
+                                    <span class="flex items-center"><div class="w-3 h-3 bg-yellow-500 rounded mr-1"></div>Fair ({{ qualityMetrics.quality_distribution.fair }})</span>
+                                    <span class="flex items-center"><div class="w-3 h-3 bg-red-500 rounded mr-1"></div>Poor ({{ qualityMetrics.quality_distribution.poor }})</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Teaching Patterns (if available) -->
+                            <div v-if="hasQualityData && qualityMetrics.teaching_patterns && Object.keys(qualityMetrics.teaching_patterns).length > 0" class="mt-4 bg-white rounded-lg p-4 border border-purple-100">
+                                <h5 class="text-sm font-medium text-purple-800 mb-3">Teaching Patterns Detected</h5>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div v-for="(pattern, type) in qualityMetrics.teaching_patterns" :key="type" class="flex items-center justify-between p-2 bg-purple-50 rounded border">
+                                        <div class="flex items-center">
+                                            <span class="text-lg mr-2">{{ getPatternIcon(type) }}</span>
+                                            <div>
+                                                <div class="text-sm font-medium text-purple-900 capitalize">{{ type.replace('_', ' ') }}</div>
+                                                <div class="text-xs text-purple-600">{{ pattern.count }} segments</div>
+                                            </div>
+                                        </div>
+                                        <div class="text-xs text-purple-700 font-medium">
+                                            {{ (pattern.average_confidence * 100).toFixed(0) }}%
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Quality Recommendations -->
+                            <div v-if="hasQualityData && qualityMetrics.recommendations && qualityMetrics.recommendations.length > 0" class="mt-4">
+                                <h5 class="text-sm font-medium text-purple-800 mb-3">💡 Quality Improvement Recommendations</h5>
+                                <div class="space-y-2">
+                                    <div v-for="(rec, index) in qualityMetrics.recommendations" :key="index" 
+                                         class="p-3 rounded-lg border" :class="getRecommendationColor(rec.priority)">
+                                        <div class="flex items-start">
+                                            <span class="text-lg mr-3 mt-0.5">{{ getRecommendationIcon(rec.type) }}</span>
+                                            <div class="flex-1">
+                                                <div class="font-medium text-sm">{{ rec.message }}</div>
+                                                <div class="text-xs mt-1 opacity-75">{{ rec.action }}</div>
+                                            </div>
+                                            <span class="text-xs px-2 py-1 rounded-full font-medium" :class="{
+                                                'bg-red-200 text-red-800': rec.priority === 'high',
+                                                'bg-yellow-200 text-yellow-800': rec.priority === 'medium',
+                                                'bg-blue-200 text-blue-800': rec.priority === 'low'
+                                            }">
+                                                {{ rec.priority }}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -1476,9 +1703,18 @@ const showTranscriptionConfirm = ref(false);
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center space-x-2">
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                    🔄 Pending
+                                                <span 
+                                                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                                    :class="segment.processing_status.color_class"
+                                                >
+                                                    {{ segment.processing_status.icon }} {{ segment.processing_status.display_text }}
                                                 </span>
+                                                <div v-if="segment.processing_status.status === 'processing' || segment.processing_status.status === 'transcribing'" 
+                                                     class="w-3 h-3 animate-spin">
+                                                    <svg class="w-full h-full text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                                    </svg>
+                                                </div>
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">

@@ -101,11 +101,8 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
                 throw new \Exception('Transcription service did not return job_id');
             }
 
-            // Update processing record (don't override transcription_started_at - it's already set by startTranscription())
-            $this->processing->update([
-                'status' => 'transcribing',
-                'progress_percentage' => 60
-            ]);
+            // Processing record already updated with start time when job was dispatched
+            // Status and progress already set, just proceed with service call
 
             Log::info('TrueFire segment transcription request sent successfully', [
                 'segment_id' => $this->processing->segment_id,

@@ -544,6 +544,50 @@ class TranscriptionController extends Controller
             $status = $request->input('status');
             $responseData = $request->input('response_data', []);
 
+            // CAPTURE START TIMES: Set timestamps when services actually start processing
+            if ($status === 'processing' || $status === 'transcribing' || $status === 'extracting_audio') {
+                $processingTime = now();
+                
+                // Determine which service is starting based on current status and data
+                if ($status === 'extracting_audio' && !$processing->audio_extraction_started_at) {
+                    // Audio service starting
+                    \Log::info('WEBHOOK: Audio service started processing', [
+                        'segment_id' => $segmentId,
+                        'timestamp' => $processingTime->toISOString(),
+                        'source' => 'service_status_update',
+                        'status' => $status
+                    ]);
+                    $processing->update(['audio_extraction_started_at' => $processingTime]);
+                    
+                } elseif ($status === 'transcribing' && !$processing->transcription_started_at) {
+                    // Transcription service starting
+                    \Log::info('WEBHOOK: Transcription service started processing', [
+                        'segment_id' => $segmentId,
+                        'timestamp' => $processingTime->toISOString(),
+                        'source' => 'service_status_update',
+                        'status' => $status
+                    ]);
+                    $processing->update(['transcription_started_at' => $processingTime]);
+                    
+                } elseif ($status === 'processing' && $processing->status === 'processing' && !$processing->audio_extraction_started_at) {
+                    // Fallback: Audio service starting with generic 'processing' status
+                    \Log::info('WEBHOOK: Audio service started processing (fallback)', [
+                        'segment_id' => $segmentId,
+                        'timestamp' => $processingTime->toISOString(),
+                        'source' => 'service_status_update',
+                        'status' => $status
+                    ]);
+                    $processing->update(['audio_extraction_started_at' => $processingTime]);
+                }
+                
+                // Don't process further for start status updates - just capturing start time
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Processing start time captured',
+                    'status' => $status
+                ]);
+            }
+
             // Handle different types of callbacks based on response data and current status
             if ($status === 'completed' || ($status === 'processing' && (isset($responseData['audio_path']) || isset($responseData['duration_seconds'])))) {
                 // Audio extraction completed (either test mode with 'completed' or regular mode with 'processing' + audio data)

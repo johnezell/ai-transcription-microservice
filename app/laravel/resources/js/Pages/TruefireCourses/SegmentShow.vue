@@ -621,6 +621,53 @@ const processingMetrics = computed(() => {
     const durations = getProcessingStepDurations();
     const videoDuration = segmentData.value.runtime || segmentData.value.audio_duration || 0;
     
+    // Debug: Log what durations we're getting
+    if (segmentData.value.status === 'completed') {
+        console.log('DEBUG: Duration calculations:', {
+            audioExtraction: durations.audioExtraction,
+            transcription: durations.transcription,
+            total: durations.total,
+            queueWait: durations.queueWait
+        });
+        console.log('DEBUG: Raw timestamps:', {
+            audio_start: segmentData.value.audio_extraction_started_at,
+            audio_end: segmentData.value.audio_extraction_completed_at,
+            transcription_start: segmentData.value.transcription_started_at,
+            transcription_end: segmentData.value.transcription_completed_at,
+            terminology_start: segmentData.value.terminology_started_at,
+            terminology_end: segmentData.value.terminology_completed_at
+        });
+        
+        // Debug: Manual duration calculations to identify the issue
+        if (segmentData.value.audio_extraction_started_at && segmentData.value.audio_extraction_completed_at) {
+            const start = new Date(segmentData.value.audio_extraction_started_at);
+            const end = new Date(segmentData.value.audio_extraction_completed_at);
+            console.log('DEBUG: Audio extraction calculation:', {
+                start_parsed: start,
+                end_parsed: end,
+                start_time: start.getTime(),
+                end_time: end.getTime(),
+                difference_ms: end.getTime() - start.getTime(),
+                difference_seconds: (end.getTime() - start.getTime()) / 1000,
+                math_max_result: Math.max(0, (end.getTime() - start.getTime()) / 1000)
+            });
+        }
+        
+        if (segmentData.value.transcription_started_at && segmentData.value.transcription_completed_at) {
+            const start = new Date(segmentData.value.transcription_started_at);
+            const end = new Date(segmentData.value.transcription_completed_at);
+            console.log('DEBUG: Transcription calculation:', {
+                start_parsed: start,
+                end_parsed: end,
+                start_time: start.getTime(),
+                end_time: end.getTime(),
+                difference_ms: end.getTime() - start.getTime(),
+                difference_seconds: (end.getTime() - start.getTime()) / 1000,
+                math_max_result: Math.max(0, (end.getTime() - start.getTime()) / 1000)
+            });
+        }
+    }
+    
     // Show metrics even with partial data
     if (!durations.total && !durations.audioExtraction && !durations.transcription) return null;
     
@@ -1518,27 +1565,36 @@ function getStatusTitle(status) {
                                         </div>
                                     </div>
 
-                                    <!-- Detailed Timestamps (Collapsible) -->
+                                    <!-- Raw Timestamps (Collapsible) -->
                                     <details class="mt-4">
-                                        <summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-800">Show detailed timestamps</summary>
-                                        <div class="mt-2 space-y-2 text-xs">
-                                            <div v-if="segmentData.audio_extraction_started_at">
-                                                <span class="text-gray-500">Audio started:</span> {{ formatTimestamp(segmentData.audio_extraction_started_at) }}
-                                            </div>
-                                            <div v-if="segmentData.audio_extraction_completed_at">
-                                                <span class="text-gray-500">Audio completed:</span> {{ formatTimestamp(segmentData.audio_extraction_completed_at) }}
-                                            </div>
-                                            <div v-if="segmentData.transcription_started_at">
-                                                <span class="text-gray-500">Transcription started:</span> {{ formatTimestamp(segmentData.transcription_started_at) }}
-                                            </div>
-                                            <div v-if="segmentData.transcription_completed_at">
-                                                <span class="text-gray-500">Transcription completed:</span> {{ formatTimestamp(segmentData.transcription_completed_at) }}
-                                            </div>
-                                            <div v-if="segmentData.terminology_started_at">
-                                                <span class="text-gray-500">Terminology started:</span> {{ formatTimestamp(segmentData.terminology_started_at) }}
-                                            </div>
-                                            <div v-if="segmentData.terminology_completed_at">
-                                                <span class="text-gray-500">Terminology completed:</span> {{ formatTimestamp(segmentData.terminology_completed_at) }}
+                                        <summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-800">Show raw timestamps</summary>
+                                        <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-200 text-xs text-gray-600">
+                                            <div class="font-medium mb-2 text-gray-800">Processing Timestamps</div>
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                <div v-if="segmentData.audio_extraction_started_at">
+                                                    <span class="text-gray-500">Audio started:</span><br>
+                                                    <span class="font-mono">{{ new Date(segmentData.audio_extraction_started_at).toLocaleString() }}</span>
+                                                </div>
+                                                <div v-if="segmentData.audio_extraction_completed_at">
+                                                    <span class="text-gray-500">Audio completed:</span><br>
+                                                    <span class="font-mono">{{ new Date(segmentData.audio_extraction_completed_at).toLocaleString() }}</span>
+                                                </div>
+                                                <div v-if="segmentData.transcription_started_at">
+                                                    <span class="text-gray-500">Transcription started:</span><br>
+                                                    <span class="font-mono">{{ new Date(segmentData.transcription_started_at).toLocaleString() }}</span>
+                                                </div>
+                                                <div v-if="segmentData.transcription_completed_at">
+                                                    <span class="text-gray-500">Transcription completed:</span><br>
+                                                    <span class="font-mono">{{ new Date(segmentData.transcription_completed_at).toLocaleString() }}</span>
+                                                </div>
+                                                <div v-if="segmentData.terminology_started_at">
+                                                    <span class="text-gray-500">Terminology started:</span><br>
+                                                    <span class="font-mono">{{ new Date(segmentData.terminology_started_at).toLocaleString() }}</span>
+                                                </div>
+                                                <div v-if="segmentData.terminology_completed_at">
+                                                    <span class="text-gray-500">Terminology completed:</span><br>
+                                                    <span class="font-mono">{{ new Date(segmentData.terminology_completed_at).toLocaleString() }}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </details>

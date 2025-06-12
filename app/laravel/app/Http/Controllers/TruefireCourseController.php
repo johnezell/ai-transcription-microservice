@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use GuzzleHttp\Client as GuzzleClient;
 use App\Http\Controllers\Controller;
@@ -36,17 +37,18 @@ class TruefireCourseController extends Controller
     public function index(Request $request)
     {
         $search = $request->get('search', '');
+        $statusFilter = $request->get('status', ''); // completed, in_progress, not_started
         $perPage = 15; // Items per page
         
-        // Create cache key based on search and page parameters (updated for S3)
-        $cacheKey = 'truefire_courses_s3_index_' . md5($search . '_' . ($request->get('page', 1)) . '_' . $perPage);
+        // Create cache key based on search, status and page parameters
+        $cacheKey = 'truefire_courses_s3_index_' . md5($search . '_' . $statusFilter . '_' . ($request->get('page', 1)) . '_' . $perPage);
         
-        // Cache the results for 5 minutes with tags if supported
+        // Cache the results for 2 minutes with tags if supported (shorter cache for progress tracking)
         $courses = $this->cacheWithTagsSupport(
             ['truefire_courses_s3_index'],
             $cacheKey,
-            300,
-            function () use ($search, $perPage, $request) {
+            120,
+            function () use ($search, $statusFilter, $perPage, $request) {
                 $query = LocalTruefireCourse::query();
                 
                 // Apply search filter if search term is provided
@@ -55,6 +57,11 @@ class TruefireCourseController extends Controller
                         $q->where('id', 'like', '%' . $search . '%')
                           ->orWhere('title', 'like', '%' . $search . '%');
                     });
+                }
+                
+                // Apply status filter at database level before pagination
+                if (!empty($statusFilter)) {
+                    $query = $this->applyStatusFilter($query, $statusFilter);
                 }
                 
                 // Load relationships and counts for local models
@@ -69,14 +76,19 @@ class TruefireCourseController extends Controller
                 
                 $courses = $query->paginate($perPage);
                 
-                // Transform courses to include proper preset data
+                // Transform courses to include proper preset data and progress information
                 $courses->getCollection()->transform(function ($course) {
                     // Add the correct audio extraction preset using the model method
                     $course->audio_extraction_preset = $course->getAudioExtractionPreset();
+                    
+                    // Calculate progress based on segment processing status
+                    $progressData = $this->calculateCourseProgress($course);
+                    $course->progress = $progressData;
+                    
                     return $course;
                 });
                 
-                // Append search parameter to pagination links
+                // Append search and status parameters to pagination links
                 $courses->appends($request->query());
                 
                 return $courses;
@@ -87,8 +99,694 @@ class TruefireCourseController extends Controller
             'courses' => $courses,
             'filters' => [
                 'search' => $search,
+                'status' => $statusFilter,
             ],
         ]);
+    }
+
+    /**
+     * Apply status filter to the query at database level before pagination
+     */
+    private function applyStatusFilter($query, $statusFilter)
+    {
+        // Get course IDs that match the status filter
+        $courseIds = $this->getCourseIdsByStatus($statusFilter);
+        
+        // Apply the filter to the main query
+        return $query->whereIn('id', $courseIds);
+    }
+
+    /**
+     * Get course IDs that match the given status filter
+     */
+    private function getCourseIdsByStatus($statusFilter)
+    {
+        // First, get all courses with their segment counts and completion counts
+        $courseStats = DB::table('local_truefire_courses as courses')
+            ->join('local_truefire_channels as channels', 'channels.courseid', '=', 'courses.id')
+            ->join('local_truefire_segments as segments', 'segments.channel_id', '=', 'channels.id')
+            ->leftJoin('truefire_segment_processing as processing', function ($join) {
+                $join->on('processing.segment_id', '=', 'segments.id')
+                    ->on('processing.course_id', '=', 'courses.id');
+            })
+            ->whereNotNull('segments.video')
+            ->where('segments.video', '!=', '')
+            ->select([
+                'courses.id as course_id',
+                DB::raw('COUNT(segments.id) as total_segments'),
+                DB::raw("COUNT(CASE WHEN processing.status = 'completed' THEN 1 END) as completed_segments"),
+                DB::raw("COUNT(CASE WHEN processing.status IN ('processing', 'transcribing', 'processing_terminology', 'audio_extracted', 'transcribed') THEN 1 END) as in_progress_segments")
+            ])
+            ->groupBy('courses.id')
+            ->get();
+
+        // Filter course IDs based on status
+        $filteredCourseIds = $courseStats->filter(function ($stats) use ($statusFilter) {
+            $completionPercentage = $stats->total_segments > 0 
+                ? ($stats->completed_segments / $stats->total_segments) * 100 
+                : 0;
+
+            switch ($statusFilter) {
+                case 'completed':
+                    return $completionPercentage == 100;
+                case 'in_progress':
+                    return $completionPercentage > 0 && $completionPercentage < 100;
+                case 'not_started':
+                    return $completionPercentage == 0 && $stats->in_progress_segments == 0;
+                default:
+                    return true;
+            }
+        })->pluck('course_id')->toArray();
+
+        // Return empty array if no matches to ensure query doesn't return all courses
+        return empty($filteredCourseIds) ? [0] : $filteredCourseIds;
+    }
+
+    /**
+     * Get processing status for a single segment
+     */
+    private function getSegmentProcessingStatus($processing)
+    {
+        if (!$processing) {
+            return [
+                'status' => 'not_started',
+                'display_text' => 'Not Started',
+                'icon' => '⏳',
+                'color_class' => 'bg-gray-100 text-gray-800'
+            ];
+        }
+
+        switch ($processing->status) {
+            case 'completed':
+                return [
+                    'status' => 'completed',
+                    'display_text' => 'Completed',
+                    'icon' => '✅',
+                    'color_class' => 'bg-green-100 text-green-800'
+                ];
+            case 'processing':
+                return [
+                    'status' => 'processing',
+                    'display_text' => 'Processing Audio',
+                    'icon' => '🔄',
+                    'color_class' => 'bg-blue-100 text-blue-800'
+                ];
+            case 'transcribing':
+                return [
+                    'status' => 'transcribing',
+                    'display_text' => 'Transcribing',
+                    'icon' => '📝',
+                    'color_class' => 'bg-purple-100 text-purple-800'
+                ];
+            case 'processing_terminology':
+                return [
+                    'status' => 'processing_terminology',
+                    'display_text' => 'Processing Terms',
+                    'icon' => '🎵',
+                    'color_class' => 'bg-indigo-100 text-indigo-800'
+                ];
+            case 'audio_extracted':
+                return [
+                    'status' => 'audio_extracted',
+                    'display_text' => 'Audio Ready',
+                    'icon' => '🎧',
+                    'color_class' => 'bg-cyan-100 text-cyan-800'
+                ];
+            case 'transcribed':
+                return [
+                    'status' => 'transcribed',
+                    'display_text' => 'Transcribed',
+                    'icon' => '📄',
+                    'color_class' => 'bg-emerald-100 text-emerald-800'
+                ];
+            case 'failed':
+                return [
+                    'status' => 'failed',
+                    'display_text' => 'Failed',
+                    'icon' => '❌',
+                    'color_class' => 'bg-red-100 text-red-800'
+                ];
+            default:
+                return [
+                    'status' => 'unknown',
+                    'display_text' => 'Unknown',
+                    'icon' => '❓',
+                    'color_class' => 'bg-gray-100 text-gray-600'
+                ];
+        }
+    }
+
+    /**
+     * Calculate course progress based on segment processing status
+     */
+    private function calculateCourseProgress($course)
+    {
+        // Get all segments for the course
+        $courseWithSegments = $course->load(['channels.segments' => function ($query) {
+            $query->withVideo();
+        }]);
+        
+        $allSegments = collect();
+        foreach ($courseWithSegments->channels as $channel) {
+            $allSegments = $allSegments->merge($channel->segments);
+        }
+        
+        $totalSegments = $allSegments->count();
+        
+        if ($totalSegments === 0) {
+            return [
+                'total_segments' => 0,
+                'completed_segments' => 0,
+                'in_progress_segments' => 0,
+                'failed_segments' => 0,
+                'not_started_segments' => 0,
+                'completion_percentage' => 0,
+                'status' => 'not_started'
+            ];
+        }
+        
+        // Get processing status for all segments
+        $segmentIds = $allSegments->pluck('id')->toArray();
+        $processingRecords = TruefireSegmentProcessing::whereIn('segment_id', $segmentIds)
+            ->where('course_id', $course->id)
+            ->get()
+            ->keyBy('segment_id');
+        
+        $completed = 0;
+        $inProgress = 0;
+        $failed = 0;
+        $notStarted = 0;
+        
+        foreach ($allSegments as $segment) {
+            $processing = $processingRecords->get($segment->id);
+            
+            if (!$processing) {
+                $notStarted++;
+            } else {
+                switch ($processing->status) {
+                    case 'completed':
+                        $completed++;
+                        break;
+                    case 'processing':
+                    case 'transcribing': 
+                    case 'processing_terminology':
+                    case 'audio_extracted':
+                    case 'transcribed':
+                        $inProgress++;
+                        break;
+                    case 'failed':
+                        $failed++;
+                        break;
+                    default:
+                        $notStarted++;
+                        break;
+                }
+            }
+        }
+        
+        $completionPercentage = round(($completed / $totalSegments) * 100, 1);
+        
+        // Determine overall status
+        $status = 'not_started';
+        if ($completed === $totalSegments) {
+            $status = 'completed';
+        } elseif ($completed > 0 || $inProgress > 0) {
+            $status = 'in_progress';
+        }
+        
+        return [
+            'total_segments' => $totalSegments,
+            'completed_segments' => $completed,
+            'in_progress_segments' => $inProgress,
+            'failed_segments' => $failed,
+            'not_started_segments' => $notStarted,
+            'completion_percentage' => $completionPercentage,
+            'status' => $status
+        ];
+    }
+
+    /**
+     * Calculate overall course quality metrics from completed segments
+     */
+    private function calculateCourseQualityMetrics($course)
+    {
+        // Get all completed segments for the course
+        $courseWithSegments = $course->load(['channels.segments' => function ($query) {
+            $query->withVideo();
+        }]);
+        
+        $allSegments = collect();
+        foreach ($courseWithSegments->channels as $channel) {
+            $allSegments = $allSegments->merge($channel->segments);
+        }
+        
+        $segmentIds = $allSegments->pluck('id')->toArray();
+        
+        // Get processing records for completed segments
+        $completedProcessing = TruefireSegmentProcessing::whereIn('segment_id', $segmentIds)
+            ->where('course_id', $course->id)
+            ->where('status', 'completed')
+            ->get();
+        
+        if ($completedProcessing->isEmpty()) {
+            return [
+                'overall_quality' => null,
+                'grade' => 'N/A',
+                'grade_color' => 'gray',
+                'completion_rate' => 0,
+                'segments_analyzed' => 0,
+                'total_segments' => $allSegments->count(),
+                'average_confidence' => null,
+                'music_terms_found' => 0,
+                'quality_distribution' => [
+                    'excellent' => 0,
+                    'good' => 0,
+                    'fair' => 0,
+                    'poor' => 0
+                ],
+                'teaching_patterns' => [],
+                'recommendations' => []
+            ];
+        }
+        
+        // Initialize aggregate metrics
+        $qualityScores = [];
+        $confidenceScores = [];
+        $musicTermsCount = 0;
+        $qualityDistribution = ['excellent' => 0, 'good' => 0, 'fair' => 0, 'poor' => 0];
+        $teachingPatterns = [];
+        $segmentQualities = [];
+        
+        // Process each completed segment's transcript data
+        foreach ($completedProcessing as $processing) {
+            try {
+                // Try to fetch transcript JSON data for quality analysis
+                $transcriptPath = $processing->transcript_json_path;
+                
+                // If no path in database, try expected locations
+                if (!$transcriptPath || !file_exists($transcriptPath)) {
+                    $expectedPaths = [
+                        "/mnt/d_drive/truefire-courses/{$course->id}/{$processing->segment_id}_transcript.json",
+                        "/var/www/html/storage/transcripts/{$processing->segment_id}_transcript.json",
+                        "/tmp/transcripts/{$processing->segment_id}_transcript.json"
+                    ];
+                    
+                    foreach ($expectedPaths as $path) {
+                        if (file_exists($path)) {
+                            $transcriptPath = $path;
+                            break;
+                        }
+                    }
+                }
+                
+                if ($transcriptPath && file_exists($transcriptPath)) {
+                    $transcriptData = json_decode(file_get_contents($transcriptPath), true);
+                    
+                    if ($transcriptData) {
+                        // Extract confidence scores
+                        $segmentConfidence = $this->extractSegmentConfidence($transcriptData);
+                        if ($segmentConfidence !== null) {
+                            $confidenceScores[] = $segmentConfidence;
+                        }
+                        
+                        // Extract quality metrics
+                        $segmentQuality = $this->extractSegmentQualityScore($transcriptData);
+                        if ($segmentQuality !== null) {
+                            $qualityScores[] = $segmentQuality;
+                        }
+                        
+                        // Count music terms
+                        $musicTerms = $this->extractMusicTermsCount($transcriptData);
+                        $musicTermsCount += $musicTerms;
+                        
+                        // Categorize segment quality
+                        $segmentGrade = $this->calculateSegmentGrade($segmentConfidence, $segmentQuality, $musicTerms);
+                        $segmentQualities[] = $segmentGrade;
+                        
+                        // Update distribution
+                        switch ($segmentGrade['grade']) {
+                            case 'A':
+                                $qualityDistribution['excellent']++;
+                                break;
+                            case 'B':
+                                $qualityDistribution['good']++;
+                                break;
+                            case 'C':
+                                $qualityDistribution['fair']++;
+                                break;
+                            case 'D':
+                            case 'F':
+                                $qualityDistribution['poor']++;
+                                break;
+                        }
+                        
+                        // Extract teaching patterns
+                        $patterns = $this->extractTeachingPatterns($transcriptData);
+                        if ($patterns) {
+                            $teachingPatterns[] = $patterns;
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::warning('Failed to analyze segment quality', [
+                    'segment_id' => $processing->segment_id,
+                    'course_id' => $course->id,
+                    'error' => $e->getMessage(),
+                    'transcript_path' => $transcriptPath ?? 'not_found'
+                ]);
+            }
+        }
+        
+        // Calculate overall metrics
+        $averageConfidence = !empty($confidenceScores) ? array_sum($confidenceScores) / count($confidenceScores) : null;
+        $averageQuality = !empty($qualityScores) ? array_sum($qualityScores) / count($qualityScores) : null;
+        $completionRate = ($completedProcessing->count() / $allSegments->count()) * 100;
+        
+        // Calculate overall grade using weighted scoring
+        $overallGrade = $this->calculateOverallCourseGrade(
+            $averageConfidence,
+            $averageQuality,
+            $musicTermsCount,
+            $completedProcessing->count(),
+            $qualityDistribution
+        );
+        
+        // Generate recommendations
+        $recommendations = $this->generateQualityRecommendations(
+            $overallGrade,
+            $averageConfidence,
+            $completionRate,
+            $qualityDistribution,
+            $musicTermsCount
+        );
+        
+        return [
+            'overall_quality' => $averageQuality,
+            'grade' => $overallGrade['grade'],
+            'grade_color' => $overallGrade['color'],
+            'grade_description' => $overallGrade['description'],
+            'completion_rate' => round($completionRate, 1),
+            'segments_analyzed' => $completedProcessing->count(),
+            'total_segments' => $allSegments->count(),
+            'average_confidence' => $averageConfidence,
+            'music_terms_found' => $musicTermsCount,
+            'quality_distribution' => $qualityDistribution,
+            'teaching_patterns' => $this->aggregateTeachingPatterns($teachingPatterns),
+            'recommendations' => $recommendations,
+            'segment_grades' => $segmentQualities
+        ];
+    }
+    
+    /**
+     * Extract confidence score from transcript data
+     */
+    private function extractSegmentConfidence($transcriptData)
+    {
+        if (!isset($transcriptData['segments']) || !is_array($transcriptData['segments'])) {
+            return null;
+        }
+        
+        $totalWords = 0;
+        $confidenceSum = 0;
+        
+        foreach ($transcriptData['segments'] as $segment) {
+            if (isset($segment['words']) && is_array($segment['words'])) {
+                foreach ($segment['words'] as $word) {
+                    $confidence = $word['probability'] ?? $word['score'] ?? null;
+                    if ($confidence !== null) {
+                        $confidenceSum += $confidence;
+                        $totalWords++;
+                    }
+                }
+            }
+        }
+        
+        return $totalWords > 0 ? $confidenceSum / $totalWords : null;
+    }
+    
+    /**
+     * Extract quality score from transcript data
+     */
+    private function extractSegmentQualityScore($transcriptData)
+    {
+        // Check for various quality score fields
+        if (isset($transcriptData['quality_metrics']['overall_quality_score'])) {
+            return $transcriptData['quality_metrics']['overall_quality_score'];
+        }
+        
+        if (isset($transcriptData['overall_quality_score'])) {
+            return $transcriptData['overall_quality_score'];
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Extract music terms count from transcript data
+     */
+    private function extractMusicTermsCount($transcriptData)
+    {
+        $count = 0;
+        
+        // Check guitar term evaluation
+        if (isset($transcriptData['guitar_term_evaluation']['enhanced_terms'])) {
+            $count += count($transcriptData['guitar_term_evaluation']['enhanced_terms']);
+        }
+        
+        // Check content quality metrics
+        if (isset($transcriptData['content_quality']['music_term_count'])) {
+            $count += $transcriptData['content_quality']['music_term_count'];
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Calculate grade for individual segment
+     */
+    private function calculateSegmentGrade($confidence, $quality, $musicTerms)
+    {
+        $score = 0;
+        $weights = 0;
+        
+        // Confidence score (50% weight)
+        if ($confidence !== null) {
+            $score += ($confidence + 0.05) * 0.5; // +5% boost for transcription challenges
+            $weights += 0.5;
+        }
+        
+        // Quality score (30% weight)
+        if ($quality !== null) {
+            $score += ($quality + 0.05) * 0.3;
+            $weights += 0.3;
+        }
+        
+        // Music terms bonus (20% weight)
+        if ($musicTerms > 0) {
+            $score += 0.2;
+            $weights += 0.2;
+        }
+        
+        // Normalize score
+        $finalScore = $weights > 0 ? $score / $weights : 0.75; // Default to B grade
+        
+        // Convert to grade
+        if ($finalScore >= 0.85) return ['grade' => 'A', 'color' => 'green', 'score' => $finalScore];
+        if ($finalScore >= 0.75) return ['grade' => 'B', 'color' => 'blue', 'score' => $finalScore];
+        if ($finalScore >= 0.65) return ['grade' => 'C', 'color' => 'yellow', 'score' => $finalScore];
+        if ($finalScore >= 0.55) return ['grade' => 'D', 'color' => 'orange', 'score' => $finalScore];
+        return ['grade' => 'F', 'color' => 'red', 'score' => $finalScore];
+    }
+    
+    /**
+     * Calculate overall course grade
+     */
+    private function calculateOverallCourseGrade($averageConfidence, $averageQuality, $musicTermsTotal, $completedSegments, $distribution)
+    {
+        // If less than 20% completion, return incomplete
+        $completionRatio = $completedSegments > 0 ? 1 : 0;
+        if ($completionRatio < 0.2) {
+            return [
+                'grade' => 'N/A',
+                'color' => 'gray',
+                'description' => 'Insufficient data for quality assessment'
+            ];
+        }
+        
+        $score = 0;
+        $weights = 0;
+        
+        // Average confidence (40% weight)
+        if ($averageConfidence !== null) {
+            $score += ($averageConfidence + 0.05) * 0.4;
+            $weights += 0.4;
+        }
+        
+        // Average quality (35% weight)
+        if ($averageQuality !== null) {
+            $score += ($averageQuality + 0.05) * 0.35;
+            $weights += 0.35;
+        }
+        
+        // Distribution bonus (15% weight) - reward consistent quality
+        $totalSegments = array_sum($distribution);
+        if ($totalSegments > 0) {
+            $excellentRatio = $distribution['excellent'] / $totalSegments;
+            $goodRatio = $distribution['good'] / $totalSegments;
+            $distributionScore = ($excellentRatio * 1.0) + ($goodRatio * 0.8);
+            $score += $distributionScore * 0.15;
+            $weights += 0.15;
+        }
+        
+        // Music terms bonus (10% weight)
+        if ($musicTermsTotal > 0) {
+            $score += 0.1;
+            $weights += 0.1;
+        }
+        
+        $finalScore = $weights > 0 ? $score / $weights : 0.75;
+        
+        // Convert to grade with descriptions
+        if ($finalScore >= 0.85) {
+            return [
+                'grade' => 'A',
+                'color' => 'green',
+                'description' => 'Excellent overall transcription quality'
+            ];
+        }
+        if ($finalScore >= 0.75) {
+            return [
+                'grade' => 'B',
+                'color' => 'blue',
+                'description' => 'Good overall transcription quality'
+            ];
+        }
+        if ($finalScore >= 0.65) {
+            return [
+                'grade' => 'C',
+                'color' => 'yellow',
+                'description' => 'Fair overall transcription quality'
+            ];
+        }
+        if ($finalScore >= 0.55) {
+            return [
+                'grade' => 'D',
+                'color' => 'orange',
+                'description' => 'Poor overall transcription quality'
+            ];
+        }
+        
+        return [
+            'grade' => 'F',
+            'color' => 'red',
+            'description' => 'Failed overall transcription quality'
+        ];
+    }
+    
+    /**
+     * Extract teaching patterns from transcript data
+     */
+    private function extractTeachingPatterns($transcriptData)
+    {
+        if (isset($transcriptData['teaching_patterns']['content_classification']['primary_type'])) {
+            return [
+                'type' => $transcriptData['teaching_patterns']['content_classification']['primary_type'],
+                'confidence' => $transcriptData['teaching_patterns']['content_classification']['confidence'] ?? 0
+            ];
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Aggregate teaching patterns across segments
+     */
+    private function aggregateTeachingPatterns($patterns)
+    {
+        if (empty($patterns)) {
+            return [];
+        }
+        
+        $aggregated = [];
+        foreach ($patterns as $pattern) {
+            $type = $pattern['type'];
+            if (!isset($aggregated[$type])) {
+                $aggregated[$type] = ['count' => 0, 'total_confidence' => 0];
+            }
+            $aggregated[$type]['count']++;
+            $aggregated[$type]['total_confidence'] += $pattern['confidence'];
+        }
+        
+        // Calculate averages and sort by frequency
+        foreach ($aggregated as $type => &$data) {
+            $data['average_confidence'] = $data['total_confidence'] / $data['count'];
+        }
+        
+        uasort($aggregated, function($a, $b) {
+            return $b['count'] - $a['count'];
+        });
+        
+        return $aggregated;
+    }
+    
+    /**
+     * Generate quality improvement recommendations
+     */
+    private function generateQualityRecommendations($grade, $confidence, $completionRate, $distribution, $musicTerms)
+    {
+        $recommendations = [];
+        
+        // Completion rate recommendations
+        if ($completionRate < 50) {
+            $recommendations[] = [
+                'type' => 'completion',
+                'priority' => 'high',
+                'message' => 'Complete more segments to get accurate quality assessment',
+                'action' => 'Process remaining segments using batch transcription'
+            ];
+        }
+        
+        // Quality recommendations
+        if ($grade['grade'] === 'F' || $grade['grade'] === 'D') {
+            $recommendations[] = [
+                'type' => 'quality',
+                'priority' => 'high',
+                'message' => 'Poor transcription quality detected',
+                'action' => 'Consider re-processing with higher quality presets or manual review'
+            ];
+        }
+        
+        // Confidence recommendations
+        if ($confidence !== null && $confidence < 0.7) {
+            $recommendations[] = [
+                'type' => 'confidence',
+                'priority' => 'medium',
+                'message' => 'Low average confidence scores detected',
+                'action' => 'Review audio quality and consider re-processing problematic segments'
+            ];
+        }
+        
+        // Music terms recommendations
+        if ($musicTerms < 5) {
+            $recommendations[] = [
+                'type' => 'enhancement',
+                'priority' => 'low',
+                'message' => 'Few musical terms detected',
+                'action' => 'Verify guitar term enhancement is enabled for better music education content'
+            ];
+        }
+        
+        // Distribution recommendations
+        if ($distribution['poor'] > $distribution['excellent'] + $distribution['good']) {
+            $recommendations[] = [
+                'type' => 'consistency',
+                'priority' => 'medium',
+                'message' => 'Inconsistent transcription quality across segments',
+                'action' => 'Review and re-process lower quality segments'
+            ];
+        }
+        
+        return $recommendations;
     }
 
     /**
@@ -108,7 +806,21 @@ class TruefireCourseController extends Controller
             // Set up course directory path for checking downloaded files
             $courseDir = "truefire-courses/{$truefireCourse->id}";
             
-            // Generate signed URLs for all segments and include download status
+            // Collect all segment IDs first to get processing status efficiently
+            $allSegmentIds = [];
+            foreach ($course->channels as $channel) {
+                foreach ($channel->segments as $segment) {
+                    $allSegmentIds[] = $segment->id;
+                }
+            }
+            
+            // Get processing status for all segments in one query
+            $processingRecords = TruefireSegmentProcessing::whereIn('segment_id', $allSegmentIds)
+                ->where('course_id', $truefireCourse->id)
+                ->get()
+                ->keyBy('segment_id');
+
+            // Generate signed URLs for all segments and include download and processing status
             $segmentsWithSignedUrls = [];
             foreach ($course->channels as $channel) {
                 foreach ($channel->segments as $segment) {
@@ -142,6 +854,10 @@ class TruefireCourseController extends Controller
                         $signedUrl = null;
                     }
 
+                    // Get processing status for this segment
+                    $processing = $processingRecords->get($segment->id);
+                    $processingStatus = $this->getSegmentProcessingStatus($processing);
+
                     $segmentData = [
                         'id' => $segment->id,
                         'channel_id' => $channel->id,
@@ -152,6 +868,7 @@ class TruefireCourseController extends Controller
                         'is_downloaded' => $isDownloaded,
                         'file_size' => $isDownloaded ? Storage::disk($disk)->size($newFilePath) : null,
                         'downloaded_at' => $isDownloaded ? Storage::disk($disk)->lastModified($newFilePath) : null,
+                        'processing_status' => $processingStatus,
                     ];
                     
                     if ($urlError) {
@@ -161,6 +878,9 @@ class TruefireCourseController extends Controller
                     $segmentsWithSignedUrls[] = $segmentData;
                 }
             }
+            
+            // Calculate course quality metrics
+            $qualityMetrics = $this->calculateCourseQualityMetrics($course);
             
             // Get the configured disk
             $disk = 'd_drive'; // Always use d_drive for TrueFire courses
@@ -175,7 +895,8 @@ class TruefireCourseController extends Controller
             
             return [
                 'course' => $course,
-                'segmentsWithSignedUrls' => $segmentsWithSignedUrls
+                'segmentsWithSignedUrls' => $segmentsWithSignedUrls,
+                'qualityMetrics' => $qualityMetrics
             ];
         });
         

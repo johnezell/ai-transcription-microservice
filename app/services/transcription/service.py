@@ -477,6 +477,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'enable_alignment': True,
             'enable_diarization': False,
             'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
+            'enable_gibberish_cleanup': False,  # DISABLED by default for large-scale safety
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-base-960h',
             'batch_size': 16,
@@ -493,6 +494,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'enable_alignment': True,
             'enable_diarization': False,
             'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
+            'enable_gibberish_cleanup': False,  # DISABLED by default for large-scale safety
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-base-960h',
             'batch_size': 16,
@@ -509,6 +511,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'enable_alignment': True,
             'enable_diarization': True,
             'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
+            'enable_gibberish_cleanup': False,  # DISABLED by default for large-scale safety
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-large-960h-lv60-self',
             'batch_size': 8,
@@ -527,6 +530,7 @@ def get_preset_config(preset_name: str) -> Dict[str, Any]:
             'enable_alignment': True,
             'enable_diarization': True,
             'enable_guitar_term_evaluation': True,  # Enable guitar terminology enhancement
+            'enable_gibberish_cleanup': False,  # DISABLED by default for large-scale safety
             # WhisperX-specific parameters
             'alignment_model': 'wav2vec2-large-960h-lv60-self',
             'batch_size': 4,
@@ -1461,10 +1465,15 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
         
         logger.info(f"Audio analysis - Duration: {audio_duration:.2f}s, RMS level: {audio_rms:.6f}, Music likelihood: {is_likely_music}")
         
-        # Early exit for performance videos to prevent gibberish transcription
-        if is_likely_music['is_music'] and is_likely_music['confidence'] > 0.8:
-            logger.info(f"🎵 PERFORMANCE VIDEO DETECTED: {is_likely_music['reason']} (confidence: {is_likely_music['confidence']:.2f})")
-            logger.info("Creating clean minimal transcript instead of forcing speech recognition on music")
+        # REFINED: Only prevent transcription for truly pure instrumental content
+        # Use much stricter criteria - only videos with absolutely no meaningful speech
+        if (is_likely_music['is_music'] and 
+            is_likely_music['confidence'] > 0.98 and  # Extremely high threshold
+            is_likely_music['characteristics'].get('speech_frequency_ratio', 1.0) < 0.05 and  # Almost no speech
+            audio_duration > 45 and  # Longer videos only
+            audio_rms > 0.01):  # Must have audible content
+            logger.info(f"🎵 PURE INSTRUMENTAL DETECTED: {is_likely_music['reason']} (confidence: {is_likely_music['confidence']:.2f})")
+            logger.info("Creating clean minimal transcript for pure instrumental content")
             
             # Create clean performance video transcript
             performance_result = {
@@ -1495,13 +1504,10 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                 }
             }
             
-            # Skip to post-processing with clean performance transcript
-            logger.info("Skipping speech transcription for performance video - proceeding to post-processing")
-            
             # Add required metadata
             performance_result["settings"] = settings
             performance_result["model_metadata"] = {"model_name": effective_model_name, "language": effective_language}
-            performance_result["confidence_score"] = 1.0  # High confidence for performance detection
+            performance_result["confidence_score"] = 1.0
             performance_result["performance_metrics"] = {
                 'transcription_time': time.time() - transcription_step_start,
                 'alignment_time': 0,
@@ -1623,6 +1629,26 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                     'confidence': 1.0
                 }]
                 result['text'] = '[Instrumental Performance]'
+        
+        # CONFIDENCE-BASED VALIDATION: Check transcription quality using confidence scores
+        # This is much safer than pattern-based gibberish cleanup for large-scale processing
+        confidence_validation = _validate_transcription_confidence(result, preset_config)
+        result['confidence_validation'] = confidence_validation
+        
+        # OPTIONAL GIBBERISH CLEANUP: Only apply if explicitly enabled in preset
+        # Disabled by default for large-scale safety
+        enable_gibberish_cleanup = preset_config.get('enable_gibberish_cleanup', False) if preset_config else False
+        
+        if enable_gibberish_cleanup and segments:
+            if is_likely_music.get('is_music', False):
+                logger.info("🎵 Musical content detected - applying intelligent gibberish cleanup (enabled in preset)")
+                result = _clean_musical_gibberish(result, is_likely_music)
+            else:
+                # Even for non-musical content, clean up obvious corruption patterns
+                logger.debug("Applying light gibberish cleanup for general content (enabled in preset)")
+                result = _clean_musical_gibberish(result, {'is_music': False, 'confidence': 0.0})
+        elif segments:
+            logger.info("🛡️ Gibberish cleanup disabled for large-scale safety - using confidence validation instead")
             
         # Run all post-processing steps using the new dedicated function
         logger.info("Step 2: Starting post-processing (alignment, diarization, enhancement, metrics)")
@@ -1775,6 +1801,509 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                 comprehensive_error["troubleshooting_hints"].append("WhisperX hotwords compatibility: Verify WhisperX 3.3.3+ installation for hotwords support")
             
             raise Exception(f"Complete WhisperX processing failure. Primary: {error_msg}. Fallback: {fallback_error_msg}. Details: {comprehensive_error}")
+
+def _clean_musical_gibberish(result, music_detection_result):
+    """
+    Intelligently clean up gibberish from transcription while preserving legitimate musical terms.
+    
+    This function identifies and removes corrupted musical terms that result from 
+    forcing speech recognition on instrumental music, while keeping real musical terminology.
+    """
+    import re
+    
+    if not result or not result.get('segments'):
+        return result
+    
+    # Define legitimate musical terms that should be preserved
+    legitimate_musical_terms = {
+        # Chord names and qualities
+        'chord', 'chords', 'major', 'minor', 'dominant', 'diminished', 'augmented',
+        'sus2', 'sus4', 'add9', 'maj7', 'min7', 'dom7', '6th', '9th', '11th', '13th',
+        
+        # Note names
+        'a', 'b', 'c', 'd', 'e', 'f', 'g',
+        'sharp', 'flat', 'natural',
+        
+        # Common musical terms
+        'scale', 'scales', 'key', 'tempo', 'rhythm', 'melody', 'harmony',
+        'progression', 'cadence', 'resolution', 'tension',
+        
+        # Guitar-specific terms
+        'fret', 'frets', 'string', 'strings', 'pick', 'strum', 'fingerpick',
+        'capo', 'bridge', 'nut', 'tuning', 'pickup', 'amp', 'effect',
+        'hammer', 'pull', 'bend', 'slide', 'vibrato', 'mute', 'harmonic'
+    }
+    
+    # Pattern for corrupted musical terms (gibberish indicators)
+    # Made much more conservative to avoid removing legitimate English words
+    gibberish_patterns = [
+        r'\w*ariest\w*',        # "majorariest" - very specific corruption pattern
+        r'\w*plup\w*',          # "plupab" - specific nonsense pattern
+        r'major\w*ab$',         # "majorab", "majorApplauseab" - very specific to musical corruption
+        r'minor\w*ab$',         # "minorab" - very specific to musical corruption  
+        r'[A-Z][a-z]*\*\w*',    # Words with asterisks (like "(*ab")
+        r'\w*�\w*',             # Words with encoding artifacts
+        r'^[bcdfghjklmnpqrstvwxyz]{3,}$', # Consonant-only nonsense (exclude vowels and common single letters)
+        r'\w*applausea?b\w*',   # Very specific "applauseab" corruptions
+        # Removed the overly broad r'\b\w{8,}\b' pattern that was removing legitimate long words
+    ]
+    
+    # Confidence threshold for suspicious musical terms
+    suspicious_confidence_threshold = 0.6
+    
+    cleaned_segments = []
+    total_words_removed = 0
+    gibberish_words_found = []
+    
+    for segment in result['segments']:
+        if not segment.get('words'):
+            cleaned_segments.append(segment)
+            continue
+            
+        cleaned_words = []
+        segment_text_parts = []
+        
+        for word_info in segment['words']:
+            word = word_info.get('word', '').strip()
+            confidence = word_info.get('score', word_info.get('probability', 1.0))
+            
+            # Skip empty words
+            if not word:
+                continue
+                
+            word_lower = word.lower().strip('.,!?;:"()[]{}')
+            
+            # Check if this word is gibberish
+            is_gibberish = False
+            gibberish_reason = None
+            
+            # 1. Pattern-based gibberish detection
+            for pattern in gibberish_patterns:
+                if re.search(pattern, word, re.IGNORECASE):
+                    is_gibberish = True
+                    gibberish_reason = f"pattern:{pattern}"
+                    break
+            
+            # 2. Low-confidence musical-sounding words (made much more conservative)
+            if not is_gibberish and confidence < suspicious_confidence_threshold:
+                # Check if it sounds like a corrupted musical term
+                # Made MUCH more conservative - only flag if it's clearly a corrupted musical term
+                # AND word is very low confidence AND contains nonsense patterns
+                for musical_term in legitimate_musical_terms:
+                    if (musical_term in word_lower and 
+                        len(word_lower) > len(musical_term) + 4 and  # Much longer than original + 4 chars
+                        confidence < 0.4 and  # Very low confidence
+                        (word_lower.endswith('ab') or word_lower.endswith('ariest') or 'plup' in word_lower)):
+                        # Only flag if it has clear gibberish markers
+                        is_gibberish = True
+                        gibberish_reason = f"corrupted_musical_term:{musical_term}"
+                        break
+            
+            # 3. Preserve legitimate musical terms even with low confidence
+            if is_gibberish and word_lower in legitimate_musical_terms:
+                is_gibberish = False
+                gibberish_reason = "preserved_legitimate_term"
+            
+            # 4. Preserve common English words (greatly expanded list)
+            common_words = {
+                # Basic words
+                'the', 'and', 'or', 'but', 'to', 'of', 'in', 'on', 'at', 'by', 'for', 
+                'with', 'from', 'we', 'you', 'he', 'she', 'it', 'they', 'this', 'that',
+                'here', 'there', 'now', 'then', 'will', 'be', 'back', 'right', 'left',
+                
+                # Common nouns that might be misidentified
+                'names', 'name', 'proper', 'signatures', 'signature', 'time', 'times', 'people',
+                'person', 'place', 'places', 'thing', 'things', 'way', 'ways', 'part', 'parts',
+                'number', 'numbers', 'system', 'systems', 'work', 'works', 'life', 'lives',
+                'hand', 'hands', 'eye', 'eyes', 'day', 'days', 'week', 'weeks', 'year', 'years',
+                'world', 'country', 'countries', 'state', 'states', 'company', 'companies',
+                'group', 'groups', 'business', 'government', 'public', 'school', 'schools',
+                
+                # Common adjectives
+                'good', 'great', 'small', 'large', 'big', 'long', 'short', 'high', 'low',
+                'important', 'different', 'possible', 'available', 'necessary', 'special',
+                'certain', 'clear', 'whole', 'white', 'black', 'red', 'blue', 'green',
+                'young', 'old', 'new', 'early', 'late', 'real', 'best', 'better', 'simple',
+                
+                # Common verbs
+                'have', 'has', 'had', 'do', 'does', 'did', 'get', 'got', 'make', 'made',
+                'take', 'took', 'come', 'came', 'go', 'went', 'see', 'saw', 'know', 'knew',
+                'think', 'thought', 'look', 'looked', 'use', 'used', 'find', 'found',
+                'give', 'gave', 'tell', 'told', 'ask', 'asked', 'work', 'worked',
+                'seem', 'seemed', 'feel', 'felt', 'try', 'tried', 'leave', 'left',
+                'call', 'called', 'move', 'moved', 'play', 'played', 'turn', 'turned',
+                
+                # Time and numbers
+                'first', 'second', 'third', 'last', 'next', 'previous', 'before', 'after',
+                'during', 'while', 'until', 'since', 'today', 'tomorrow', 'yesterday',
+                'morning', 'afternoon', 'evening', 'night', 'minute', 'minutes', 'hour', 'hours',
+                
+                # Common adverbs
+                'very', 'really', 'just', 'only', 'also', 'well', 'still', 'even', 'much',
+                'more', 'most', 'little', 'less', 'again', 'always', 'never', 'sometimes',
+                'often', 'usually', 'probably', 'maybe', 'perhaps', 'almost', 'quite',
+                
+                # Other common words
+                'about', 'over', 'under', 'through', 'between', 'among', 'around', 'against',
+                'without', 'within', 'outside', 'inside', 'together', 'another', 'other',
+                'each', 'every', 'all', 'some', 'any', 'many', 'few', 'several', 'both',
+                'either', 'neither', 'nothing', 'everything', 'something', 'anything'
+            }
+            if is_gibberish and word_lower in common_words:
+                is_gibberish = False
+                gibberish_reason = "preserved_common_word"
+            
+            if is_gibberish:
+                total_words_removed += 1
+                gibberish_words_found.append({
+                    'word': word,
+                    'confidence': confidence,
+                    'reason': gibberish_reason,
+                    'timestamp': f"{word_info.get('start', 0):.2f}s"
+                })
+                logger.debug(f"Removed gibberish word: '{word}' (confidence: {confidence:.2f}, reason: {gibberish_reason})")
+            else:
+                cleaned_words.append(word_info)
+                segment_text_parts.append(word)
+        
+        # Rebuild segment with cleaned words
+        if cleaned_words:
+            cleaned_segment = segment.copy()
+            cleaned_segment['words'] = cleaned_words
+            cleaned_segment['text'] = ' '.join(segment_text_parts)
+            cleaned_segments.append(cleaned_segment)
+        # Skip empty segments (all words were gibberish)
+    
+    # Update result with cleaned segments
+    result['segments'] = cleaned_segments
+    
+    # Rebuild full text
+    result['text'] = ' '.join(segment['text'] for segment in cleaned_segments if segment.get('text'))
+    
+    # Add cleanup metadata
+    result['gibberish_cleanup'] = {
+        'words_removed': total_words_removed,
+        'gibberish_detected': gibberish_words_found,
+        'cleanup_applied': True,
+        'music_detection_triggered': music_detection_result.get('is_music', False),
+        'music_confidence': music_detection_result.get('confidence', 0.0)
+    }
+    
+    if total_words_removed > 0:
+        logger.info(f"🧹 Gibberish cleanup: Removed {total_words_removed} corrupted words while preserving legitimate musical terms")
+        
+        # Log some examples of what was removed
+        if gibberish_words_found:
+            examples = gibberish_words_found[:3]  # Show first 3 examples
+            example_words = [f"'{item['word']}'" for item in examples]
+            logger.info(f"🗑️ Removed gibberish examples: {', '.join(example_words)}")
+    
+    return result
+
+def _validate_transcription_confidence(result, preset_config=None):
+    """
+    Validate transcription quality using confidence scores instead of risky pattern matching.
+    
+    This approach is much safer for large-scale processing as it uses the model's own
+    confidence metrics rather than trying to guess what words are gibberish.
+    
+    Args:
+        result: Transcription result with segments and words
+        preset_config: Optional preset configuration
+        
+    Returns:
+        dict: {
+            'overall_confidence': float,
+            'low_confidence_ratio': float,
+            'very_low_confidence_ratio': float,
+            'quality_assessment': str,
+            'is_likely_performance': bool,
+            'recommendation': str,
+            'confidence_distribution': dict,
+            'word_count': int
+        }
+    """
+    if not result or not result.get('segments'):
+        return {
+            'overall_confidence': 0.0,
+            'low_confidence_ratio': 1.0,
+            'very_low_confidence_ratio': 1.0,
+            'quality_assessment': 'no_content',
+            'is_likely_performance': True,
+            'recommendation': 'No transcribable content found',
+            'confidence_distribution': {},
+            'word_count': 0
+        }
+    
+    # Collect all word confidences
+    all_confidences = []
+    
+    for segment in result.get('segments', []):
+        words = segment.get('words', [])
+        for word_info in words:
+            confidence = word_info.get('score', word_info.get('probability', 0.0))
+            if confidence is not None:
+                all_confidences.append(float(confidence))
+    
+    if not all_confidences:
+        return {
+            'overall_confidence': 0.0,
+            'low_confidence_ratio': 1.0,
+            'very_low_confidence_ratio': 1.0,
+            'quality_assessment': 'no_word_level_data',
+            'is_likely_performance': True,
+            'recommendation': 'No word-level confidence data available',
+            'confidence_distribution': {},
+            'word_count': 0
+        }
+    
+    # Calculate confidence statistics
+    import numpy as np
+    
+    confidences_array = np.array(all_confidences)
+    overall_confidence = float(np.mean(confidences_array))
+    median_confidence = float(np.median(confidences_array))
+    
+    # Define confidence thresholds
+    very_low_threshold = 0.1   # 10% - User's suggestion
+    low_threshold = 0.3        # 30%
+    good_threshold = 0.7       # 70%
+    
+    # Calculate ratios
+    very_low_count = np.sum(confidences_array < very_low_threshold)
+    low_count = np.sum(confidences_array < low_threshold)
+    good_count = np.sum(confidences_array >= good_threshold)
+    
+    total_words = len(all_confidences)
+    very_low_ratio = very_low_count / total_words
+    low_ratio = low_count / total_words
+    good_ratio = good_count / total_words
+    
+    # Confidence distribution
+    confidence_distribution = {
+        'excellent': int(np.sum(confidences_array >= 0.9)),      # 90%+
+        'good': int(np.sum((confidences_array >= 0.7) & (confidences_array < 0.9))),  # 70-90%
+        'fair': int(np.sum((confidences_array >= 0.3) & (confidences_array < 0.7))),  # 30-70%
+        'poor': int(np.sum((confidences_array >= 0.1) & (confidences_array < 0.3))),  # 10-30%
+        'very_poor': int(np.sum(confidences_array < 0.1))        # <10%
+    }
+    
+    # Quality assessment based on confidence patterns
+    quality_assessment = 'unknown'
+    is_likely_performance = False
+    recommendation = 'Process normally'
+    
+    if very_low_ratio >= 0.8:  # 80%+ words have <10% confidence
+        quality_assessment = 'very_poor_likely_performance'
+        is_likely_performance = True
+        recommendation = 'Likely instrumental performance - consider marking as performance video'
+        
+    elif very_low_ratio >= 0.5:  # 50%+ words have <10% confidence
+        quality_assessment = 'poor_quality'
+        is_likely_performance = True
+        recommendation = 'Poor transcription quality - may be performance content or audio issues'
+        
+    elif low_ratio >= 0.7:  # 70%+ words have <30% confidence
+        quality_assessment = 'questionable_quality'
+        recommendation = 'Questionable transcription quality - review recommended'
+        
+    elif overall_confidence >= 0.7:
+        quality_assessment = 'good_quality'
+        recommendation = 'Good transcription quality'
+        
+    elif overall_confidence >= 0.5:
+        quality_assessment = 'fair_quality'
+        recommendation = 'Fair transcription quality'
+        
+    else:
+        quality_assessment = 'poor_quality'
+        recommendation = 'Poor transcription quality - consider re-processing'
+    
+    # Log confidence validation results
+    logger.info(f"📊 Confidence validation: {quality_assessment} - {overall_confidence:.1%} avg confidence")
+    logger.info(f"📊 Confidence breakdown: {very_low_ratio:.1%} very low (<10%), {low_ratio:.1%} low (<30%), {good_ratio:.1%} good (≥70%)")
+    
+    if is_likely_performance:
+        logger.info(f"🎵 Performance video detected via confidence analysis: {very_low_ratio:.1%} of words <10% confidence")
+    
+    return {
+        'overall_confidence': overall_confidence,
+        'median_confidence': median_confidence,
+        'low_confidence_ratio': low_ratio,
+        'very_low_confidence_ratio': very_low_ratio,
+        'good_confidence_ratio': good_ratio,
+        'quality_assessment': quality_assessment,
+        'is_likely_performance': is_likely_performance,
+        'recommendation': recommendation,
+        'confidence_distribution': confidence_distribution,
+        'word_count': total_words,
+        'confidence_thresholds': {
+            'very_low': very_low_threshold,
+            'low': low_threshold,
+            'good': good_threshold
+        }
+    }
+
+def _detect_musical_content(audio_file, duration, rms_level):
+    """
+    Detect if audio content is likely pure music/instrumental performance.
+    
+    Uses multiple audio characteristics to identify performance videos that should
+    not be transcribed as speech to prevent gibberish word generation.
+    
+    Returns:
+        dict: {
+            'is_music': bool,
+            'confidence': float (0.0-1.0),
+            'reason': str,
+            'characteristics': dict
+        }
+    """
+    import numpy as np
+    from scipy import signal
+    
+    try:
+        # Initialize detection scores
+        music_indicators = []
+        characteristics = {}
+        
+        # 1. SPECTRAL ANALYSIS - Music has different frequency characteristics than speech
+        # Speech typically concentrates energy in 85-255 Hz (fundamental) and 1700-4000 Hz (formants)
+        # Music spreads energy more evenly across the spectrum
+        
+        # Simple FFT analysis
+        fft = np.fft.fft(audio_file[:min(16000*10, len(audio_file))])  # First 10 seconds
+        freqs = np.fft.fftfreq(len(fft), 1/16000)
+        magnitude = np.abs(fft)
+        
+        # Focus on positive frequencies up to 8kHz
+        positive_freqs = freqs[:len(freqs)//2]
+        positive_magnitude = magnitude[:len(magnitude)//2]
+        
+        # Speech frequency bands
+        speech_low = (positive_freqs >= 85) & (positive_freqs <= 255)    # Fundamental
+        speech_high = (positive_freqs >= 1700) & (positive_freqs <= 4000) # Formants
+        music_mid = (positive_freqs >= 300) & (positive_freqs <= 1500)   # Music richness
+        harmonic_high = (positive_freqs >= 4000) & (positive_freqs <= 8000) # Harmonics
+        
+        speech_energy = np.sum(positive_magnitude[speech_low]) + np.sum(positive_magnitude[speech_high])
+        music_energy = np.sum(positive_magnitude[music_mid]) + np.sum(positive_magnitude[harmonic_high])
+        total_energy = np.sum(positive_magnitude)
+        
+        if total_energy > 0:
+            speech_ratio = speech_energy / total_energy
+            music_ratio = music_energy / total_energy
+            characteristics['speech_frequency_ratio'] = float(speech_ratio)
+            characteristics['music_frequency_ratio'] = float(music_ratio)
+            
+            # Music typically has lower speech frequency concentration
+            # CONSERVATIVE: Much stricter criteria to avoid false positives
+            if speech_ratio < 0.15 and music_ratio > 0.6:  # Very low speech, very high music
+                music_indicators.append(('spectral_analysis', 0.5))  # Lower score
+            elif speech_ratio < 0.1:  # Extremely low speech frequencies
+                music_indicators.append(('very_low_speech_frequencies', 0.6))  # Lower score
+        
+        # 2. AMPLITUDE VARIATION ANALYSIS
+        # Music often has more sustained notes and less abrupt amplitude changes than speech
+        # Calculate amplitude variation using short-time windows
+        window_size = int(16000 * 0.1)  # 100ms windows
+        amplitude_vars = []
+        for i in range(0, len(audio_file) - window_size, window_size):
+            window = audio_file[i:i + window_size]
+            amplitude_vars.append(np.var(window))
+        
+        if amplitude_vars:
+            avg_amplitude_var = np.mean(amplitude_vars)
+            characteristics['amplitude_variation'] = float(avg_amplitude_var)
+            
+            # Lower amplitude variation suggests sustained musical notes
+            # CONSERVATIVE: Much stricter criteria
+            if avg_amplitude_var < rms_level * 0.05:  # Extremely steady amplitude
+                music_indicators.append(('sustained_amplitude', 0.4))  # Lower score
+        
+        # 3. HARMONIC CONTENT ANALYSIS
+        # Music typically has more harmonic structure than speech
+        # Simple autocorrelation to detect periodicity
+        if len(audio_file) > 1600:  # Need sufficient samples
+            # Autocorrelation of a short segment
+            segment = audio_file[:min(16000, len(audio_file))]  # First second
+            autocorr = np.correlate(segment, segment, mode='full')
+            autocorr = autocorr[len(autocorr)//2:]
+            
+            # Look for peaks indicating harmonic content
+            # Skip the zero-lag peak
+            if len(autocorr) > 100:
+                peaks, _ = signal.find_peaks(autocorr[50:], height=np.max(autocorr) * 0.1)
+                harmonic_strength = len(peaks) / len(autocorr[50:]) * 1000  # Normalize
+                characteristics['harmonic_content'] = float(harmonic_strength)
+                
+                if harmonic_strength > 4.0:  # Very strong harmonic content
+                    music_indicators.append(('harmonic_structure', 0.4))  # Lower score
+        
+        # 4. DYNAMIC RANGE ANALYSIS
+        # Music often has wider dynamic range than speech
+        if len(audio_file) > 0:
+            audio_db = 20 * np.log10(np.abs(audio_file) + 1e-10)
+            dynamic_range = np.max(audio_db) - np.min(audio_db)
+            characteristics['dynamic_range_db'] = float(dynamic_range)
+            
+            # Very wide dynamic range suggests music
+            # CONSERVATIVE: Much higher threshold
+            if dynamic_range > 80:  # Very wide dynamic range
+                music_indicators.append(('wide_dynamic_range', 0.3))  # Lower score
+        
+        # 5. DURATION AND RMS ANALYSIS
+        # Performance videos often have specific characteristics
+        characteristics['duration'] = float(duration)
+        characteristics['rms_level'] = float(rms_level)
+        
+        # Very long content with sustained audio level
+        # CONSERVATIVE: Much stricter criteria
+        if duration > 60 and rms_level > 0.02:  # Longer and more audible
+            music_indicators.append(('long_sustained_content', 0.2))  # Lower score
+        
+        # More restrictive audio level range
+        if 0.02 < rms_level < 0.2:  # Narrower typical music range
+            music_indicators.append(('music_level_range', 0.2))  # Lower score
+        
+        # 6. COMBINE INDICATORS
+        if music_indicators:
+            # Calculate weighted confidence
+            total_weight = sum(weight for _, weight in music_indicators)
+            confidence = min(1.0, total_weight)
+            
+            # Primary reason is the strongest indicator
+            primary_reason = max(music_indicators, key=lambda x: x[1])[0]
+            
+            # Decision threshold
+            is_music = confidence > 0.8  # Very conservative threshold
+            
+            # Build detailed reason
+            indicator_names = [name for name, _ in music_indicators]
+            reason = f"Primary: {primary_reason}, Indicators: {', '.join(indicator_names)}"
+            
+            return {
+                'is_music': is_music,
+                'confidence': confidence,
+                'reason': reason,
+                'characteristics': characteristics
+            }
+        else:
+            return {
+                'is_music': False,
+                'confidence': 0.0,
+                'reason': 'No clear music indicators detected',
+                'characteristics': characteristics
+            }
+            
+    except Exception as e:
+        logger.warning(f"Music detection failed: {e}")
+        return {
+            'is_music': False,
+            'confidence': 0.0,
+            'reason': f'Detection error: {str(e)}',
+            'characteristics': {'error': str(e)}
+        }
 
 def save_transcript_to_file(transcript, file_path):
     """Save transcript to a text file."""

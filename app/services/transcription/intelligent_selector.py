@@ -535,36 +535,40 @@ class EnhancedMultiMetricDecisionMatrix:
         
         This method now considers multiple factors, not just simple thresholds.
         """
-        # Define quality targets for each model
+        # Define REALISTIC quality targets for each model (lowered from previous unrealistic thresholds)
         quality_targets = {
-            'tiny': 0.75,
-            'small': 0.80,
-            'medium': 0.85,
-            'large-v3': 0.90
+            'tiny': 0.65,      # 65% - reasonable for tiny model
+            'small': 0.70,     # 70% - reasonable for small model  
+            'medium': 0.75,    # 75% - reasonable for medium model
+            'large-v3': 0.80   # 80% - reasonable for large model
         }
         
-        current_target = quality_targets.get(current_model, 0.85)
+        current_target = quality_targets.get(current_model, 0.75)
+        
+        # EARLY STOPPING: If confidence is already very good, don't escalate regardless of other metrics
+        if metrics.confidence_score >= 0.85:
+            return False, f"excellent_confidence_{metrics.confidence_score:.3f}_no_escalation_needed"
+        
+        # EARLY STOPPING: If overall quality is already very good, don't escalate
+        if metrics.overall_quality_score >= 0.80:
+            return False, f"excellent_quality_{metrics.overall_quality_score:.3f}_no_escalation_needed"
         
         # Primary check: overall quality score
         if metrics.overall_quality_score < current_target:
             return True, f"overall_quality_{metrics.overall_quality_score:.3f}_below_target_{current_target}"
         
-        # Secondary check: confidence score
-        if metrics.confidence_score < 0.80:
+        # Secondary check: confidence score (lowered threshold)
+        if metrics.confidence_score < 0.70:
             return True, f"confidence_{metrics.confidence_score:.3f}_below_minimum"
         
-        # Tertiary check: cost efficiency for smaller models
-        # If we're using a small model but getting poor cost efficiency, try medium
-        if current_model == 'tiny' and metrics.cost_efficiency < 0.6:
-            return True, f"poor_cost_efficiency_{metrics.cost_efficiency:.3f}_for_tiny_model"
+        # FIXED: Only escalate on temporal quality if it's VERY bad (not just 0.0)
+        # Previous bug: temporal_quality_issues_0.000 was triggering escalation inappropriately
+        if metrics.temporal_quality_score < 0.3 and current_model in ['tiny', 'small']:
+            return True, f"severe_temporal_quality_issues_{metrics.temporal_quality_score:.3f}"
         
-        # Special case: temporal quality issues that bigger models might solve
-        if metrics.temporal_quality_score < 0.6 and current_model in ['tiny', 'small']:
-            return True, f"temporal_quality_issues_{metrics.temporal_quality_score:.3f}"
-        
-        # Content quality check - complex content may need larger models
-        if metrics.content_quality_score < 0.7 and current_model == 'tiny':
-            return True, f"content_complexity_{metrics.content_quality_score:.3f}_needs_larger_model"
+        # Content quality check - only for very poor content quality
+        if metrics.content_quality_score < 0.5 and current_model == 'tiny':
+            return True, f"poor_content_complexity_{metrics.content_quality_score:.3f}_needs_larger_model"
         
         return False, "quality_thresholds_met"
     
@@ -654,10 +658,49 @@ class IntelligentModelSelector:
         }
         
         self.enable_pre_selection = self.config.get('enable_pre_selection', True)
-        self.max_escalations = self.config.get('max_escalations', 3)
+        self.max_escalations = self.config.get('max_escalations', 2)  # REDUCED from 3 to 2
         self.enable_model_comparison = self.config.get('enable_model_comparison', False)
         self.performance_memory = PerformanceMemory()
         
+        # REDUNDANCY PREVENTION: Cache audio analysis and post-processing results
+        self._audio_analysis_cache = {}
+        self._alignment_cache = {}
+        
+    def _cache_audio_analysis(self, audio_path: str, analysis_result: Dict):
+        """Cache audio analysis to avoid recomputation."""
+        self._audio_analysis_cache[audio_path] = analysis_result
+        
+    def _get_cached_audio_analysis(self, audio_path: str) -> Optional[Dict]:
+        """Get cached audio analysis if available."""
+        return self._audio_analysis_cache.get(audio_path)
+        
+    def _should_stop_escalation(self, decisions: List[SelectionDecision], current_model: str) -> Tuple[bool, str]:
+        """Check if escalation should stop to prevent infinite loops."""
+        
+        # STOP: If we've already tried this model
+        model_attempts = [d.model_used for d in decisions]
+        if model_attempts.count(current_model) > 1:
+            return True, f"model_{current_model}_already_attempted"
+        
+        # STOP: If last model performed better than current (avoid regression)
+        if len(decisions) >= 2:
+            previous_quality = decisions[-2].quality_score
+            current_quality = decisions[-1].quality_score  
+            if previous_quality > current_quality:
+                return True, f"quality_regression_{previous_quality:.3f}_to_{current_quality:.3f}"
+        
+        # STOP: If we're at maximum escalations
+        if len(decisions) > self.max_escalations:
+            return True, f"max_escalations_{self.max_escalations}_reached"
+            
+        # STOP: If quality is decreasing consistently
+        if len(decisions) >= 3:
+            last_three_qualities = [d.quality_score for d in decisions[-3:]]
+            if all(last_three_qualities[i] >= last_three_qualities[i+1] for i in range(2)):
+                return True, "consistent_quality_degradation"
+        
+        return False, "escalation_can_continue"
+    
     def select_and_process(self, audio_path: str, process_audio_func, **kwargs) -> IntelligentSelectionResult:
         """
         Perform intelligent model selection with cascading escalation.
@@ -690,6 +733,13 @@ class IntelligentModelSelector:
         while escalation_count <= self.max_escalations:
             try:
                 logger.info(f"Processing with model: {current_model} (attempt {escalation_count + 1})")
+                
+                # CHECK: Should we stop escalation before processing?
+                should_stop, stop_reason = self._should_stop_escalation(decisions, current_model)
+                if should_stop:
+                    logger.info(f"Stopping escalation: {stop_reason}")
+                    break
+                
                 model_start_time = time.time()
                 
                 # Process audio with current model
@@ -718,7 +768,21 @@ class IntelligentModelSelector:
                 logger.info(f"Model {current_model}: quality={metrics.overall_quality_score:.3f}, "
                            f"confidence={metrics.confidence_score:.3f}, time={model_processing_time:.1f}s")
                 
-                # Step 4: Check escalation
+                # Step 4: Check escalation with enhanced logic
+                if should_escalate:
+                    # ADDITIONAL CHECK: Prevent escalation if quality is actually good enough
+                    if metrics.overall_quality_score >= 0.75 and metrics.confidence_score >= 0.75:
+                        logger.info(f"Quality is actually good enough (quality={metrics.overall_quality_score:.3f}, "
+                                  f"confidence={metrics.confidence_score:.3f}), stopping escalation")
+                        should_escalate = False
+                        escalation_reason = "quality_sufficient_overriding_escalation_signal"
+                    
+                    # CHECK: Should we stop escalation due to safety rules?
+                    should_stop_safety, safety_reason = self._should_stop_escalation(decisions, current_model)
+                    if should_stop_safety:
+                        logger.info(f"Safety stop triggered: {safety_reason}")
+                        should_escalate = False
+                
                 if should_escalate:
                     next_model = self._get_next_model(current_model)
                     if next_model and escalation_count < self.max_escalations:
@@ -727,7 +791,7 @@ class IntelligentModelSelector:
                         escalation_count += 1
                         continue
                     else:
-                        logger.info(f"Maximum escalations reached or no next model available")
+                        logger.info(f"Cannot escalate further: no next model or max escalations reached")
                 
                 # Step 5: Finalize result
                 final_result = result
@@ -980,11 +1044,11 @@ def intelligent_process_audio(audio_path: str, process_audio_func, enable_intell
         # Fallback to original processing
         return process_audio_func(audio_path, **kwargs)
     
-    # Create intelligent selector
+    # Create intelligent selector with SAFER default config
     config = {
         'enable_model_comparison': enable_optimal_selection,
         'enable_pre_selection': True,
-        'max_escalations': 2  # Reduced since we're using smarter selection
+        'max_escalations': 1  # REDUCED from 2 - single escalation only to prevent infinite loops
     }
     selector = create_intelligent_selector(config)
     
@@ -994,8 +1058,16 @@ def intelligent_process_audio(audio_path: str, process_audio_func, enable_intell
         result = selector.select_optimal_model(audio_path, process_audio_func, **kwargs)
     else:
         # Use cascading escalation (faster)
-        logger.info("Using cascading escalation mode")
+        logger.info("Using cascading escalation mode with anti-infinite-loop protections")
         result = selector.select_and_process(audio_path, process_audio_func, **kwargs)
+    
+    # ADD: Escalation safety summary
+    if 'intelligent_selection' in result.transcription_result:
+        selection_info = result.transcription_result['intelligent_selection']
+        logger.info(f"ESCALATION SUMMARY: {selection_info['initial_model']} → {selection_info['final_model']} "
+                   f"in {selection_info['escalation_count']} escalations "
+                   f"(Quality: {selection_info['quality_achieved']:.3f}, "
+                   f"Time: {selection_info['total_processing_time']:.1f}s)")
     
     return result.transcription_result
 

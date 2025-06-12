@@ -10,7 +10,6 @@ import TranscriptionTimeline from '@/Components/TranscriptionTimeline.vue';
 import SynchronizedTranscript from '@/Components/SynchronizedTranscript.vue';
 import AdvancedSubtitles from '@/Components/AdvancedSubtitles.vue';
 import MusicTermsViewer from '@/Components/MusicTermsViewer.vue';
-import TerminologyViewer from '@/Components/TerminologyViewer.vue';
 
 const props = defineProps({
     course: Object,
@@ -31,7 +30,6 @@ const isLoading = ref(false);
 const lastPolled = ref(Date.now());
 const transcriptData = ref(null);
 const overallConfidence = ref(null);
-const processingTerminology = ref(false);
 const showSynchronizedTranscript = ref(false); // Hidden by default
 const showDetailedQualityMetrics = ref(false); // Hidden by default
 const showGuitarEnhancementDetails = ref(false); // Hidden by default
@@ -39,6 +37,7 @@ const showGuitarEnhancementDetails = ref(false); // Hidden by default
 // Modal state
 const showStartProcessingModal = ref(false);
 const showRestartProcessingModal = ref(false);
+const showAbortProcessingModal = ref(false);
 const showErrorModal = ref(false);
 const errorMessage = ref('');
 const confirmAction = ref(null);
@@ -60,7 +59,6 @@ function startPolling() {
         segmentData.value.is_processing || 
         segmentData.value.status === 'audio_extracted' ||
         segmentData.value.status === 'transcribed' ||
-        segmentData.value.status === 'processing_terminology' ||
         isNewProcessing.value;
     
     // Only poll if the segment is being processed or newly updated
@@ -94,8 +92,7 @@ async function fetchStatus() {
             // Check if status changed from processing to completed
             const wasProcessing = segmentData.value.status === 'processing' || 
                                   segmentData.value.status === 'transcribing' || 
-                                  segmentData.value.status === 'transcribed' ||
-                                  segmentData.value.status === 'processing_terminology';
+                                  segmentData.value.status === 'transcribed';
             const nowCompleted = data.segment.status === 'completed';
             
             // Update the segment data
@@ -112,8 +109,7 @@ async function fetchStatus() {
                 if (isNewProcessing.value && 
                     (data.segment.status === 'completed' || 
                      data.segment.has_audio || 
-                     data.segment.has_transcript ||
-                     data.segment.has_terminology)) {
+                     data.segment.has_transcript)) {
                     window.location.reload();
                     return;
                 }
@@ -124,15 +120,7 @@ async function fetchStatus() {
                 // Copy standard properties
                 segmentData.value.error_message = data.segment.error_message;
                 segmentData.value.is_processing = data.segment.is_processing || 
-                    ['processing', 'transcribing', 'transcribed', 'processing_terminology'].includes(data.segment.status);
-                
-                // Update terminology properties if they exist
-                if (data.segment.has_terminology) {
-                    segmentData.value.has_terminology = true;
-                    segmentData.value.terminology_url = data.segment.terminology_url;
-                    segmentData.value.terminology_count = data.segment.terminology_count;
-                    segmentData.value.terminology_metadata = data.segment.terminology_metadata;
-                }
+                    ['processing', 'transcribing', 'transcribed'].includes(data.segment.status);
                 
                 // Copy URLs if they exist
                 if (data.segment.url) segmentData.value.url = data.segment.url;
@@ -581,12 +569,7 @@ function getProcessingStepDurations() {
         durations.transcription = Math.max(0, (end - start) / 1000);
     }
     
-    // Terminology processing duration
-    if (segmentData.value.terminology_started_at && segmentData.value.terminology_completed_at) {
-        const start = new Date(segmentData.value.terminology_started_at);
-        const end = new Date(segmentData.value.terminology_completed_at);
-        durations.terminology = Math.max(0, (end - start) / 1000);
-    }
+
     
     // Wait time between audio extraction and transcription
     if (segmentData.value.audio_extraction_completed_at && segmentData.value.transcription_started_at) {
@@ -597,7 +580,7 @@ function getProcessingStepDurations() {
     
     // Total end-to-end duration
     const firstStart = segmentData.value.audio_extraction_started_at || segmentData.value.transcription_started_at;
-    const lastEnd = segmentData.value.terminology_completed_at || segmentData.value.transcription_completed_at || segmentData.value.audio_extraction_completed_at;
+    const lastEnd = segmentData.value.transcription_completed_at || segmentData.value.audio_extraction_completed_at;
     
     if (firstStart && lastEnd) {
         const start = new Date(firstStart);
@@ -633,9 +616,7 @@ const processingMetrics = computed(() => {
             audio_start: segmentData.value.audio_extraction_started_at,
             audio_end: segmentData.value.audio_extraction_completed_at,
             transcription_start: segmentData.value.transcription_started_at,
-            transcription_end: segmentData.value.transcription_completed_at,
-            terminology_start: segmentData.value.terminology_started_at,
-            terminology_end: segmentData.value.terminology_completed_at
+            transcription_end: segmentData.value.transcription_completed_at
         });
         
         // Debug: Manual duration calculations to identify the issue
@@ -689,8 +670,7 @@ function getBiggestBottleneck(durations) {
     const steps = {
         'Audio Extraction': durations.audioExtraction || 0,
         'Queue Wait': durations.queueWait || 0,
-        'Transcription': durations.transcription || 0,
-        'Terminology': durations.terminology || 0
+        'Transcription': durations.transcription || 0
     };
     
     const maxStep = Object.entries(steps).reduce((max, [step, duration]) => 
@@ -801,41 +781,7 @@ function jumpToTime(timeInSeconds) {
     }
 }
 
-// Add the terminology recognition trigger method
-async function triggerTerminologyRecognition() {
-    if (!segmentData.value || !segmentData.value.id) {
-        console.error('No segment data available');
-        return;
-    }
-    
-    processingTerminology.value = true;
-    
-    try {
-        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${segmentData.value.id}/terminology`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok && data.success) {
-            console.log('Terminology recognition triggered successfully');
-            // Start polling for segment status to show processing indicator
-            startPolling();
-        } else {
-            console.error('Failed to trigger terminology recognition:', data.message);
-            showError('Failed to start terminology recognition: ' + (data.message || 'Unknown error'));
-        }
-    } catch (error) {
-        console.error('Error triggering terminology recognition:', error);
-        showError('Error: ' + (error.message || 'Failed to communicate with server'));
-    } finally {
-        processingTerminology.value = false;
-    }
-}
+
 
 // Show start processing confirmation modal
 function showStartProcessingConfirmation() {
@@ -908,6 +854,7 @@ async function restartTranscription() {
 // Add abort processing method
 async function abortProcessing() {
     // This function is called after confirmation from modal
+    showAbortProcessingModal.value = false;
     
     try {
         const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${segmentData.value.id}/abort`, {
@@ -947,6 +894,11 @@ function showRestartProcessingConfirmation() {
     showRestartProcessingModal.value = true;
 }
 
+// Show abort processing confirmation modal
+function showAbortProcessingConfirmation() {
+    showAbortProcessingModal.value = true;
+}
+
 // Show error modal
 function showError(message) {
     errorMessage.value = message;
@@ -984,8 +936,6 @@ async function restartProcessing() {
             segmentData.value.transcript_text = null;
             segmentData.value.transcript_json_url = null;
             segmentData.value.transcript_json_api_url = null;
-            segmentData.value.has_terminology = false;
-            segmentData.value.terminology_url = null;
             startPolling();
         } else {
             console.error('Failed to start restart processing:', data.message);
@@ -1355,7 +1305,6 @@ function getStatusMessage(status) {
         case 'processing': return 'Audio extraction and transcription in progress...';
         case 'transcribing': return 'Generating transcript from audio...';
         case 'transcribed': return 'Transcript generated, applying enhancements...';
-        case 'processing_terminology': return 'Analyzing musical terminology...';
         case 'completed': return 'Processing completed successfully';
         case 'failed': return 'Processing failed - see error details below';
         default: return 'Processing status unknown';
@@ -1368,7 +1317,6 @@ function getStatusTitle(status) {
         case 'processing': return 'Processing in Progress';
         case 'transcribing': return 'Creating Transcript';
         case 'transcribed': return 'Enhancing Transcript';
-        case 'processing_terminology': return 'Analyzing Terminology';
         case 'completed': return 'Processing Complete';
         case 'failed': return 'Processing Failed';
         default: return 'Processing Status Unknown';
@@ -1472,11 +1420,19 @@ function getStatusTitle(status) {
                                                     Restart
                                                 </button>
                                                 <div 
-                                                    v-else-if="['processing', 'transcribing', 'transcribed', 'processing_terminology'].includes(segmentData.status)"
-                                                    class="px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-200"
-                                                    title="Processing in progress"
+                                                    v-else-if="['processing', 'transcribing', 'transcribed'].includes(segmentData.status)"
+                                                    class="flex items-center space-x-2"
                                                 >
-                                                    Processing...
+                                                    <div class="px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-200">
+                                                        Processing...
+                                                    </div>
+                                                    <button 
+                                                        @click="showAbortProcessingConfirmation" 
+                                                        class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition"
+                                                        title="Abort processing and reset to ready state"
+                                                    >
+                                                        Abort
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -1560,9 +1516,9 @@ function getStatusTitle(status) {
                                     </div>
                                 </div>
 
-                                <!-- Compact Processing Status -->
-                                <div v-if="['processing', 'transcribing', 'transcribed', 'processing_terminology'].includes(segmentData.status)" 
-                                     class="bg-blue-50 rounded-lg p-4 border border-blue-200 mb-4">
+                                                <!-- Compact Processing Status -->
+                <div v-if="['processing', 'transcribing', 'transcribed'].includes(segmentData.status)" 
+                     class="bg-blue-50 rounded-lg p-4 border border-blue-200 mb-4">
                                     <div class="flex items-center justify-between mb-2">
                                         <div class="flex items-center">
                                             <div class="w-3 h-3 bg-blue-500 rounded-full animate-pulse mr-2"></div>
@@ -1685,17 +1641,7 @@ function getStatusTitle(status) {
                                             </div>
                                         </div>
 
-                                        <!-- Terminology Processing -->
-                                        <div v-if="processingMetrics?.durations.terminology" class="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
-                                            <div class="flex items-center">
-                                                <div class="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
-                                                <span class="text-xs font-medium">Terminology Analysis</span>
-                                            </div>
-                                            <div class="text-right">
-                                                <div class="text-xs font-medium">{{ formatDuration(processingMetrics.durations.terminology) }}</div>
-                                                <div class="text-xs text-gray-500">enhancement</div>
-                                            </div>
-                                        </div>
+
                                     </div>
 
                                     <!-- Performance Insights -->
@@ -1747,14 +1693,6 @@ function getStatusTitle(status) {
                                                 <div v-if="segmentData.transcription_completed_at">
                                                     <span class="text-gray-500">Transcription completed:</span><br>
                                                     <span class="font-mono">{{ new Date(segmentData.transcription_completed_at).toLocaleString() }}</span>
-                                                </div>
-                                                <div v-if="segmentData.terminology_started_at">
-                                                    <span class="text-gray-500">Terminology started:</span><br>
-                                                    <span class="font-mono">{{ new Date(segmentData.terminology_started_at).toLocaleString() }}</span>
-                                                </div>
-                                                <div v-if="segmentData.terminology_completed_at">
-                                                    <span class="text-gray-500">Terminology completed:</span><br>
-                                                    <span class="font-mono">{{ new Date(segmentData.terminology_completed_at).toLocaleString() }}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -2256,7 +2194,7 @@ function getStatusTitle(status) {
                 <div class="text-center">
                     <h3 class="text-lg font-medium text-gray-900 mb-2">Restart Processing</h3>
                     <p class="text-sm text-gray-500 mb-6">
-                        Are you sure you want to restart the entire processing? This will overwrite all existing audio, transcript, and terminology data for this segment using intelligent detection for optimal settings.
+                        Are you sure you want to restart the entire processing? This will overwrite all existing audio and transcript data for this segment using intelligent detection for optimal settings.
                     </p>
                 </div>
                 
@@ -2266,6 +2204,35 @@ function getStatusTitle(status) {
                     </SecondaryButton>
                     <DangerButton @click="restartProcessing">
                         Restart Processing
+                    </DangerButton>
+                </div>
+            </div>
+        </Modal>
+
+        <!-- Abort Processing Confirmation Modal -->
+        <Modal :show="showAbortProcessingModal" @close="showAbortProcessingModal = false" max-width="md">
+            <div class="p-6">
+                <div class="flex items-center mb-4">
+                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                        <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Abort Processing</h3>
+                    <p class="text-sm text-gray-500 mb-6">
+                        Are you sure you want to abort the current processing? This will stop all processing jobs and reset the segment to ready state. Any partial progress will be lost.
+                    </p>
+                </div>
+                
+                <div class="flex justify-end space-x-3">
+                    <SecondaryButton @click="showAbortProcessingModal = false">
+                        Cancel
+                    </SecondaryButton>
+                    <DangerButton @click="abortProcessing">
+                        Abort Processing
                     </DangerButton>
                 </div>
             </div>

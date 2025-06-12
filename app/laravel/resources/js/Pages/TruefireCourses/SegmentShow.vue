@@ -773,14 +773,16 @@ const hasProcessingTimestamps = computed(() => {
 
 // Check if we have advanced metrics data to show
 const hasAdvancedMetricsData = computed(() => {
-    if (!transcriptionSuccess.value.success) return false;
+    // Show metrics if we have transcription success OR if it's a performance video
+    if (!transcriptionSuccess.value.success && !isPerformanceVideo.value) return false;
     
     return !!(
         guitarEnhancementAnalysis.value ||
         qualityMetrics.value ||
         confidenceAnalysis.value ||
         teachingPatternAnalysis.value ||
-        (transcriptData.value && transcriptData.value.segments)
+        (transcriptData.value && transcriptData.value.segments) ||
+        isPerformanceVideo.value // Always show some data for performance videos
     );
 });
 
@@ -1047,14 +1049,149 @@ function forceComponentRefresh() {
     componentKey.value = Date.now();
 }
 
-// Helper function to calculate overall grade - More forgiving scoring
+// Helper function to detect performance videos with minimal speech
+const isPerformanceVideo = computed(() => {
+    // Check if this was already flagged as a performance video by the processing system
+    const processingMetadata = segmentData.value?.processing_metadata;
+    if (processingMetadata) {
+        let metadata = null;
+        try {
+            metadata = typeof processingMetadata === 'string' ? JSON.parse(processingMetadata) : processingMetadata;
+        } catch (e) {
+            // Ignore JSON parse errors
+        }
+        
+        if (metadata?.performance_video) {
+            return true;
+        }
+    }
+    
+    // Check if transcript indicates performance video
+    const transcriptText = segmentData.value?.transcript_text || '';
+    if (transcriptText === '[Instrumental Performance]' || 
+        transcriptData.value?.performance_video_metadata?.auto_generated) {
+        return true;
+    }
+    
+    // Check speech activity metrics for performance video indicators
+    const speechActivity = qualityMetrics.value?.speech_activity;
+    const contentQuality = qualityMetrics.value?.content_quality;
+    const teachingPattern = teachingPatternAnalysis.value?.content_classification?.primary_type;
+    
+    // ENHANCED: Detect performance videos even without full quality metrics
+    if (speechActivity) {
+        // Performance video indicators:
+        // 1. Very low speech activity ratio (< 30%)
+        // 2. Very few words relative to duration
+        // 3. Teaching pattern marked as "performance"
+        // 4. High non-speech ratio with minimal instruction words
+        
+        const speechRatio = speechActivity.speech_activity_ratio || 0;
+        const totalWords = contentQuality?.total_words || 0;
+        const duration = speechActivity.total_duration_seconds || 1;
+        const wordsPerMinute = (totalWords / (duration / 60));
+        
+        // Performance video criteria
+        const lowSpeechActivity = speechRatio < 0.3; // Less than 30% speech
+        const veryFewWords = totalWords < 50; // Less than 50 words total
+        const lowWordRate = wordsPerMinute < 20; // Less than 20 words per minute
+        const isPerformancePattern = teachingPattern === 'performance';
+        
+        // Classify as performance if multiple indicators present
+        if ((lowSpeechActivity && (veryFewWords || lowWordRate)) || isPerformancePattern) {
+            return true;
+        }
+    }
+    
+    // FALLBACK: Detect performance videos from transcript characteristics alone
+    if (segmentData.value?.status === 'completed') {
+        // Count actual words in transcript (excluding common filler)
+        const words = transcriptText.replace(/\[.*?\]/g, '').trim().split(/\s+/).filter(word => word.length > 0);
+        const wordCount = words.length;
+        
+        // Check confidence analysis if available
+        const totalAnalyzedWords = confidenceAnalysis.value?.totalWords || 0;
+        
+        // If we have very few words or no meaningful content
+        if (wordCount <= 5 || totalAnalyzedWords <= 5) {
+            // Additional checks for performance videos:
+            // 1. Empty or nearly empty transcript
+            // 2. Only short phrases like "here we go" or single words
+            // 3. Transcript that's mostly noise/artifacts
+            
+            const meaningfulContent = transcriptText.replace(/\b(uh|um|yeah|okay|alright|here|we|go|one|two|three|four)\b/gi, '').trim();
+            
+            if (meaningfulContent.length < 20) {
+                return true;
+            }
+        }
+        
+        // Check for failed transcription patterns that might indicate performance videos
+        if (!transcriptText || transcriptText.trim().length === 0) {
+            return true;
+        }
+    }
+    
+    return false;
+});
+
+// Helper function to calculate overall grade - Enhanced with performance video detection
 const overallGrade = computed(() => {
+    // SPECIAL HANDLING FOR PERFORMANCE VIDEOS - Check this first
+    if (isPerformanceVideo.value && segmentData.value?.status === 'completed') {
+        const transcriptText = segmentData.value?.transcript_text || '';
+        const totalWords = confidenceAnalysis.value?.totalWords || transcriptText.split(/\s+/).filter(w => w.length > 0).length || 0;
+        
+        // Performance videos are graded differently - focus on what speech exists
+        if (totalWords === 0 || transcriptText.trim().length < 10) {
+            // Pure instrumental performance - this is normal and expected
+            return { 
+                grade: 'P', 
+                color: 'purple', 
+                description: 'Performance Video (Instrumental)' 
+            };
+        } else if (totalWords < 20) {
+            // Minimal speech performance (announcements, brief instruction)
+            const avgConfidence = confidenceAnalysis.value?.averageConfidence || 0.8; // Default to decent for minimal speech
+            if (avgConfidence >= 0.7) {
+                return { 
+                    grade: 'P', 
+                    color: 'purple', 
+                    description: 'Performance Video (Minimal Speech - Good Quality)' 
+                };
+            } else {
+                return { 
+                    grade: 'P-', 
+                    color: 'purple', 
+                    description: 'Performance Video (Minimal Speech - Low Quality)' 
+                };
+            }
+        } else {
+            // Performance with some instruction - grade the speech that exists
+            const avgConfidence = confidenceAnalysis.value?.averageConfidence || 0.75; // Default for performance videos
+            if (avgConfidence >= 0.75) {
+                return { 
+                    grade: 'P+', 
+                    color: 'purple', 
+                    description: 'Performance Video (With Good Instruction)' 
+                };
+            } else {
+                return { 
+                    grade: 'P', 
+                    color: 'purple', 
+                    description: 'Performance Video (With Instruction)' 
+                };
+            }
+        }
+    }
+    
     if (!confidenceAnalysis.value && !qualityMetrics.value) {
         return { grade: 'N/A', color: 'gray', description: 'No analysis available' };
     }
     
-    // Default to good score if completed with transcript
+    // Standard grading for completed transcript (non-performance videos handled above)  
     if (segmentData.value?.status === 'completed' && segmentData.value?.transcript_text) {
+        // STANDARD GRADING FOR INSTRUCTIONAL VIDEOS
         // Calculate composite score from available metrics with generous weighting
         let totalScore = 0;
         let weightedSum = 0;
@@ -1101,7 +1238,7 @@ const overallGrade = computed(() => {
     return { grade: 'N/A', color: 'gray', description: 'Processing incomplete' };
 });
 
-// Simplified success indicator
+// Enhanced success indicator with performance video support
 const transcriptionSuccess = computed(() => {
     if (segmentData.value?.status !== 'completed') {
         return { 
@@ -1112,6 +1249,30 @@ const transcriptionSuccess = computed(() => {
         };
     }
     
+    const grade = overallGrade.value;
+    
+    // SPECIAL HANDLING FOR PERFORMANCE VIDEOS
+    if (isPerformanceVideo.value) {
+        // Performance videos with no transcript are actually expected and successful
+        if (!segmentData.value?.transcript_text || segmentData.value.transcript_text.trim().length < 10) {
+            return { 
+                success: true, 
+                title: 'Performance Video Processed', 
+                message: 'Pure instrumental performance - no speech content expected',
+                actionNeeded: false 
+            };
+        }
+        
+        // Performance videos with minimal speech are still successful
+        return { 
+            success: true, 
+            title: 'Performance Video Processed', 
+            message: `${grade.description} (Grade: ${grade.grade})`,
+            actionNeeded: false 
+        };
+    }
+    
+    // STANDARD HANDLING FOR INSTRUCTIONAL VIDEOS
     if (!segmentData.value?.transcript_text) {
         return { 
             success: false, 
@@ -1121,7 +1282,6 @@ const transcriptionSuccess = computed(() => {
         };
     }
     
-    const grade = overallGrade.value;
     if (grade.grade === 'F') {
         return { 
             success: false, 
@@ -1289,8 +1449,9 @@ function getStatusTitle(status) {
                                                         'bg-blue-500': overallGrade.color === 'blue',
                                                         'bg-yellow-500': overallGrade.color === 'yellow',
                                                         'bg-orange-500': overallGrade.color === 'orange',
-                                                        'bg-red-500': overallGrade.color === 'red'
-                                                    }">{{ overallGrade.grade }}</div>
+                                                        'bg-red-500': overallGrade.color === 'red',
+                                                        'bg-purple-500': overallGrade.color === 'purple'
+                                                    }">{{ overallGrade.grade.length > 1 ? overallGrade.grade.charAt(0) : overallGrade.grade }}</div>
                                                 </div>
                                                 
                                                 <!-- Show appropriate button based on segment status -->

@@ -634,19 +634,48 @@ class TruefireSegmentController extends Controller
                 $transcriptionPreset = $extractionSettings['transcription_preset'] ?? 'balanced';
                 
                 if ($followWithTranscription) {
-                    Log::info('Auto-starting transcription for TrueFire segment', [
-                        'segment_id' => $segmentId,
-                        'transcription_preset' => $transcriptionPreset,
-                        'pipeline_mode' => 'automatic'
-                    ]);
+                    // ENHANCED: Early performance video detection to avoid transcription bottlenecks
+                    $isPerformanceVideo = $this->detectPerformanceVideoFromAudio($audioPath, $responseData);
                     
-                    // Set status to transcribing - transcription_started_at will be set when service sends status update
-                    $processing->update([
-                        'status' => 'transcribing',
-                        'progress_percentage' => 60
-                    ]);
-                    
-                    \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing, $transcriptionPreset)->onQueue('transcription');
+                    if ($isPerformanceVideo) {
+                        Log::info('Performance video detected - skipping transcription and creating minimal transcript', [
+                            'segment_id' => $segmentId,
+                            'audio_path' => $audioPath,
+                            'detection_reason' => $isPerformanceVideo['reason']
+                        ]);
+                        
+                        // Create minimal transcript for performance video
+                        $this->createPerformanceVideoTranscript($processing, $isPerformanceVideo);
+                        
+                        // Mark as completed with performance video flag
+                        $processing->update([
+                            'status' => 'completed',
+                            'progress_percentage' => 100,
+                            'transcript_text' => '[Instrumental Performance]',
+                            'transcription_completed_at' => now(),
+                            'processing_metadata' => json_encode([
+                                'performance_video' => true,
+                                'detection_reason' => $isPerformanceVideo['reason'],
+                                'skipped_transcription' => true,
+                                'auto_generated_transcript' => true
+                            ])
+                        ]);
+                        
+                    } else {
+                        Log::info('Auto-starting transcription for TrueFire segment', [
+                            'segment_id' => $segmentId,
+                            'transcription_preset' => $transcriptionPreset,
+                            'pipeline_mode' => 'automatic'
+                        ]);
+                        
+                        // Set status to transcribing - transcription_started_at will be set when service sends status update
+                        $processing->update([
+                            'status' => 'transcribing',
+                            'progress_percentage' => 60
+                        ]);
+                        
+                        \App\Jobs\TruefireSegmentTranscriptionJob::dispatch($processing, $transcriptionPreset)->onQueue('transcription');
+                    }
                 } else {
                     Log::info('TrueFire segment audio extraction completed - waiting for manual transcription trigger', [
                         'segment_id' => $segmentId,
@@ -1208,6 +1237,241 @@ class TruefireSegmentController extends Controller
                 'success' => false,
                 'message' => 'Error starting redo processing: ' . $e->getMessage()
             ], 500);
+        }
+    }
+    
+    /**
+     * Detect if an audio file likely represents a performance video with minimal speech
+     * This prevents unnecessary transcription attempts that would fail with empty replies
+     */
+    private function detectPerformanceVideoFromAudio($audioPath, $responseData = [])
+    {
+        try {
+            if (!file_exists($audioPath)) {
+                return false;
+            }
+            
+            // Get basic file info
+            $fileSize = filesize($audioPath);
+            $duration = $responseData['duration'] ?? null;
+            
+            // If we have duration from audio extraction response, use it
+            if (!$duration) {
+                // Try to get duration using ffprobe if available
+                $duration = $this->getAudioDuration($audioPath);
+            }
+            
+            Log::info('Analyzing audio for performance video detection', [
+                'audio_path' => $audioPath,
+                'file_size' => $fileSize,
+                'duration' => $duration
+            ]);
+            
+            // Detection criteria
+            
+            // 1. Very small files (less than 100KB) are likely minimal content
+            if ($fileSize < 100 * 1024) {
+                return [
+                    'is_performance' => true,
+                    'reason' => 'very_small_file',
+                    'details' => "File size: " . round($fileSize / 1024, 1) . "KB"
+                ];
+            }
+            
+            // 2. Very short duration (less than 10 seconds) likely minimal content
+            if ($duration && $duration < 10) {
+                return [
+                    'is_performance' => true,
+                    'reason' => 'very_short_duration',
+                    'details' => "Duration: {$duration} seconds"
+                ];
+            }
+            
+            // 3. Low bitrate might indicate compressed/minimal content
+            if ($duration && $duration > 0) {
+                $bitrate = ($fileSize * 8) / $duration; // bits per second
+                $kbps = $bitrate / 1000;
+                
+                // If bitrate is extremely low (less than 32 kbps), might be minimal content
+                if ($kbps < 32) {
+                    return [
+                        'is_performance' => true,
+                        'reason' => 'very_low_bitrate',
+                        'details' => "Bitrate: " . round($kbps, 1) . " kbps"
+                    ];
+                }
+            }
+            
+            // 4. Check for mostly silence using ffmpeg if available
+            $silenceRatio = $this->checkAudioSilenceRatio($audioPath);
+            if ($silenceRatio !== null && $silenceRatio > 0.8) {
+                return [
+                    'is_performance' => true,
+                    'reason' => 'mostly_silence',
+                    'details' => "Silence ratio: " . round($silenceRatio * 100, 1) . "%"
+                ];
+            }
+            
+            // Not detected as performance video
+            return false;
+            
+        } catch (\Exception $e) {
+            Log::warning('Performance video detection failed, proceeding with transcription', [
+                'audio_path' => $audioPath,
+                'error' => $e->getMessage()
+            ]);
+            
+            // If detection fails, proceed with transcription to be safe
+            return false;
+        }
+    }
+    
+    /**
+     * Get audio duration using ffprobe if available
+     */
+    private function getAudioDuration($audioPath)
+    {
+        try {
+            // Try to use ffprobe to get duration
+            $command = "ffprobe -v quiet -show_entries format=duration -of csv=p=0 " . escapeshellarg($audioPath);
+            $output = shell_exec($command);
+            
+            if ($output) {
+                $duration = floatval(trim($output));
+                if ($duration > 0) {
+                    return $duration;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::debug('Could not get audio duration with ffprobe', [
+                'audio_path' => $audioPath,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Check silence ratio in audio file using ffmpeg if available
+     */
+    private function checkAudioSilenceRatio($audioPath)
+    {
+        try {
+            // Use ffmpeg to detect silence
+            // -af silencedetect=noise=-30dB:duration=0.5 detects silence of 0.5 seconds at -30dB threshold
+            $command = "ffmpeg -i " . escapeshellarg($audioPath) . " -af silencedetect=noise=-30dB:duration=0.5 -f null - 2>&1";
+            $output = shell_exec($command);
+            
+            if (!$output) {
+                return null;
+            }
+            
+            // Parse silence detection output
+            preg_match_all('/silence_duration: ([\d.]+)/', $output, $matches);
+            if (!empty($matches[1])) {
+                $totalSilence = array_sum(array_map('floatval', $matches[1]));
+                
+                // Get total duration
+                preg_match('/Duration: (\d{2}):(\d{2}):([\d.]+)/', $output, $durationMatch);
+                if (!empty($durationMatch)) {
+                    $totalDuration = ($durationMatch[1] * 3600) + ($durationMatch[2] * 60) + floatval($durationMatch[3]);
+                    if ($totalDuration > 0) {
+                        return $totalSilence / $totalDuration;
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::debug('Could not analyze audio silence ratio', [
+                'audio_path' => $audioPath,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Create minimal transcript JSON for performance videos
+     */
+    private function createPerformanceVideoTranscript($processing, $detectionInfo)
+    {
+        try {
+            // Create minimal transcript JSON structure
+            $transcriptData = [
+                'task' => 'transcribe',
+                'language' => 'en',
+                'duration' => 0.0,
+                'text' => '[Instrumental Performance]',
+                'segments' => [
+                    [
+                        'id' => 0,
+                        'seek' => 0,
+                        'start' => 0.0,
+                        'end' => 0.0,
+                        'text' => '[Instrumental Performance]',
+                        'temperature' => 0.0,
+                        'avg_logprob' => -0.1,
+                        'compression_ratio' => 1.0,
+                        'no_speech_prob' => 0.99,
+                        'words' => [
+                            [
+                                'word' => '[Instrumental Performance]',
+                                'start' => 0.0,
+                                'end' => 0.0,
+                                'probability' => 1.0
+                            ]
+                        ]
+                    ]
+                ],
+                'performance_video_metadata' => [
+                    'auto_generated' => true,
+                    'detection_reason' => $detectionInfo['reason'],
+                    'detection_details' => $detectionInfo['details'],
+                    'generated_at' => now()->toISOString()
+                ],
+                'speech_activity' => [
+                    'speech_activity_ratio' => 0.0,
+                    'total_duration_seconds' => 0.0,
+                    'speaking_rate_wpm' => 0.0,
+                    'pause_count' => 0
+                ],
+                'content_quality' => [
+                    'total_words' => 0,
+                    'unique_words' => 0,
+                    'vocabulary_richness' => 0.0,
+                    'music_term_count' => 0
+                ],
+                'teaching_patterns' => [
+                    'content_classification' => [
+                        'primary_type' => 'performance',
+                        'confidence' => 0.95,
+                        'content_focus' => 'instrumental_performance'
+                    ]
+                ],
+                'quality_metrics' => [
+                    'overall_quality_score' => 1.0, // High quality for what it is (performance)
+                    'overall_confidence' => 1.0
+                ]
+            ];
+            
+            // Store transcript JSON in processing record
+            $processing->update([
+                'transcript_json' => $transcriptData,
+                'transcript_json_path' => null // No physical file created
+            ]);
+            
+            Log::info('Created minimal transcript for performance video', [
+                'segment_id' => $processing->segment_id,
+                'detection_reason' => $detectionInfo['reason'],
+                'detection_details' => $detectionInfo['details']
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Failed to create performance video transcript', [
+                'segment_id' => $processing->segment_id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 } 

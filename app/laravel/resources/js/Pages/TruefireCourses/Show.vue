@@ -73,6 +73,7 @@ const qualityGradeBg = computed(() => {
         case 'yellow': return 'bg-yellow-500';
         case 'orange': return 'bg-orange-500';
         case 'red': return 'bg-red-500';
+        case 'purple': return 'bg-purple-500';
         default: return 'bg-gray-500';
     }
 });
@@ -590,6 +591,81 @@ const showIntelligentAudioInfo = ref(false);
 // Batch confirmation modals
 const showAudioExtractionConfirm = ref(false);
 const showTranscriptionConfirm = ref(false);
+
+// Batch processing details toggle
+const showBatchProcessingDetails = ref(false);
+
+// Search and filter functionality
+const searchQuery = ref('');
+const statusFilter = ref('');
+const qualityFilter = ref('');
+
+// Filtered segments computed property
+const filteredSegments = computed(() => {
+    if (!props.segmentsWithSignedUrls) return [];
+    
+    let filtered = props.segmentsWithSignedUrls;
+    
+    // Apply search filter
+    if (searchQuery.value.trim()) {
+        const query = searchQuery.value.toLowerCase().trim();
+        filtered = filtered.filter(segment => 
+            segment.id.toString().includes(query) ||
+            segment.title?.toLowerCase().includes(query) ||
+            segment.channel_name?.toLowerCase().includes(query) ||
+            segment.channel_id?.toString().includes(query)
+        );
+    }
+    
+    // Apply status filter
+    if (statusFilter.value) {
+        filtered = filtered.filter(segment => 
+            segment.processing_status?.status === statusFilter.value
+        );
+    }
+    
+    // Apply quality filter
+    if (qualityFilter.value) {
+                                            if (qualityFilter.value === 'no-data') {
+                                        filtered = filtered.filter(segment => 
+                                            !segment.quality_data?.has_data
+                                        );
+                                    } else if (qualityFilter.value === 'P') {
+                                        // Handle P grades (including P+, P-, P variations)
+                                        filtered = filtered.filter(segment => 
+                                            segment.quality_data?.has_data && 
+                                            (segment.quality_data?.grade === 'P' || 
+                                             segment.quality_data?.grade?.startsWith('P'))
+                                        );
+                                    } else {
+                                        filtered = filtered.filter(segment => 
+                                            segment.quality_data?.has_data && 
+                                            segment.quality_data?.grade === qualityFilter.value
+                                        );
+                                    }
+    }
+    
+    return filtered;
+});
+
+// Get unique status values for filter dropdown
+const availableStatuses = computed(() => {
+    if (!props.segmentsWithSignedUrls) return [];
+    
+    const statuses = [...new Set(props.segmentsWithSignedUrls
+        .map(segment => segment.processing_status?.status)
+        .filter(Boolean)
+    )];
+    
+    return statuses.sort();
+});
+
+// Clear all filters
+const clearFilters = () => {
+    searchQuery.value = '';
+    statusFilter.value = '';
+    qualityFilter.value = '';
+};
 </script>
 
 <template>
@@ -598,9 +674,12 @@ const showTranscriptionConfirm = ref(false);
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between">
-                <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ props.course.name || props.course.title || `TrueFire Course #${props.course.id}` }}
-                </h2>
+                <div>
+                    <h2 class="text-xl font-semibold leading-tight text-gray-800">
+                        {{ props.course.name || props.course.title || `TrueFire Course #${props.course.id}` }}
+                    </h2>
+                    <p class="text-sm text-gray-500 mt-1">Course ID: {{ props.course.id }}</p>
+                </div>
                 <div class="flex items-center space-x-3">
                     <Link
                         :href="route('truefire-courses.index')"
@@ -614,32 +693,7 @@ const showTranscriptionConfirm = ref(false);
 
         <div class="py-12">
             <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
-                <!-- Course Information -->
-                <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg mb-6">
-                    <div class="p-6 text-gray-900">
-                        <h3 class="text-lg font-medium text-gray-900 mb-4">
-                            Course Information
-                        </h3>
-                        
-                        <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
-                            <div>
-                                <dt class="text-sm font-medium text-gray-500">Course ID</dt>
-                                <dd class="mt-1 text-sm text-gray-900">{{ props.course.id }}</dd>
-                            </div>
-                            
-                            <div v-if="props.course.description">
-                                <dt class="text-sm font-medium text-gray-500">Description</dt>
-                                <dd class="mt-1 text-sm text-gray-900">{{ props.course.description }}</dd>
-                            </div>
-                            
-                            <div v-if="props.course.created_at">
-                                <dt class="text-sm font-medium text-gray-500">Created At</dt>
-                                <dd class="mt-1 text-sm text-gray-900">{{ new Date(props.course.created_at).toLocaleString() }}</dd>
-                            </div>
-                        </dl>
-                        
-                    </div>
-                </div>
+
 <!-- Channels Table -->
 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg" v-if="props.course.channels && props.course.channels.length > 1">
                 <!-- Channels Table -->
@@ -708,10 +762,10 @@ const showTranscriptionConfirm = ref(false);
                     </div>
                 </div>
 
-                <!-- Audio Testing Panel -->
+                <!-- Batch Processing Panel -->
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg mt-6">
                     <div class="p-6 text-gray-900">
-                        <div class="flex justify-between items-center mb-6">
+                        <div class="flex justify-between items-center mb-4">
                             <div>
                                 <h3 class="text-lg font-medium text-gray-900">Course Batch Processing</h3>
                                 <p class="text-sm text-gray-500 mt-1">
@@ -719,6 +773,17 @@ const showTranscriptionConfirm = ref(false);
                                 </p>
                             </div>
                             <div class="flex items-center space-x-3">
+                                <!-- Toggle Details Button -->
+                                <button
+                                    @click="showBatchProcessingDetails = !showBatchProcessingDetails"
+                                    class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                                >
+                                    <svg class="w-4 h-4 mr-2 transition-transform" :class="{'rotate-180': showBatchProcessingDetails}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                    {{ showBatchProcessingDetails ? 'Hide Details' : 'Show Details' }}
+                                </button>
+                                
                                 <!-- Restart Options Dropdown -->
                                 <div class="relative" ref="restartDropdownRef">
                                     <button
@@ -786,6 +851,61 @@ const showTranscriptionConfirm = ref(false);
                                                     <div class="text-xs text-red-500">⚠️ Clear ALL files and start fresh</div>
                                                 </div>
                                             </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        
+                        <!-- Collapsible Details Section -->
+                        <div v-if="showBatchProcessingDetails" class="mt-6 pt-6 border-t border-gray-200">
+                            <h4 class="text-base font-medium text-gray-900 mb-4">Processing Configuration</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Audio Extraction Details -->
+                                <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                    <div class="flex items-center mb-3">
+                                        <svg class="h-6 w-6 text-blue-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                        </svg>
+                                        <h5 class="text-sm font-semibold text-blue-900">Audio Extraction</h5>
+                                    </div>
+                                    <div class="space-y-2 text-sm">
+                                        <div class="flex justify-between">
+                                            <span class="text-blue-700">Method:</span>
+                                            <span class="font-medium text-blue-900">Intelligent Cascading</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-blue-700">Quality:</span>
+                                            <span class="font-medium text-blue-900">Fast → Balanced → High → Premium</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-blue-700">Status:</span>
+                                            <span class="text-green-700 font-semibold">Enabled</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Transcription Details -->
+                                <div class="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                                    <div class="flex items-center mb-3">
+                                        <svg class="h-6 w-6 text-emerald-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                                        </svg>
+                                        <h5 class="text-sm font-semibold text-emerald-900">Transcription</h5>
+                                    </div>
+                                    <div class="space-y-2 text-sm">
+                                        <div class="flex justify-between">
+                                            <span class="text-emerald-700">Preset:</span>
+                                            <span class="font-medium text-emerald-900">Balanced</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-emerald-700">Model Selection:</span>
+                                            <span class="font-medium text-emerald-900">Tiny → Small → Medium → Large</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-emerald-700">Guitar Terms:</span>
+                                            <span class="text-purple-700 font-semibold">Enhanced</span>
                                         </div>
                                     </div>
                                 </div>
@@ -955,695 +1075,6 @@ const showTranscriptionConfirm = ref(false);
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- Batch Processing Actions -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <!-- Audio Extraction Batch -->
-                            <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
-                                <div class="flex items-center justify-between mb-4">
-                                    <div class="flex items-center">
-                                        <div class="flex-shrink-0">
-                                            <svg class="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
-                                            </svg>
-                                        </div>
-                                        <div class="ml-3">
-                                            <h4 class="text-lg font-semibold text-blue-900">Audio Extraction</h4>
-                                            <p class="text-sm text-blue-700">Intelligent quality selection with cascading escalation</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="space-y-3">
-                                    <div class="flex items-center justify-between text-sm">
-                                        <span class="text-blue-700">Current Method:</span>
-                                        <div class="text-right">
-                                            <span class="font-medium text-blue-900">Intelligent (Cascading Quality)</span>
-                                            <div class="text-xs text-blue-600">Fast→balanced→high→premium as needed <span class="text-green-700 font-semibold">(Enabled)</span></div>
-                                        </div>
-                                    </div>
-                                    <button
-                                        @click="startBatchAudioExtraction"
-                                        class="w-full inline-flex items-center justify-center px-4 py-2 bg-blue-600 border border-transparent rounded-md font-semibold text-sm text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition ease-in-out duration-150"
-                                    >
-                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M16 14h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        Start Audio Extraction
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Transcription Batch -->
-                            <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg p-6">
-                                <div class="flex items-center justify-between mb-4">
-                                    <div class="flex items-center">
-                                        <div class="flex-shrink-0">
-                                            <svg class="h-8 w-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                                            </svg>
-                                        </div>
-                                        <div class="ml-3">
-                                            <h4 class="text-lg font-semibold text-emerald-900">Transcription</h4>
-                                            <p class="text-sm text-emerald-700">Generate transcripts with quality metrics</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="space-y-3">
-                                    <div class="flex items-center justify-between text-sm">
-                                        <span class="text-emerald-700">Current Preset:</span>
-                                        <div class="text-right">
-                                            <span class="font-medium text-emerald-900">Balanced (Intelligent Selection)</span>
-                                            <div class="text-xs text-emerald-600">Cascading tiny→small→medium→large as needed</div>
-                                        </div>
-                                    </div>
-                                    <button
-                                        @click="startBatchTranscription"
-                                        class="w-full inline-flex items-center justify-center px-4 py-2 bg-emerald-600 border border-transparent rounded-md font-semibold text-sm text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition ease-in-out duration-150"
-                                    >
-                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                        </svg>
-                                        Start Transcription
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Intelligent Audio Extraction Information Toggle -->
-                        <div class="mb-6">
-                            <!-- Toggle Button -->
-                            <button 
-                                @click="showIntelligentAudioInfo = !showIntelligentAudioInfo"
-                                class="w-full bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4 hover:from-blue-100 hover:to-cyan-100 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                            >
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="flex-shrink-0">
-                                            <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
-                                            </svg>
-                                        </div>
-                                        <div class="text-left">
-                                            <h4 class="text-lg font-semibold text-blue-900">🎵 Intelligent Audio Extraction <span class="text-sm text-green-600">(Enabled)</span></h4>
-                                            <p class="text-sm text-blue-700">
-                                                Smart quality escalation system - optimizes audio processing automatically
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-center space-x-2">
-                                        <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
-                                            {{ showIntelligentAudioInfo ? 'Hide Details' : 'Learn More' }}
-                                        </span>
-                                        <svg 
-                                            class="w-5 h-5 text-blue-600 transition-transform duration-200"
-                                            :class="{ 'rotate-180': showIntelligentAudioInfo }"
-                                            fill="none" 
-                                            stroke="currentColor" 
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                        </svg>
-                                    </div>
-                                </div>
-                            </button>
-                            
-                            <!-- Collapsible Content -->
-                            <transition 
-                                enter-active-class="transition duration-300 ease-out"
-                                enter-from-class="transform scale-95 opacity-0"
-                                enter-to-class="transform scale-100 opacity-100"
-                                leave-active-class="transition duration-200 ease-in"
-                                leave-from-class="transform scale-100 opacity-100"
-                                leave-to-class="transform scale-95 opacity-0"
-                            >
-                                <div v-show="showIntelligentAudioInfo" class="mt-4 bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-6">
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <!-- How It Works -->
-                                <div class="bg-white rounded-lg p-4 border border-blue-100">
-                                    <h5 class="font-semibold text-blue-900 mb-3 flex items-center">
-                                        <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-                                        </svg>
-                                        How It Works
-                                    </h5>
-                                    <div class="space-y-3 text-sm text-gray-700">
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold mt-0.5">1</div>
-                                            <div>
-                                                <strong>Start Fast:</strong> Begins with fast quality (minimal processing)
-                                            </div>
-                                        </div>
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xs font-bold mt-0.5">2</div>
-                                            <div>
-                                                <strong>Quality Check:</strong> Analyzes audio metrics (sample rate, volume, dynamics)
-                                            </div>
-                                        </div>
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 text-xs font-bold mt-0.5">3</div>
-                                            <div>
-                                                <strong>Auto-Escalate:</strong> Upgrades to higher quality levels when needed
-                                            </div>
-                                        </div>
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 text-xs font-bold mt-0.5">4</div>
-                                            <div>
-                                                <strong>Optimize:</strong> Achieves 60% time savings vs. always using premium quality
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Quality Thresholds -->
-                                <div class="bg-white rounded-lg p-4 border border-blue-100">
-                                    <h5 class="font-semibold text-blue-900 mb-3 flex items-center">
-                                        <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                                        </svg>
-                                        Quality Thresholds
-                                    </h5>
-                                    <div class="space-y-2 text-sm">
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">Fast Processing</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded mr-2">70/100</span>
-                                                <span class="text-xs text-gray-500">escalation threshold</span>
-                                            </div>
-                                        </div>
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">Balanced Quality</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded mr-2">75/100</span>
-                                                <span class="text-xs text-gray-500">escalation threshold</span>
-                                            </div>
-                                        </div>
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">High Quality</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded mr-2">80/100</span>
-                                                <span class="text-xs text-gray-500">escalation threshold</span>
-                                            </div>
-                                        </div>
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">Premium Quality</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded mr-2">85/100</span>
-                                                <span class="text-xs text-gray-500">final quality target</span>
-                                            </div>
-                                        </div>
-                                        <div class="mt-3 pt-2 border-t border-gray-200">
-                                            <div class="flex justify-between items-center text-xs">
-                                                <span class="text-gray-500">Target Quality:</span>
-                                                <span class="font-semibold text-blue-600">≥75/100 score</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Performance Benefits -->
-                            <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <div class="bg-white rounded-lg p-3 border border-blue-100 text-center">
-                                    <div class="text-2xl font-bold text-green-600">60%</div>
-                                    <div class="text-xs text-gray-600">Time Savings</div>
-                                    <div class="text-xs text-gray-500 mt-1">vs. always using premium</div>
-                                </div>
-                                <div class="bg-white rounded-lg p-3 border border-blue-100 text-center">
-                                    <div class="text-2xl font-bold text-blue-600">92%</div>
-                                    <div class="text-xs text-gray-600">Quality Success</div>
-                                    <div class="text-xs text-gray-500 mt-1">achieve ≥75 quality score</div>
-                                </div>
-                                <div class="bg-white rounded-lg p-3 border border-blue-100 text-center">
-                                    <div class="text-2xl font-bold text-purple-600">30%</div>
-                                    <div class="text-xs text-gray-600">Escalation Rate</div>
-                                    <div class="text-xs text-gray-500 mt-1">need higher quality</div>
-                                </div>
-                                <div class="bg-white rounded-lg p-3 border border-blue-100 text-center">
-                                    <div class="text-2xl font-bold text-orange-600">50%</div>
-                                    <div class="text-xs text-gray-600">Cost Reduction</div>
-                                    <div class="text-xs text-gray-500 mt-1">through efficiency</div>
-                                </div>
-                            </div>
-                            
-                            <!-- Technical Details Collapsible -->
-                            <div class="mt-4">
-                                <details class="group">
-                                    <summary class="flex items-center justify-between cursor-pointer text-sm font-medium text-blue-700 hover:text-blue-900">
-                                        <span class="flex items-center">
-                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                            </svg>
-                                            Technical Details & Quality Analysis
-                                        </span>
-                                        <svg class="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                        </svg>
-                                    </summary>
-                                    <div class="mt-3 bg-white rounded-lg p-4 border border-blue-100">
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                            <div>
-                                                <h6 class="font-semibold text-gray-800 mb-2">Audio Quality Metrics (Weighted)</h6>
-                                                <ul class="space-y-1 text-gray-600">
-                                                    <li>• <strong>25% weight:</strong> Sample rate optimization</li>
-                                                    <li>• <strong>30% weight:</strong> Volume level balance</li>
-                                                    <li>• <strong>20% weight:</strong> Dynamic range analysis</li>
-                                                    <li>• <strong>15% weight:</strong> Duration efficiency</li>
-                                                    <li>• <strong>10% weight:</strong> Bit rate quality</li>
-                                                </ul>
-                                            </div>
-                                            <div>
-                                                <h6 class="font-semibold text-gray-800 mb-2">Escalation Triggers</h6>
-                                                <ul class="space-y-1 text-gray-600">
-                                                    <li>• Overall quality score below threshold</li>
-                                                    <li>• Poor sample rate optimization (&lt;70)</li>
-                                                    <li>• Volume level issues (&lt;60)</li>
-                                                    <li>• Limited dynamic range (&lt;65)</li>
-                                                    <li>• Inadequate bit rate quality (&lt;70)</li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                        <div class="mt-4 p-3 bg-gray-50 rounded border">
-                                            <p class="text-xs text-gray-600">
-                                                <strong>Current Status:</strong> Intelligent audio extraction is <span class="text-green-600 font-semibold">ENABLED by default</span>. 
-                                                The system automatically uses cascading quality selection for optimal speed and quality. To disable intelligent extraction, add 
-                                                <code class="bg-gray-200 px-1 rounded">"enable_intelligent_extraction": false</code> 
-                                                to your audio extraction API requests.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </details>
-                            </div>
-                                </div>
-                            </transition>
-                        </div>
-                        
-                        <!-- Intelligent Model Selection Information Toggle -->
-                        <div class="mb-6">
-                            <!-- Toggle Button -->
-                            <button 
-                                @click="showIntelligentSelectionInfo = !showIntelligentSelectionInfo"
-                                class="w-full bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4 hover:from-indigo-100 hover:to-purple-100 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                            >
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="flex-shrink-0">
-                                            <svg class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                            </svg>
-                                        </div>
-                                        <div class="text-left">
-                                            <h4 class="text-lg font-semibold text-indigo-900">🧠 Intelligent Model Selection <span class="text-sm text-green-600">(Enabled)</span></h4>
-                                            <p class="text-sm text-indigo-700">
-                                                AI-powered cascading model selection - active by default for optimal performance
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-center space-x-2">
-                                        <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-medium">
-                                            {{ showIntelligentSelectionInfo ? 'Hide Details' : 'Learn More' }}
-                                        </span>
-                                        <svg 
-                                            class="w-5 h-5 text-indigo-600 transition-transform duration-200"
-                                            :class="{ 'rotate-180': showIntelligentSelectionInfo }"
-                                            fill="none" 
-                                            stroke="currentColor" 
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                        </svg>
-                                    </div>
-                                </div>
-                            </button>
-                            
-                            <!-- Collapsible Content -->
-                            <transition 
-                                enter-active-class="transition duration-300 ease-out"
-                                enter-from-class="transform scale-95 opacity-0"
-                                enter-to-class="transform scale-100 opacity-100"
-                                leave-active-class="transition duration-200 ease-in"
-                                leave-from-class="transform scale-100 opacity-100"
-                                leave-to-class="transform scale-95 opacity-0"
-                            >
-                                <div v-show="showIntelligentSelectionInfo" class="mt-4 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-6">
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <!-- How It Works -->
-                                <div class="bg-white rounded-lg p-4 border border-indigo-100">
-                                    <h5 class="font-semibold text-indigo-900 mb-3 flex items-center">
-                                        <svg class="w-4 h-4 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-                                        </svg>
-                                        How It Works
-                                    </h5>
-                                    <div class="space-y-3 text-sm text-gray-700">
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold mt-0.5">1</div>
-                                            <div>
-                                                <strong>Start Fast:</strong> Begins with the tiny model (fastest processing)
-                                            </div>
-                                        </div>
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xs font-bold mt-0.5">2</div>
-                                            <div>
-                                                <strong>Quality Check:</strong> Analyzes confidence and consistency scores
-                                            </div>
-                                        </div>
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 text-xs font-bold mt-0.5">3</div>
-                                            <div>
-                                                <strong>Auto-Escalate:</strong> Upgrades to larger models only when needed
-                                            </div>
-                                        </div>
-                                        <div class="flex items-start space-x-2">
-                                            <div class="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 text-xs font-bold mt-0.5">4</div>
-                                            <div>
-                                                <strong>Optimize:</strong> Saves 70-80% processing time vs. always using the largest model
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Quality Thresholds -->
-                                <div class="bg-white rounded-lg p-4 border border-indigo-100">
-                                    <h5 class="font-semibold text-indigo-900 mb-3 flex items-center">
-                                        <svg class="w-4 h-4 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                                        </svg>
-                                        Quality Thresholds
-                                    </h5>
-                                    <div class="space-y-2 text-sm">
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">Tiny Model</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded mr-2">75%</span>
-                                                <span class="text-xs text-gray-500">escalation threshold</span>
-                                            </div>
-                                        </div>
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">Small Model</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded mr-2">80%</span>
-                                                <span class="text-xs text-gray-500">escalation threshold</span>
-                                            </div>
-                                        </div>
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">Medium Model</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded mr-2">85%</span>
-                                                <span class="text-xs text-gray-500">escalation threshold</span>
-                                            </div>
-                                        </div>
-                                        <div class="flex justify-between items-center py-1">
-                                            <span class="text-gray-600">Large-v3 Model</span>
-                                            <div class="flex items-center">
-                                                <span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded mr-2">90%</span>
-                                                <span class="text-xs text-gray-500">final quality target</span>
-                                            </div>
-                                        </div>
-                                        <div class="mt-3 pt-2 border-t border-gray-200">
-                                            <div class="flex justify-between items-center text-xs">
-                                                <span class="text-gray-500">Target Quality:</span>
-                                                <span class="font-semibold text-indigo-600">≥80% confidence</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Performance Benefits -->
-                            <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <div class="bg-white rounded-lg p-3 border border-indigo-100 text-center">
-                                    <div class="text-2xl font-bold text-green-600">75%</div>
-                                    <div class="text-xs text-gray-600">Time Savings</div>
-                                    <div class="text-xs text-gray-500 mt-1">vs. always using large model</div>
-                                </div>
-                                <div class="bg-white rounded-lg p-3 border border-indigo-100 text-center">
-                                    <div class="text-2xl font-bold text-blue-600">95%</div>
-                                    <div class="text-xs text-gray-600">Quality Success</div>
-                                    <div class="text-xs text-gray-500 mt-1">achieve ≥80% confidence</div>
-                                </div>
-                                <div class="bg-white rounded-lg p-3 border border-indigo-100 text-center">
-                                    <div class="text-2xl font-bold text-purple-600">25%</div>
-                                    <div class="text-xs text-gray-600">Escalation Rate</div>
-                                    <div class="text-xs text-gray-500 mt-1">need larger models</div>
-                                </div>
-                                <div class="bg-white rounded-lg p-3 border border-indigo-100 text-center">
-                                    <div class="text-2xl font-bold text-orange-600">60%</div>
-                                    <div class="text-xs text-gray-600">Cost Reduction</div>
-                                    <div class="text-xs text-gray-500 mt-1">through efficiency</div>
-                                </div>
-                            </div>
-                            
-                            <!-- Technical Details Collapsible -->
-                            <div class="mt-4">
-                                <details class="group">
-                                    <summary class="flex items-center justify-between cursor-pointer text-sm font-medium text-indigo-700 hover:text-indigo-900">
-                                        <span class="flex items-center">
-                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                            </svg>
-                                            Technical Details & Decision Matrix
-                                        </span>
-                                        <svg class="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                        </svg>
-                                    </summary>
-                                    <div class="mt-3 bg-white rounded-lg p-4 border border-indigo-100">
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                            <div>
-                                                <h6 class="font-semibold text-gray-800 mb-2">Multi-Metric Decision Algorithm</h6>
-                                                <ul class="space-y-1 text-gray-600">
-                                                    <li>• <strong>40% weight:</strong> Average confidence score</li>
-                                                    <li>• <strong>30% weight:</strong> Segment consistency</li>
-                                                    <li>• <strong>20% weight:</strong> Duration coverage</li>
-                                                    <li>• <strong>10% penalty:</strong> Low confidence words</li>
-                                                </ul>
-                                            </div>
-                                            <div>
-                                                <h6 class="font-semibold text-gray-800 mb-2">Escalation Triggers</h6>
-                                                <ul class="space-y-1 text-gray-600">
-                                                    <li>• Overall quality score below threshold</li>
-                                                    <li>• Average confidence &lt; 80%</li>
-                                                    <li>• Poor segment consistency (&lt;60%)</li>
-                                                    <li>• High low-confidence penalty (&gt;30%)</li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                        <div class="mt-4 p-3 bg-gray-50 rounded border">
-                                            <p class="text-xs text-gray-600">
-                                                <strong>Current Status:</strong> Intelligent selection is <span class="text-green-600 font-semibold">ENABLED by default</span>. 
-                                                The system automatically uses cascading model selection for optimal speed and quality. To disable intelligent selection, add 
-                                                <code class="bg-gray-200 px-1 rounded">"enable_intelligent_selection": false</code> 
-                                                to your transcription API requests.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </details>
-                            </div>
-                                </div>
-                            </transition>
-                        </div>
-                        
-                        <!-- Course Stats -->
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                            <div class="bg-gray-50 rounded-lg p-4">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm font-medium text-gray-600">Total Segments</p>
-                                        <p class="text-lg font-semibold text-gray-900">
-                                            {{ courseStats ? courseStats.course_info.total_segments : totalSegments }}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-blue-50 rounded-lg p-4">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm font-medium text-blue-600">Audio Extracted</p>
-                                        <div v-if="courseStats">
-                                            <p class="text-lg font-semibold text-blue-900">
-                                                {{ courseStats.audio_extraction.completed_segments }} / {{ courseStats.audio_extraction.total_segments }}
-                                            </p>
-                                            <p class="text-xs text-blue-600">
-                                                {{ courseStats.audio_extraction.completion_percentage }}%
-                                            </p>
-                                        </div>
-                                        <p v-else class="text-lg font-semibold text-blue-900">Loading...</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-emerald-50 rounded-lg p-4">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm font-medium text-emerald-600">Transcribed</p>
-                                        <div v-if="courseStats">
-                                            <p class="text-lg font-semibold text-emerald-900">
-                                                {{ courseStats.transcription.completed_segments }} / {{ courseStats.transcription.total_segments }}
-                                            </p>
-                                            <p class="text-xs text-emerald-600">
-                                                {{ courseStats.transcription.completion_percentage }}%
-                                            </p>
-                                        </div>
-                                        <p v-else class="text-lg font-semibold text-emerald-900">Loading...</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-purple-50 rounded-lg p-4">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm font-medium text-purple-600">Quality Score</p>
-                                        <div v-if="courseStats && courseStats.transcription.avg_quality_score">
-                                            <p class="text-lg font-semibold text-purple-900">
-                                                {{ courseStats.transcription.avg_quality_score }}
-                                            </p>
-                                            <p class="text-xs text-purple-600">
-                                                Avg confidence
-                                            </p>
-                                        </div>
-                                        <p v-else class="text-lg font-semibold text-purple-900">
-                                            {{ courseStats ? 'N/A' : 'Loading...' }}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Processing Performance Summary -->
-                        <div v-if="courseStats && courseStats.summary" class="bg-gradient-to-r from-gray-50 to-blue-50 border border-gray-200 rounded-lg p-6 mb-6">
-                            <h4 class="text-lg font-semibold text-gray-900 mb-4">📊 Processing Performance Summary</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div class="bg-white rounded-lg p-4 border">
-                                    <div class="flex items-center justify-between">
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-600">Overall Progress</p>
-                                            <p class="text-2xl font-bold text-blue-600">{{ courseStats.summary.overall_completion_percentage }}%</p>
-                                        </div>
-                                        <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                            </svg>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="bg-white rounded-lg p-4 border" v-if="courseStats.transcription.total_processing_time_minutes">
-                                    <div class="flex items-center justify-between">
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-600">Total Processing Time</p>
-                                            <p class="text-2xl font-bold text-emerald-600">{{ courseStats.transcription.total_processing_time_minutes }}m</p>
-                                        </div>
-                                        <div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
-                                            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                            </svg>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="bg-white rounded-lg p-4 border" v-if="courseStats.summary.estimated_remaining_time_minutes">
-                                    <div class="flex items-center justify-between">
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-600">Est. Remaining Time</p>
-                                            <p class="text-2xl font-bold text-purple-600">{{ courseStats.summary.estimated_remaining_time_minutes }}m</p>
-                                        </div>
-                                        <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                                            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                            </svg>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="bg-white rounded-lg p-4 border" v-if="courseStats.summary.ready_for_transcription > 0">
-                                    <div class="flex items-center justify-between">
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-600">Ready for Transcription</p>
-                                            <p class="text-2xl font-bold text-orange-600">{{ courseStats.summary.ready_for_transcription }}</p>
-                                        </div>
-                                        <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                                            <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                                            </svg>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Recent batch jobs if available -->
-                            <div v-if="courseStats.recent_batch_jobs && courseStats.recent_batch_jobs.length > 0" class="mt-6">
-                                <h5 class="text-sm font-semibold text-gray-700 mb-3">Recent Batch Jobs</h5>
-                                <div class="space-y-2">
-                                    <div v-for="job in courseStats.recent_batch_jobs.slice(0, 3)" :key="job.job_id" 
-                                         class="flex items-center justify-between p-3 bg-white rounded border">
-                                        <div class="flex items-center space-x-3">
-                                            <div class="w-2 h-2 rounded-full" 
-                                                 :class="{
-                                                     'bg-green-500': job.status === 'completed',
-                                                     'bg-blue-500': job.status === 'processing',
-                                                     'bg-red-500': job.status === 'failed',
-                                                     'bg-yellow-500': job.status === 'completed_with_errors'
-                                                 }">
-                                            </div>
-                                            <div>
-                                                <p class="text-sm font-medium text-gray-900">{{ job.job_id }}</p>
-                                                <p class="text-xs text-gray-500">{{ new Date(job.started_at).toLocaleDateString() }}</p>
-                                            </div>
-                                        </div>
-                                        <div class="text-right">
-                                            <p class="text-sm font-medium text-gray-900">{{ job.processed_segments || 0 }} segments</p>
-                                            <p class="text-xs text-gray-500" v-if="job.duration_minutes">{{ job.duration_minutes }}m</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Quick Actions Guide -->
-                        <div class="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg p-6">
-                            <h4 class="text-lg font-semibold text-indigo-900 mb-3">🚀 Intelligent Course Processing Workflow</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="flex items-start space-x-3">
-                                    <div class="flex-shrink-0 w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center text-white text-sm font-bold">1</div>
-                                    <div>
-                                        <h5 class="font-medium text-emerald-900">Intelligent Batch Processing</h5>
-                                        <p class="text-sm text-emerald-700">System automatically optimizes audio extraction and transcription quality across all course segments with intelligent selection.</p>
-                                    </div>
-                                </div>
-                                <div class="flex items-start space-x-3">
-                                    <div class="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold">2</div>
-                                    <div>
-                                        <h5 class="font-medium text-purple-900">Monitor & Review</h5>
-                                        <p class="text-sm text-purple-700">Track real-time processing progress and review individual segment quality metrics as needed.</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -1659,11 +1090,112 @@ const showTranscriptionConfirm = ref(false);
                             </div>
                             <div class="flex items-center space-x-4">
                                 <div class="text-sm text-gray-500">
-                                    {{ segmentsWithSignedUrls.length }} segments available
+                                    {{ filteredSegments.length }} of {{ segmentsWithSignedUrls.length }} segments
                                 </div>
                                 <div class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">
                                     Course {{ props.course.id }}
                                 </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Search and Filter Controls -->
+                        <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div class="flex flex-col lg:flex-row lg:items-end lg:space-x-4 space-y-4 lg:space-y-0">
+                                <!-- Search Input -->
+                                <div class="flex-1">
+                                    <label for="search" class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                                    <div class="relative">
+                                        <input
+                                            id="search"
+                                            v-model="searchQuery"
+                                            type="text"
+                                            placeholder="Search by ID, title, or channel..."
+                                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        />
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Status Filter -->
+                                <div class="lg:w-48">
+                                    <label for="status-filter" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                    <select
+                                        id="status-filter"
+                                        v-model="statusFilter"
+                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="">All Statuses</option>
+                                        <option v-for="status in availableStatuses" :key="status" :value="status">
+                                            {{ status.charAt(0).toUpperCase() + status.slice(1) }}
+                                        </option>
+                                    </select>
+                                </div>
+                                
+                                <!-- Quality Filter -->
+                                <div class="lg:w-40">
+                                    <label for="quality-filter" class="block text-sm font-medium text-gray-700 mb-1">Quality</label>
+                                    <select
+                                        id="quality-filter"
+                                        v-model="qualityFilter"
+                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="">All Grades</option>
+                                        <option value="A">A Grade</option>
+                                        <option value="B">B Grade</option>
+                                        <option value="C">C Grade</option>
+                                        <option value="D">D Grade</option>
+                                        <option value="F">F Grade</option>
+                                        <option value="P">P Grade (Performance)</option>
+                                        <option value="no-data">No Data</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- Clear Filters Button -->
+                                <div class="lg:w-auto">
+                                    <button
+                                        @click="clearFilters"
+                                        :disabled="!searchQuery && !statusFilter && !qualityFilter"
+                                        class="w-full lg:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                                    >
+                                        <svg class="w-4 h-4 mr-1.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Active Filters Display -->
+                            <div v-if="searchQuery || statusFilter || qualityFilter" class="mt-3 flex flex-wrap gap-2">
+                                <span class="text-xs text-gray-600 font-medium">Active filters:</span>
+                                <span v-if="searchQuery" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    Search: "{{ searchQuery }}"
+                                    <button @click="searchQuery = ''" class="ml-1.5 h-3 w-3 rounded-full inline-flex items-center justify-center text-blue-400 hover:bg-blue-200 hover:text-blue-600">
+                                        <svg class="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
+                                            <path stroke-linecap="round" stroke-width="1.5" d="m1 1 6 6m0-6L1 7" />
+                                        </svg>
+                                    </button>
+                                </span>
+                                <span v-if="statusFilter" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Status: {{ statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1) }}
+                                    <button @click="statusFilter = ''" class="ml-1.5 h-3 w-3 rounded-full inline-flex items-center justify-center text-green-400 hover:bg-green-200 hover:text-green-600">
+                                        <svg class="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
+                                            <path stroke-linecap="round" stroke-width="1.5" d="m1 1 6 6m0-6L1 7" />
+                                        </svg>
+                                    </button>
+                                </span>
+                                <span v-if="qualityFilter" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                    Quality: {{ qualityFilter === 'no-data' ? 'No Data' : qualityFilter + ' Grade' }}
+                                    <button @click="qualityFilter = ''" class="ml-1.5 h-3 w-3 rounded-full inline-flex items-center justify-center text-purple-400 hover:bg-purple-200 hover:text-purple-600">
+                                        <svg class="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
+                                            <path stroke-linecap="round" stroke-width="1.5" d="m1 1 6 6m0-6L1 7" />
+                                        </svg>
+                                    </button>
+                                </span>
                             </div>
                         </div>
                         
@@ -1675,13 +1207,13 @@ const showTranscriptionConfirm = ref(false);
                                             Segment
                                         </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Channel
-                                        </th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Title
                                         </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Processing Status
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Quality Score
                                         </th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Actions
@@ -1689,17 +1221,14 @@ const showTranscriptionConfirm = ref(false);
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="segment in segmentsWithSignedUrls" :key="segment.id" class="hover:bg-gray-50">
+                                    <tr v-for="segment in filteredSegments" :key="segment.id" class="hover:bg-gray-50">
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="text-sm font-medium text-gray-900">{{ segment.id }}</div>
                                             <div class="text-xs text-gray-500">Segment ID</div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm font-medium text-gray-900">{{ segment.channel_name }}</div>
-                                            <div class="text-xs text-gray-500">ID: {{ segment.channel_id }}</div>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="text-sm text-gray-900">{{ segment.title }}</div>
+                                            <div class="text-xs text-gray-500">{{ segment.channel_name }} (ID: {{ segment.channel_id }})</div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center space-x-2">
@@ -1717,6 +1246,47 @@ const showTranscriptionConfirm = ref(false);
                                                 </div>
                                             </div>
                                         </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div v-if="segment.quality_data && segment.quality_data.has_data" class="flex items-center space-x-2">
+                                                <!-- Grade Badge -->
+                                                <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white" :class="{
+                                                    'bg-green-500': segment.quality_data.grade_color === 'green',
+                                                    'bg-blue-500': segment.quality_data.grade_color === 'blue',
+                                                    'bg-yellow-500': segment.quality_data.grade_color === 'yellow',
+                                                    'bg-orange-500': segment.quality_data.grade_color === 'orange',
+                                                    'bg-red-500': segment.quality_data.grade_color === 'red',
+                                                    'bg-purple-500': segment.quality_data.grade_color === 'purple'
+                                                }">
+                                                    {{ segment.quality_data.grade.length > 1 ? segment.quality_data.grade.charAt(0) : segment.quality_data.grade }}
+                                                </div>
+                                                
+                                                <!-- Quality Details -->
+                                                <div class="flex flex-col">
+                                                    <div class="flex items-center space-x-1">
+                                                        <span class="text-xs font-medium text-gray-700">{{ (segment.quality_data.confidence * 100).toFixed(0) }}%</span>
+                                                        <span class="text-xs text-gray-500">conf</span>
+                                                    </div>
+                                                    <div class="flex items-center space-x-1">
+                                                        <span class="text-xs font-medium text-purple-600">{{ segment.quality_data.music_terms_count }}</span>
+                                                        <span class="text-xs text-gray-500">terms</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Teaching Pattern Badge if available -->
+                                                <div v-if="segment.quality_data.teaching_pattern" class="ml-2">
+                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800" 
+                                                          :title="'Teaching pattern: ' + segment.quality_data.teaching_pattern.type">
+                                                        {{ getPatternIcon(segment.quality_data.teaching_pattern.type) }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div v-else-if="segment.processing_status.status === 'completed'" class="text-xs text-gray-500">
+                                                No quality data
+                                            </div>
+                                            <div v-else class="text-xs text-gray-400">
+                                                Not processed
+                                            </div>
+                                        </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <Link
                                                 :href="route('truefire-courses.segments.show', [props.course.id, segment.id])"
@@ -1732,6 +1302,30 @@ const showTranscriptionConfirm = ref(false);
                                     </tr>
                                 </tbody>
                             </table>
+                            
+                            <!-- No Results Message -->
+                            <div v-if="filteredSegments.length === 0" class="text-center py-12">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                                <h3 class="mt-2 text-sm font-medium text-gray-900">No segments found</h3>
+                                <p class="mt-1 text-sm text-gray-500">
+                                    <span v-if="searchQuery || statusFilter || qualityFilter">
+                                        Try adjusting your search criteria or clear the filters.
+                                    </span>
+                                    <span v-else>
+                                        This course doesn't have any segments yet.
+                                    </span>
+                                </p>
+                                <div v-if="searchQuery || statusFilter || qualityFilter" class="mt-6">
+                                    <button
+                                        @click="clearFilters"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                    >
+                                        Clear all filters
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -48,8 +48,8 @@ class TeachingPatternAnalyzer:
             'back_speech_ratio': 0.3,      # Speech heavy at end
         },
         'performance': {
-            'non_speech_ratio_min': 0.80,  # 80%+ playing
-            'speech_segments_max': 3,      # Very few speech segments
+            'non_speech_ratio_min': 0.70,  # 70%+ playing (lowered from 80%)
+            'speech_segments_max': 4,      # Very few speech segments (increased slightly)
         }
     }
     
@@ -198,14 +198,39 @@ class TeachingPatternAnalyzer:
         }
     
     def _count_alternation_cycles(self, segments: List[Dict]) -> int:
-        """Count speech-silence-speech cycles indicating instructional patterns."""
-        if len(segments) < 3:
+        """Count real teaching cycles: Explanation → Demonstration → Explanation patterns."""
+        if len(segments) < 2:
             return 0
         
         cycles = 0
-        # Simple heuristic: count segments as indication of alternation
-        # In real implementation, would analyze pause gaps between segments
-        return max(0, len(segments) - 2)  # Each additional segment suggests alternation
+        
+        # Analyze gaps between segments to detect teaching cycles
+        for i in range(len(segments) - 1):
+            current_segment = segments[i]
+            next_segment = segments[i + 1]
+            
+            current_end = current_segment.get('end', 0)
+            next_start = next_segment.get('start', 0)
+            gap_duration = next_start - current_end
+            
+            # A real teaching cycle has:
+            # 1. Meaningful gap (>2 seconds) between speech segments (for demonstration)
+            # 2. Both segments have substantial content (>3 seconds each)
+            # 3. Gap is long enough to include guitar playing (>5 seconds for instruction)
+            
+            current_duration = current_segment.get('end', 0) - current_segment.get('start', 0)
+            next_duration = next_segment.get('end', 0) - next_segment.get('start', 0)
+            
+            # Teaching cycle criteria:
+            if (gap_duration >= 5.0 and          # Meaningful demonstration time
+                current_duration >= 3.0 and      # Substantial explanation
+                next_duration >= 3.0):           # Substantial follow-up explanation
+                cycles += 1
+            
+            # Performance videos have very short announcements with long gaps
+            # but this shouldn't count as teaching cycles
+        
+        return cycles
     
     def _analyze_speech_distribution(self, segments: List[Dict], total_duration: float) -> Tuple[float, float]:
         """Analyze how speech is distributed across the lesson."""

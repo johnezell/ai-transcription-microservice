@@ -419,25 +419,33 @@ class TruefireCourseController extends Controller
                         $musicTerms = $this->extractMusicTermsCount($transcriptData);
                         $musicTermsCount += $musicTerms;
                         
-                        // Categorize segment quality
-                        $segmentGrade = $this->calculateSegmentGrade($segmentConfidence, $segmentQuality, $musicTerms);
+                        // Detect if this is a performance video and grade accordingly
+                        $segmentGrade = $this->calculateSegmentGrade($segmentConfidence, $segmentQuality, $musicTerms, $transcriptData);
                         $segmentQualities[] = $segmentGrade;
                         
-                        // Update distribution
-                        switch ($segmentGrade['grade']) {
-                            case 'A':
-                                $qualityDistribution['excellent']++;
-                                break;
-                            case 'B':
-                                $qualityDistribution['good']++;
-                                break;
-                            case 'C':
-                                $qualityDistribution['fair']++;
-                                break;
-                            case 'D':
-                            case 'F':
-                                $qualityDistribution['poor']++;
-                                break;
+                        // Update distribution (exclude performance videos from main quality calculation)
+                        if ($segmentGrade['grade'] !== 'P') {
+                            switch ($segmentGrade['grade']) {
+                                case 'A':
+                                    $qualityDistribution['excellent']++;
+                                    break;
+                                case 'B':
+                                    $qualityDistribution['good']++;
+                                    break;
+                                case 'C':
+                                    $qualityDistribution['fair']++;
+                                    break;
+                                case 'D':
+                                case 'F':
+                                    $qualityDistribution['poor']++;
+                                    break;
+                            }
+                        } else {
+                            // Track performance videos separately
+                            if (!isset($qualityDistribution['performance'])) {
+                                $qualityDistribution['performance'] = 0;
+                            }
+                            $qualityDistribution['performance']++;
                         }
                         
                         // Extract teaching patterns
@@ -462,13 +470,19 @@ class TruefireCourseController extends Controller
         $averageQuality = !empty($qualityScores) ? array_sum($qualityScores) / count($qualityScores) : null;
         $completionRate = ($completedProcessing->count() / $allSegments->count()) * 100;
         
-        // Calculate overall grade using weighted scoring
+        // Filter out performance videos for main grading calculation
+        $instructionalSegments = array_filter($segmentQualities, function($segment) {
+            return $segment['grade'] !== 'P' && !str_starts_with($segment['grade'], 'P');
+        });
+        
+        // Calculate overall grade using weighted scoring (excluding performance videos)
         $overallGrade = $this->calculateOverallCourseGrade(
             $averageConfidence,
             $averageQuality,
             $musicTermsCount,
-            $completedProcessing->count(),
-            $qualityDistribution
+            count($instructionalSegments), // Only count instructional segments
+            $qualityDistribution,
+            $segmentQualities // Pass all segments for analysis
         );
         
         // Generate recommendations
@@ -491,6 +505,7 @@ class TruefireCourseController extends Controller
             'average_confidence' => $averageConfidence,
             'music_terms_found' => $musicTermsCount,
             'quality_distribution' => $qualityDistribution,
+            'performance_videos_count' => $qualityDistribution['performance'] ?? 0,
             'teaching_patterns' => $this->aggregateTeachingPatterns($teachingPatterns),
             'recommendations' => $recommendations,
             'segment_grades' => $segmentQualities
@@ -562,10 +577,38 @@ class TruefireCourseController extends Controller
     }
     
     /**
-     * Calculate grade for individual segment
+     * Calculate grade for individual segment with performance video detection
      */
-    private function calculateSegmentGrade($confidence, $quality, $musicTerms)
+    private function calculateSegmentGrade($confidence, $quality, $musicTerms, $transcriptData = null)
     {
+        // ENHANCED: Detect performance videos first
+        $isPerformanceVideo = $this->detectPerformanceVideo($transcriptData, $confidence, $musicTerms);
+        
+        if ($isPerformanceVideo) {
+            // Performance videos get special "P" grading
+            $totalWords = $this->extractTotalWordsFromTranscript($transcriptData);
+            
+            if ($totalWords === 0) {
+                // Pure instrumental performance
+                return ['grade' => 'P', 'color' => 'purple', 'score' => 1.0, 'description' => 'Performance Video (Instrumental)'];
+            } else if ($totalWords < 20) {
+                // Minimal speech performance
+                if ($confidence && $confidence >= 0.7) {
+                    return ['grade' => 'P', 'color' => 'purple', 'score' => 1.0, 'description' => 'Performance Video (Minimal Speech - Good Quality)'];
+                } else {
+                    return ['grade' => 'P-', 'color' => 'purple', 'score' => 0.8, 'description' => 'Performance Video (Minimal Speech - Low Quality)'];
+                }
+            } else {
+                // Performance with some instruction
+                if ($confidence && $confidence >= 0.75) {
+                    return ['grade' => 'P+', 'color' => 'purple', 'score' => 1.0, 'description' => 'Performance Video (With Good Instruction)'];
+                } else {
+                    return ['grade' => 'P', 'color' => 'purple', 'score' => 0.9, 'description' => 'Performance Video (With Instruction)'];
+                }
+            }
+        }
+        
+        // STANDARD GRADING for instructional videos
         $score = 0;
         $weights = 0;
         
@@ -590,26 +633,84 @@ class TruefireCourseController extends Controller
         // Normalize score
         $finalScore = $weights > 0 ? $score / $weights : 0.75; // Default to B grade
         
-        // Convert to grade
-        if ($finalScore >= 0.85) return ['grade' => 'A', 'color' => 'green', 'score' => $finalScore];
-        if ($finalScore >= 0.75) return ['grade' => 'B', 'color' => 'blue', 'score' => $finalScore];
-        if ($finalScore >= 0.65) return ['grade' => 'C', 'color' => 'yellow', 'score' => $finalScore];
-        if ($finalScore >= 0.55) return ['grade' => 'D', 'color' => 'orange', 'score' => $finalScore];
-        return ['grade' => 'F', 'color' => 'red', 'score' => $finalScore];
+        // Convert to grade with realistic transcription scale
+        if ($finalScore >= 0.85) return ['grade' => 'A', 'color' => 'green', 'score' => $finalScore, 'description' => 'Excellent transcription quality'];
+        if ($finalScore >= 0.75) return ['grade' => 'B', 'color' => 'blue', 'score' => $finalScore, 'description' => 'Good transcription quality'];
+        if ($finalScore >= 0.65) return ['grade' => 'C', 'color' => 'yellow', 'score' => $finalScore, 'description' => 'Fair transcription quality'];
+        if ($finalScore >= 0.55) return ['grade' => 'D', 'color' => 'orange', 'score' => $finalScore, 'description' => 'Poor transcription quality'];
+        return ['grade' => 'F', 'color' => 'red', 'score' => $finalScore, 'description' => 'Failed transcription quality'];
     }
     
     /**
-     * Calculate overall course grade
+     * Detect if a segment is a performance video (minimal speech content)
      */
-    private function calculateOverallCourseGrade($averageConfidence, $averageQuality, $musicTermsTotal, $completedSegments, $distribution)
+    private function detectPerformanceVideo($transcriptData, $confidence, $musicTerms)
     {
-        // If less than 20% completion, return incomplete
-        $completionRatio = $completedSegments > 0 ? 1 : 0;
-        if ($completionRatio < 0.2) {
+        if (!$transcriptData) return false;
+        
+        // Extract metrics for performance detection
+        $totalWords = $this->extractTotalWordsFromTranscript($transcriptData);
+        $speechActivity = $transcriptData['speech_activity'] ?? null;
+        $teachingPattern = $transcriptData['teaching_patterns']['content_classification']['primary_type'] ?? null;
+        
+        // Performance video indicators
+        $speechRatio = $speechActivity['speech_activity_ratio'] ?? 1.0;
+        $duration = $speechActivity['total_duration_seconds'] ?? 60;
+        $wordsPerMinute = $duration > 0 ? ($totalWords / ($duration / 60)) : 0;
+        
+        // Performance criteria (same as frontend logic for consistency)
+        $lowSpeechActivity = $speechRatio < 0.3; // Less than 30% speech
+        $veryFewWords = $totalWords < 50; // Less than 50 words total
+        $lowWordRate = $wordsPerMinute < 20; // Less than 20 words per minute
+        $isPerformancePattern = $teachingPattern === 'performance';
+        
+        // Classify as performance if multiple indicators present
+        return ($lowSpeechActivity && ($veryFewWords || $lowWordRate)) || $isPerformancePattern;
+    }
+    
+    /**
+     * Extract total word count from transcript data
+     */
+    private function extractTotalWordsFromTranscript($transcriptData)
+    {
+        if (!$transcriptData || !isset($transcriptData['segments'])) return 0;
+        
+        $totalWords = 0;
+        foreach ($transcriptData['segments'] as $segment) {
+            if (isset($segment['words']) && is_array($segment['words'])) {
+                $totalWords += count($segment['words']);
+            }
+        }
+        
+        return $totalWords;
+    }
+    
+    /**
+     * Calculate overall course grade (excluding performance videos from main calculation)
+     */
+    private function calculateOverallCourseGrade($averageConfidence, $averageQuality, $musicTermsTotal, $instructionalSegments, $distribution, $allSegments = [])
+    {
+        // Check if we have enough instructional content for grading
+        $performanceCount = $distribution['performance'] ?? 0;
+        $totalInstructionalSegments = array_sum(array_filter($distribution, function($key) {
+            return $key !== 'performance';
+        }, ARRAY_FILTER_USE_KEY));
+        
+        // If mostly performance videos, return special grade
+        if ($performanceCount > 0 && $totalInstructionalSegments < 3) {
+            return [
+                'grade' => 'P',
+                'color' => 'purple',
+                'description' => 'Performance-focused course with limited instructional content'
+            ];
+        }
+        
+        // If insufficient instructional segments for grading
+        if ($instructionalSegments < 1) {
             return [
                 'grade' => 'N/A',
                 'color' => 'gray',
-                'description' => 'Insufficient data for quality assessment'
+                'description' => 'Insufficient instructional content for quality assessment'
             ];
         }
         
@@ -628,11 +729,10 @@ class TruefireCourseController extends Controller
             $weights += 0.35;
         }
         
-        // Distribution bonus (15% weight) - reward consistent quality
-        $totalSegments = array_sum($distribution);
-        if ($totalSegments > 0) {
-            $excellentRatio = $distribution['excellent'] / $totalSegments;
-            $goodRatio = $distribution['good'] / $totalSegments;
+        // Distribution bonus (15% weight) - reward consistent quality (excluding performance videos)
+        if ($totalInstructionalSegments > 0) {
+            $excellentRatio = $distribution['excellent'] / $totalInstructionalSegments;
+            $goodRatio = $distribution['good'] / $totalInstructionalSegments;
             $distributionScore = ($excellentRatio * 1.0) + ($goodRatio * 0.8);
             $score += $distributionScore * 0.15;
             $weights += 0.15;
@@ -646,40 +746,43 @@ class TruefireCourseController extends Controller
         
         $finalScore = $weights > 0 ? $score / $weights : 0.75;
         
+        // Enhanced descriptions that acknowledge performance content
+        $performanceNote = $performanceCount > 0 ? " (excludes {$performanceCount} performance videos)" : "";
+        
         // Convert to grade with descriptions
         if ($finalScore >= 0.85) {
             return [
                 'grade' => 'A',
                 'color' => 'green',
-                'description' => 'Excellent overall transcription quality'
+                'description' => 'Excellent overall transcription quality' . $performanceNote
             ];
         }
         if ($finalScore >= 0.75) {
             return [
                 'grade' => 'B',
                 'color' => 'blue',
-                'description' => 'Good overall transcription quality'
+                'description' => 'Good overall transcription quality' . $performanceNote
             ];
         }
         if ($finalScore >= 0.65) {
             return [
                 'grade' => 'C',
                 'color' => 'yellow',
-                'description' => 'Fair overall transcription quality'
+                'description' => 'Fair overall transcription quality' . $performanceNote
             ];
         }
         if ($finalScore >= 0.55) {
             return [
                 'grade' => 'D',
                 'color' => 'orange',
-                'description' => 'Poor overall transcription quality'
+                'description' => 'Poor overall transcription quality' . $performanceNote
             ];
         }
         
         return [
             'grade' => 'F',
             'color' => 'red',
-            'description' => 'Failed overall transcription quality'
+            'description' => 'Failed overall transcription quality' . $performanceNote
         ];
     }
     
@@ -788,6 +891,72 @@ class TruefireCourseController extends Controller
         
         return $recommendations;
     }
+    
+    /**
+     * Get quality data for a specific segment
+     */
+    private function getSegmentQualityData($processing, $courseId)
+    {
+        try {
+            // Try to find transcript JSON file
+            $transcriptPath = $processing->transcript_json_path;
+            
+            // If no path in database, try expected locations
+            if (!$transcriptPath || !file_exists($transcriptPath)) {
+                $expectedPaths = [
+                    "/mnt/d_drive/truefire-courses/{$courseId}/{$processing->segment_id}_transcript.json",
+                    "/var/www/html/storage/transcripts/{$processing->segment_id}_transcript.json",
+                    "/tmp/transcripts/{$processing->segment_id}_transcript.json"
+                ];
+                
+                foreach ($expectedPaths as $path) {
+                    if (file_exists($path)) {
+                        $transcriptPath = $path;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$transcriptPath || !file_exists($transcriptPath)) {
+                return null;
+            }
+            
+            $transcriptData = json_decode(file_get_contents($transcriptPath), true);
+            if (!$transcriptData) {
+                return null;
+            }
+            
+            // Extract metrics
+            $confidence = $this->extractSegmentConfidence($transcriptData);
+            $quality = $this->extractSegmentQualityScore($transcriptData);
+            $musicTerms = $this->extractMusicTermsCount($transcriptData);
+            
+            // Calculate grade
+            $grade = $this->calculateSegmentGrade($confidence, $quality, $musicTerms);
+            
+            // Extract teaching pattern if available
+            $teachingPattern = $this->extractTeachingPatterns($transcriptData);
+            
+            return [
+                'confidence' => $confidence,
+                'quality_score' => $quality,
+                'music_terms_count' => $musicTerms,
+                'grade' => $grade['grade'],
+                'grade_color' => $grade['color'],
+                'grade_score' => $grade['score'],
+                'teaching_pattern' => $teachingPattern,
+                'has_data' => true
+            ];
+            
+        } catch (\Exception $e) {
+            Log::warning('Failed to get segment quality data', [
+                'segment_id' => $processing->segment_id,
+                'course_id' => $courseId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
 
     /**
      * Display the specified TrueFire course.
@@ -858,6 +1027,12 @@ class TruefireCourseController extends Controller
                     $processing = $processingRecords->get($segment->id);
                     $processingStatus = $this->getSegmentProcessingStatus($processing);
 
+                    // Get quality metrics for completed segments
+                    $qualityData = null;
+                    if ($processing && $processing->status === 'completed') {
+                        $qualityData = $this->getSegmentQualityData($processing, $truefireCourse->id);
+                    }
+
                     $segmentData = [
                         'id' => $segment->id,
                         'channel_id' => $channel->id,
@@ -869,6 +1044,7 @@ class TruefireCourseController extends Controller
                         'file_size' => $isDownloaded ? Storage::disk($disk)->size($newFilePath) : null,
                         'downloaded_at' => $isDownloaded ? Storage::disk($disk)->lastModified($newFilePath) : null,
                         'processing_status' => $processingStatus,
+                        'quality_data' => $qualityData,
                     ];
                     
                     if ($urlError) {

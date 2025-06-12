@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use App\Services\HostAwareUrlService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -18,6 +19,14 @@ class AppServiceProvider extends ServiceProvider
                 return new \App\Queue\Connectors\PriorityDatabaseConnector($this->app['db']);
             });
         });
+
+        // Register the HostAwareUrlService
+        $this->app->singleton(HostAwareUrlService::class, function ($app) {
+            return new HostAwareUrlService();
+        });
+        
+        // Register alias for easier access
+        $this->app->alias(HostAwareUrlService::class, 'host-aware-url');
     }
 
     /**

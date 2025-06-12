@@ -12,6 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Force HTTPS middleware for ngrok proxy handling - MUST be first
+        $middleware->prepend(\App\Http\Middleware\ForceHttpsMiddleware::class);
+        
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,

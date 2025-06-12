@@ -8,9 +8,18 @@ use App\Models\LocalTruefireCourse;
 use App\Models\TruefireSegmentProcessing;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use App\Services\HostAwareUrlService;
 
 class TruefireSegmentController extends Controller
 {
+    protected $urlService;
+
+    public function __construct(HostAwareUrlService $urlService)
+    {
+        $this->urlService = $urlService;
+    }
+
     /**
      * Get the status of a TrueFire course segment processing
      */
@@ -619,7 +628,7 @@ class TruefireSegmentController extends Controller
                 if ($audioPath) {
                     $relativePath = str_replace(storage_path('app/public/'), '', $audioPath);
                     $processing->update([
-                        'audio_url' => asset('storage/' . $relativePath)
+                        'audio_url' => $this->urlService->storageUrl($relativePath)
                     ]);
                 }
 
@@ -763,17 +772,17 @@ class TruefireSegmentController extends Controller
                 // Generate URLs
                 if ($transcriptPath) {
                     $relativePath = str_replace(storage_path('app/public/'), '', $transcriptPath);
-                    $processing->update(['transcript_url' => asset('storage/' . $relativePath)]);
+                    $processing->update(['transcript_url' => $this->urlService->storageUrl($relativePath)]);
                 }
 
                 if ($transcriptJsonPath) {
                     $relativePath = str_replace(storage_path('app/public/'), '', $transcriptJsonPath);
-                    $processing->update(['transcript_json_url' => asset('storage/' . $relativePath)]);
+                    $processing->update(['transcript_json_url' => $this->urlService->storageUrl($relativePath)]);
                 }
 
                 if ($subtitlesPath) {
                     $relativePath = str_replace(storage_path('app/public/'), '', $subtitlesPath);
-                    $processing->update(['subtitles_url' => asset('storage/' . $relativePath)]);
+                    $processing->update(['subtitles_url' => $this->urlService->storageUrl($relativePath)]);
                 }
 
                 // Store transcript JSON in database if available
@@ -909,7 +918,7 @@ class TruefireSegmentController extends Controller
                 // Generate terminology URL
                 if ($terminologyPath) {
                     $relativePath = str_replace(storage_path('app/public/'), '', $terminologyPath);
-                    $processing->update(['terminology_url' => asset('storage/' . $relativePath)]);
+                    $processing->update(['terminology_url' => $this->urlService->storageUrl($relativePath)]);
                 }
 
                 Log::info('TrueFire segment terminology recognition completed', [

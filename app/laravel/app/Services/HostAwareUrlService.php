@@ -40,20 +40,53 @@ class HostAwareUrlService
     }
 
     /**
-     * Get the base URL based on current host
+     * Detect if current request is using HTTPS
+     */
+    public function isSecure(): bool
+    {
+        return $this->request->isSecure() || 
+               $this->request->header('X-Forwarded-Proto') === 'https' ||
+               $this->request->header('X-Forwarded-Ssl') === 'on';
+    }
+
+    /**
+     * Get the base URL based on current host and protocol
      */
     public function getBaseUrl(): string
     {
         $hostType = $this->detectHost();
+        $isSecure = $this->isSecure();
         
-        // Try to get from APP_URL first
+        // For ngrok, use the actual request host instead of hardcoded fallback
+        if ($hostType === 'ngrok') {
+            $scheme = $isSecure ? 'https' : 'http';
+            $host = $this->request->getHost();
+            return $scheme . '://' . $host;
+        }
+        
+        // Try to get from APP_URL first and adjust protocol if needed
         $appUrl = config('app.url');
         if ($appUrl && $appUrl !== 'http://localhost') {
+            // Ensure protocol matches current request
+            if ($isSecure && str_starts_with($appUrl, 'http://')) {
+                return str_replace('http://', 'https://', $appUrl);
+            } elseif (!$isSecure && str_starts_with($appUrl, 'https://')) {
+                return str_replace('https://', 'http://', $appUrl);
+            }
             return $appUrl;
         }
         
-        // Fallback to detected host
-        return $this->fallbackUrls[$hostType];
+        // Fallback to detected host with proper protocol
+        $baseUrl = $this->fallbackUrls[$hostType];
+        
+        // Ensure protocol matches current request
+        if ($isSecure && str_starts_with($baseUrl, 'http://')) {
+            return str_replace('http://', 'https://', $baseUrl);
+        } elseif (!$isSecure && str_starts_with($baseUrl, 'https://')) {
+            return str_replace('https://', 'http://', $baseUrl);
+        }
+        
+        return $baseUrl;
     }
 
     /**
@@ -114,6 +147,21 @@ class HostAwareUrlService
     }
 
     /**
+     * Generate URL with host awareness (for general use)
+     */
+    public function url(string $path): string
+    {
+        $baseUrl = $this->getBaseUrl();
+        
+        // Ensure path starts with forward slash
+        if (!str_starts_with($path, '/')) {
+            $path = '/' . $path;
+        }
+        
+        return $baseUrl . $path;
+    }
+
+    /**
      * Check if current request is from ngrok
      */
     public function isNgrok(): bool
@@ -138,10 +186,17 @@ class HostAwareUrlService
             'detected_host_type' => $this->detectHost(),
             'current_host' => $this->request->getHost(),
             'current_url' => $this->request->url(),
+            'is_secure' => $this->isSecure(),
+            'protocol' => $this->isSecure() ? 'https' : 'http',
             'app_url' => config('app.url'),
             'base_url' => $this->getBaseUrl(),
             'is_ngrok' => $this->isNgrok(),
             'is_localhost' => $this->isLocalhost(),
+            'headers' => [
+                'x-forwarded-proto' => $this->request->header('X-Forwarded-Proto'),
+                'x-forwarded-ssl' => $this->request->header('X-Forwarded-Ssl'),
+                'host' => $this->request->header('Host'),
+            ]
         ];
     }
 } 

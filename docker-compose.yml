@@ -42,6 +42,11 @@ services:
       - AWS_BUCKET=tfstream
       # Custom ngrok domain (persistent URL)
       - APP_URL=https://transcriptions.ngrok.dev
+      # Force HTTPS for URL generation behind proxy
+      - FORCE_HTTPS=true
+      # Trust all proxies for Laravel 12
+      - TRUSTED_PROXIES=*
+      - TRUSTED_HEADERS=HEADER_X_FORWARDED_FOR,HEADER_X_FORWARDED_HOST,HEADER_X_FORWARDED_PORT,HEADER_X_FORWARDED_PROTO
 
   ngrok:
     image: ngrok/ngrok:latest

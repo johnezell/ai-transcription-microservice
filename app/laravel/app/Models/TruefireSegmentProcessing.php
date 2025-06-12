@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use App\Traits\HasHostAwareUrls;
 
 class TruefireSegmentProcessing extends Model
 {
-    use HasFactory;
+    use HasFactory, HasHostAwareUrls;
 
     protected $table = 'truefire_segment_processing';
 
@@ -109,7 +110,7 @@ class TruefireSegmentProcessing extends Model
             return null;
         }
         
-        return Storage::url($this->audio_path);
+        return $this->getStorageUrlWithFallback($this->audio_path);
     }
 
     /**
@@ -121,7 +122,7 @@ class TruefireSegmentProcessing extends Model
             return null;
         }
         
-        return Storage::url($this->transcript_path);
+        return $this->getStorageUrlWithFallback($this->transcript_path);
     }
 
     /**
@@ -139,7 +140,7 @@ class TruefireSegmentProcessing extends Model
             return null;
         }
         
-        return Storage::url($srtPath);
+        return $this->getStorageUrlWithFallback($srtPath);
     }
 
     /**
@@ -158,7 +159,7 @@ class TruefireSegmentProcessing extends Model
             return null;
         }
         
-        return Storage::url($jsonPath);
+        return $this->getStorageUrlWithFallback($jsonPath);
     }
 
     /**
@@ -170,7 +171,23 @@ class TruefireSegmentProcessing extends Model
             return null;
         }
         
-        return Storage::url($this->terminology_path);
+        return $this->getStorageUrlWithFallback($this->terminology_path);
+    }
+
+    /**
+     * Get API URL for transcript JSON data.
+     */
+    public function getTranscriptJsonApiUrlAttribute()
+    {
+        return $this->hostAwareApiUrl("/truefire-courses/{$this->course_id}/segments/{$this->segment_id}/transcript-json");
+    }
+
+    /**
+     * Get API URL for terminology JSON data.
+     */
+    public function getTerminologyJsonApiUrlAttribute()
+    {
+        return $this->hostAwareApiUrl("/truefire-courses/{$this->course_id}/segments/{$this->segment_id}/terminology-json");
     }
 
     /**

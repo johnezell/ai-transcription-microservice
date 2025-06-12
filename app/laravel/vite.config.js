@@ -20,9 +20,20 @@ export default defineConfig({
     server: {
         host: '0.0.0.0',
         port: 5173,
+        cors: {
+            origin: [
+                'http://localhost:8080',
+                'https://transcriptions.ngrok.dev',
+                /\.ngrok\.dev$/,
+                /\.ngrok-free\.app$/,
+                /\.ngrok\.io$/
+            ],
+            credentials: true
+        },
         hmr: {
-            host: 'localhost',
+            host: process.env.VITE_HMR_HOST || 'localhost',
             port: 5173,
+            clientPort: process.env.VITE_HMR_CLIENT_PORT || 5173
         },
         watch: {
             usePolling: true,

@@ -11,6 +11,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Request;
 
 /*
 |--------------------------------------------------------------------------
@@ -513,6 +514,30 @@ Route::get('/test-cache-tags', function () {
     }
 })->name('test.cache.tags');
 
-
+// Test endpoint for host detection and URL generation
+Route::get('/test-host-detection', function (Request $request) {
+    $urlService = app(\App\Services\HostAwareUrlService::class);
+    
+    return response()->json([
+        'host_info' => $urlService->getHostInfo(),
+        'test_urls' => [
+            'asset_example' => $urlService->asset('/css/app.css'),
+            'storage_example' => $urlService->storageUrl('example/file.jpg'),
+            'api_example' => $urlService->apiUrl('/test-endpoint'),
+            'route_example' => $urlService->route('truefire-courses.index'),
+        ],
+        'detection' => [
+            'is_ngrok' => $urlService->isNgrok(),
+            'is_localhost' => $urlService->isLocalhost(),
+            'detected_host_type' => $urlService->detectHost(),
+        ],
+        'request_info' => [
+            'host' => $request->getHost(),
+            'url' => $request->url(),
+            'full_url' => $request->fullUrl(),
+            'headers' => $request->headers->all(),
+        ]
+    ]);
+});
 
 require __DIR__.'/auth.php';

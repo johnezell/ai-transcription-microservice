@@ -4496,10 +4496,10 @@ def test_model_pure_llm(word_segments, model, confidence_threshold):
 def get_segment_from_database(segment_id):
     """Fetch segment data from Laravel database via API"""
     try:
-        # Use Laravel API to get segment data
+        # Use Laravel API to get segment data - using working endpoint
         laravel_base_url = os.getenv('LARAVEL_BASE_URL', 'http://laravel-app:80')
         response = requests.get(
-            f"{laravel_base_url}/api/segments/{segment_id}/transcript-data",
+            f"{laravel_base_url}/api/segments/{segment_id}/transcript-data-working",
             timeout=10
         )
         

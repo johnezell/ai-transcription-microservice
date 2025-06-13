@@ -1857,23 +1857,45 @@ class TruefireSegmentController extends Controller
     public function getSegmentTranscriptData($segmentId)
     {
         try {
+            Log::info("Getting segment transcript data for segment: $segmentId");
+            
             $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
             
-            if (!$processing || empty($processing->transcript_json)) {
+            if (!$processing) {
+                Log::warning("Segment processing record not found for segment: $segmentId");
                 return response()->json([
                     'success' => false,
-                    'message' => 'Segment not found or no transcript available'
+                    'message' => 'Segment not found'
+                ], 404);
+            }
+            
+            if (empty($processing->transcript_json)) {
+                Log::warning("Segment $segmentId found but no transcript data available");
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No transcript available'
                 ], 404);
             }
             
             $transcriptData = json_decode($processing->transcript_json, true);
             
-            if (!$transcriptData || !isset($transcriptData['word_segments'])) {
+            if (!$transcriptData) {
+                Log::error("Failed to decode JSON for segment $segmentId");
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid transcript data - JSON decode failed'
+                ], 400);
+            }
+            
+            if (!isset($transcriptData['word_segments'])) {
+                Log::error("Segment $segmentId transcript data missing word_segments field");
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid transcript data - no word segments found'
                 ], 400);
             }
+            
+            Log::info("Successfully retrieved transcript data for segment $segmentId with " . count($transcriptData['word_segments']) . " word segments");
             
             return response()->json([
                 'success' => true,
@@ -1886,7 +1908,8 @@ class TruefireSegmentController extends Controller
                 ]
             ]);
             
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
+            Log::error("Exception in getSegmentTranscriptData for segment $segmentId: " . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Error retrieving segment data',

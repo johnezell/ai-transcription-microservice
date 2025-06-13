@@ -573,8 +573,84 @@ Route::post('/courses/{truefireCourse}/transcription-test/{segmentId}', [Transcr
 Route::get('/transcription-test/results/{testId}', [TranscriptionTestController::class, 'getTestResults'])->name('api.transcription-test.results');
 
 // Test routes for model comparison and evaluation
-Route::post('/truefire-segments/test-guitar-term-model', [TruefireSegmentController::class, 'testGuitarTermEvaluation']);
-Route::post('/truefire-segments/compare-models', [TruefireSegmentController::class, 'compareModels']);
+Route::post('/truefire-segments/test-guitar-term-model', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testGuitarTermEvaluation']);
+Route::post('/truefire-segments/compare-models', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'compareModels']);
 
 // Segment transcript data endpoint for transcription service
-Route::get('/segments/{segmentId}/transcript-data', [TruefireSegmentController::class, 'getSegmentTranscriptData']);
+Route::get('/segments/{segmentId}/transcript-data', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getSegmentTranscriptData']);
+
+// DIAGNOSTIC: Simple test endpoint to debug segment data issue
+Route::get('/debug/segments/{segmentId}/basic-info', function($segmentId) {
+    try {
+        $processing = \App\Models\TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+        
+        if (!$processing) {
+            return response()->json(['error' => 'Segment not found', 'segment_id' => $segmentId]);
+        }
+        
+        $hasTranscript = !empty($processing->transcript_json);
+        $jsonValid = false;
+        $hasWordSegments = false;
+        $wordCount = 0;
+        
+        if ($hasTranscript) {
+            $transcriptData = json_decode($processing->transcript_json, true);
+            $jsonValid = ($transcriptData !== null);
+            if ($jsonValid && isset($transcriptData['word_segments'])) {
+                $hasWordSegments = true;
+                $wordCount = count($transcriptData['word_segments']);
+            }
+        }
+        
+        return response()->json([
+            'segment_id' => $segmentId,
+            'found' => true,
+            'has_transcript' => $hasTranscript,
+            'json_valid' => $jsonValid,
+            'has_word_segments' => $hasWordSegments,
+            'word_count' => $wordCount,
+            'course_id' => $processing->course_id,
+            'status' => $processing->status
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage(), 'segment_id' => $segmentId]);
+    }
+});
+
+// WORKING SEGMENT DATA ENDPOINT - Simplified version
+Route::get('/segments/{segmentId}/transcript-data-working', function($segmentId) {
+    try {
+        // Direct database query without models
+        $pdo = \DB::connection()->getPdo();
+        $stmt = $pdo->prepare("SELECT course_id, segment_id, status, transcript_json FROM truefire_segment_processing WHERE segment_id = ?");
+        $stmt->execute([$segmentId]);
+        $row = $stmt->fetch();
+        
+        if (!$row) {
+            return response()->json(['success' => false, 'message' => 'Segment not found'], 404);
+        }
+        
+        if (empty($row['transcript_json'])) {
+            return response()->json(['success' => false, 'message' => 'No transcript available'], 404);
+        }
+        
+        $transcriptData = json_decode($row['transcript_json'], true);
+        if (!$transcriptData || !isset($transcriptData['word_segments'])) {
+            return response()->json(['success' => false, 'message' => 'Invalid transcript data'], 400);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'segment_id' => $segmentId,
+            'transcription_result' => $transcriptData,
+            'segment_info' => [
+                'course_id' => $row['course_id'],
+                'status' => $row['status']
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+    }
+});

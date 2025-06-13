@@ -7,7 +7,6 @@ services:
     restart: unless-stopped
     ports:
       - "8080:80"
-      - "5173:5173"
     volumes:
       - ./app/laravel:/var/www
       - ./app/shared:/var/www/storage/app/public/s3:delegated
@@ -18,8 +17,8 @@ services:
     networks:
       - app-network
     environment:
-      - APP_ENV=local
-      - APP_DEBUG=true
+      - APP_ENV=production
+      - APP_DEBUG=false
       - DB_CONNECTION=sqlite
       - DB_DATABASE=/var/www/database/database.sqlite
       - CACHE_STORE=redis
@@ -47,6 +46,10 @@ services:
       # Trust all proxies for Laravel 12
       - TRUSTED_PROXIES=*
       - TRUSTED_HEADERS=HEADER_X_FORWARDED_FOR,HEADER_X_FORWARDED_HOST,HEADER_X_FORWARDED_PORT,HEADER_X_FORWARDED_PROTO
+      # Force Vite to use built assets instead of dev server
+      - VITE_BUILD_ONLY=true
+      - VITE_DEV_SERVER_ENABLED=false
+      - VITE_HOT_RELOAD=false
 
   ngrok:
     image: ngrok/ngrok:latest
@@ -128,7 +131,7 @@ services:
       - LARAVEL_API_URL=http://laravel/api
       # LLM Configuration for guitar term evaluation - Now using containerized Ollama
       - LLM_ENDPOINT=http://ollama-service:11434/api/generate
-      - LLM_MODEL=llama3:latest
+      - LLM_MODEL=llama3.1:8b-instruct
       - LLM_ENABLED=true
       # MODEL CACHE CONFIGURATION - Prevents re-downloading
       - WHISPERX_CACHE_DIR=/app/models

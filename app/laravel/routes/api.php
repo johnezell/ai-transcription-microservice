@@ -74,6 +74,11 @@ Route::prefix('truefire-courses/{courseId}/segments/{segmentId}')->group(functio
     Route::post('/terminology', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'triggerTerminology']);
     Route::post('/redo', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'redoProcessing']);
     
+    // Model testing endpoints for guitar term evaluation
+    Route::get('/available-models', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getAvailableModels']);
+    Route::post('/test-guitar-term-model', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testGuitarTermEvaluation']);
+    Route::post('/compare-models', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'compareModels']);
+    
     // Callback routes for service completion notifications
     Route::post('/audio-extraction-callback', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'audioExtractionCallback']);
     Route::post('/transcription-callback', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'transcriptionCallback']);
@@ -566,3 +571,10 @@ Route::put('/courses/{truefireCourse}/transcription-preset', [\App\Http\Controll
 Route::get('/courses/{truefireCourse}/transcription-test/segments', [TranscriptionTestController::class, 'getAvailableSegments'])->name('api.courses.transcription-test.segments');
 Route::post('/courses/{truefireCourse}/transcription-test/{segmentId}', [TranscriptionTestController::class, 'testTranscription'])->name('api.courses.transcription-test.test');
 Route::get('/transcription-test/results/{testId}', [TranscriptionTestController::class, 'getTestResults'])->name('api.transcription-test.results');
+
+// Test routes for model comparison and evaluation
+Route::post('/truefire-segments/test-guitar-term-model', [TruefireSegmentController::class, 'testGuitarTermEvaluation']);
+Route::post('/truefire-segments/compare-models', [TruefireSegmentController::class, 'compareModels']);
+
+// Segment transcript data endpoint for transcription service
+Route::get('/segments/{segmentId}/transcript-data', [TruefireSegmentController::class, 'getSegmentTranscriptData']);

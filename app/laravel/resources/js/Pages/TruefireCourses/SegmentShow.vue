@@ -42,6 +42,18 @@ const showErrorModal = ref(false);
 const errorMessage = ref('');
 const confirmAction = ref(null);
 
+// Model testing state
+const showModelTestingPanel = ref(false);
+const availableModels = ref([]);
+const selectedTestModel = ref('llama3:latest');
+const selectedComparisonModels = ref(['llama3:latest']);
+const confidenceThreshold = ref(0.75);
+const isTestingModel = ref(false);
+const isComparingModels = ref(false);
+const singleModelTestResults = ref(null);
+const modelComparisonResults = ref(null);
+const modelTestError = ref('');
+
 // Check if this is a newly started processing that needs monitoring
 const isNewProcessing = computed(() => {
     // If created less than 2 minutes ago, treat as new
@@ -402,111 +414,222 @@ const confidenceAnalysis = computed(() => {
         return null;
     }
     
-    const analysis = {
-        totalWords: 0,
-        averageConfidence: 0,
-        highConfidenceWords: 0,    // >= 0.8
-        mediumConfidenceWords: 0,  // 0.5 - 0.8
-        lowConfidenceWords: 0,     // < 0.5
-        segments: [],
-        confidenceDistribution: {
-            excellent: 0,  // 0.9-1.0
-            good: 0,       // 0.7-0.9
-            fair: 0,       // 0.5-0.7
-            poor: 0        // 0.0-0.5
-        },
-        lowConfidenceSegments: []
+    let totalWords = 0;
+    let confidenceSum = 0;
+    let lowConfidenceWords = 0;
+    let highConfidenceWords = 0;
+    let confidenceDistribution = {
+        excellent: 0, // 90%+
+        good: 0,      // 70-90%
+        fair: 0,      // 50-70%
+        poor: 0,      // 30-50%
+        veryPoor: 0   // <30%
     };
     
-    transcriptData.value.segments.forEach((segment, segmentIndex) => {
-        const segmentAnalysis = {
-            index: segmentIndex,
-            start: segment.start,
-            end: segment.end,
-            text: segment.text,
-            wordCount: 0,
-            averageConfidence: 0,
-            confidenceSum: 0,
-            lowConfidenceWords: []
-        };
-        
-        if (Array.isArray(segment.words) && segment.words.length > 0) {
-            segment.words.forEach((word, wordIndex) => {
-                // Check for both 'probability' and 'score' fields (different transcript formats)
-                const confidenceValue = word.probability !== undefined ? word.probability : word.score;
-                if (confidenceValue !== undefined) {
-                    const confidence = parseFloat(confidenceValue);
-                    
-                    analysis.totalWords++;
-                    segmentAnalysis.wordCount++;
-                    segmentAnalysis.confidenceSum += confidence;
-                    
-                    // Categorize confidence levels
-                    if (confidence >= 0.9) analysis.confidenceDistribution.excellent++;
-                    else if (confidence >= 0.7) analysis.confidenceDistribution.good++;
-                    else if (confidence >= 0.5) analysis.confidenceDistribution.fair++;
-                    else analysis.confidenceDistribution.poor++;
+    // Go through all segments and words
+    transcriptData.value.segments.forEach(segment => {
+        if (Array.isArray(segment.words)) {
+            segment.words.forEach(word => {
+                const confidence = word.probability !== undefined ? word.probability : word.score;
+                if (confidence !== undefined) {
+                    confidenceSum += parseFloat(confidence);
+                    totalWords++;
                     
                     // Count confidence levels
-                    if (confidence >= 0.8) analysis.highConfidenceWords++;
-                    else if (confidence >= 0.5) analysis.mediumConfidenceWords++;
-                    else analysis.lowConfidenceWords++;
+                    if (confidence < 0.5) lowConfidenceWords++;
+                    if (confidence >= 0.8) highConfidenceWords++;
                     
-                    // Track low confidence words
-                    if (confidence < 0.5) {
-                        segmentAnalysis.lowConfidenceWords.push({
-                            word: word.word,
-                            confidence: confidence,
-                            start: word.start,
-                            end: word.end,
-                            index: wordIndex
-                        });
-                    }
+                    // Distribution analysis
+                    if (confidence >= 0.9) confidenceDistribution.excellent++;
+                    else if (confidence >= 0.7) confidenceDistribution.good++;
+                    else if (confidence >= 0.5) confidenceDistribution.fair++;
+                    else if (confidence >= 0.3) confidenceDistribution.poor++;
+                    else confidenceDistribution.veryPoor++;
                 }
             });
-        } else if (segment.confidence !== undefined) {
-            // Fallback to segment-level confidence if no word-level data
-            const segmentConfidence = parseFloat(segment.confidence);
-            const estimatedWordCount = Math.ceil(segment.text.split(' ').length);
-            
-            analysis.totalWords += estimatedWordCount;
-            segmentAnalysis.wordCount = estimatedWordCount;
-            segmentAnalysis.confidenceSum = segmentConfidence * estimatedWordCount;
-            
-            // Categorize based on segment confidence
-            for (let i = 0; i < estimatedWordCount; i++) {
-                if (segmentConfidence >= 0.9) analysis.confidenceDistribution.excellent++;
-                else if (segmentConfidence >= 0.7) analysis.confidenceDistribution.good++;
-                else if (segmentConfidence >= 0.5) analysis.confidenceDistribution.fair++;
-                else analysis.confidenceDistribution.poor++;
-                
-                if (segmentConfidence >= 0.8) analysis.highConfidenceWords++;
-                else if (segmentConfidence >= 0.5) analysis.mediumConfidenceWords++;
-                else analysis.lowConfidenceWords++;
-            }
         }
-            
-            // Calculate segment average confidence
-            if (segmentAnalysis.wordCount > 0) {
-                segmentAnalysis.averageConfidence = segmentAnalysis.confidenceSum / segmentAnalysis.wordCount;
-            }
-            
-            // Track low confidence segments
-            if (segmentAnalysis.averageConfidence < 0.6) {
-                analysis.lowConfidenceSegments.push(segmentAnalysis);
-            }
-        
-        analysis.segments.push(segmentAnalysis);
     });
     
-    // Calculate overall average
-    if (analysis.totalWords > 0) {
-        const totalConfidenceSum = analysis.segments.reduce((sum, seg) => sum + seg.confidenceSum, 0);
-        analysis.averageConfidence = totalConfidenceSum / analysis.totalWords;
+    if (totalWords === 0) {
+        return null;
     }
     
-    return analysis;
+    return {
+        totalWords,
+        averageConfidence: confidenceSum / totalWords,
+        lowConfidenceWords,
+        highConfidenceWords,
+        lowConfidencePercentage: (lowConfidenceWords / totalWords) * 100,
+        highConfidencePercentage: (highConfidenceWords / totalWords) * 100,
+        confidenceDistribution: confidenceDistribution,
+        distributionPercentages: {
+            excellent: (confidenceDistribution.excellent / totalWords) * 100,
+            good: (confidenceDistribution.good / totalWords) * 100,
+            fair: (confidenceDistribution.fair / totalWords) * 100,
+            poor: (confidenceDistribution.poor / totalWords) * 100,
+            veryPoor: (confidenceDistribution.veryPoor / totalWords) * 100
+        }
+    };
 });
+
+// Model testing functions
+async function fetchAvailableModels() {
+    try {
+        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${props.segment.id}/available-models`);
+        const data = await response.json();
+        
+        if (data.success) {
+            availableModels.value = data.models || [];
+            console.log('Available models loaded:', availableModels.value);
+        } else {
+            console.error('Failed to fetch available models:', data.message);
+            modelTestError.value = 'Failed to fetch available models: ' + (data.message || 'Unknown error');
+        }
+    } catch (error) {
+        console.error('Error fetching available models:', error);
+        modelTestError.value = 'Error fetching available models: ' + error.message;
+    }
+}
+
+async function testSingleModel() {
+    if (!selectedTestModel.value) {
+        modelTestError.value = 'Please select a model to test';
+        return;
+    }
+    
+    isTestingModel.value = true;
+    modelTestError.value = '';
+    singleModelTestResults.value = null;
+    
+    try {
+        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${props.segment.id}/test-guitar-term-model`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            },
+            body: JSON.stringify({
+                model: selectedTestModel.value,
+                confidence_threshold: confidenceThreshold.value
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Validate the data structure before setting it
+            // Check if guitar_term_evaluation is in results (Laravel wrapper) or at top level (direct service)
+            const guitarEval = data.guitar_term_evaluation || (data.results && data.results.guitar_term_evaluation);
+            if (guitarEval && typeof guitarEval === 'object') {
+                // Flatten the structure for consistent access
+                const flattenedData = {
+                    ...data,
+                    guitar_term_evaluation: guitarEval
+                };
+                singleModelTestResults.value = flattenedData;
+                console.log('Single model test completed:', flattenedData);
+            } else {
+                modelTestError.value = 'Invalid test data received from server';
+                console.error('Invalid test data:', data);
+            }
+        } else {
+            modelTestError.value = 'Test failed: ' + (data.message || 'Unknown error');
+        }
+    } catch (error) {
+        console.error('Error testing model:', error);
+        modelTestError.value = 'Error testing model: ' + error.message;
+    } finally {
+        isTestingModel.value = false;
+    }
+}
+
+async function compareModels() {
+    if (!selectedComparisonModels.value || selectedComparisonModels.value.length === 0) {
+        modelTestError.value = 'Please select at least one model to compare';
+        return;
+    }
+    
+    isComparingModels.value = true;
+    modelTestError.value = '';
+    modelComparisonResults.value = null;
+    
+    try {
+        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${props.segment.id}/compare-models`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            },
+            body: JSON.stringify({
+                models: selectedComparisonModels.value,
+                confidence_threshold: confidenceThreshold.value
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Validate the data structure before setting it
+            // Check if comparison is at top level or nested in results
+            const comparison = data.comparison || (data.results && data.results.comparison);
+            if (comparison && typeof comparison === 'object') {
+                // Flatten the structure for consistent access
+                const flattenedData = {
+                    ...data,
+                    comparison: comparison
+                };
+                modelComparisonResults.value = flattenedData;
+                console.log('Model comparison completed:', flattenedData);
+            } else {
+                modelTestError.value = 'Invalid comparison data received from server';
+                console.error('Invalid comparison data:', data);
+            }
+        } else {
+            modelTestError.value = 'Comparison failed: ' + (data.message || 'Unknown error');
+        }
+    } catch (error) {
+        console.error('Error comparing models:', error);
+        modelTestError.value = 'Error comparing models: ' + error.message;
+    } finally {
+        isComparingModels.value = false;
+    }
+}
+
+function toggleModelComparison(modelName) {
+    const index = selectedComparisonModels.value.indexOf(modelName);
+    if (index > -1) {
+        selectedComparisonModels.value.splice(index, 1);
+    } else {
+        selectedComparisonModels.value.push(modelName);
+    }
+}
+
+function clearModelTestResults() {
+    singleModelTestResults.value = null;
+    modelComparisonResults.value = null;
+    modelTestError.value = '';
+}
+
+function getModelDisplayName(modelName) {
+    if (!modelName || typeof modelName !== 'string') {
+        return 'Unknown Model';
+    }
+    return modelName.replace(':latest', '').replace(':', ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function getAgreementColor(percentage) {
+    if (typeof percentage !== 'number' || isNaN(percentage)) return 'text-gray-600';
+    if (percentage >= 75) return 'text-green-600';
+    if (percentage >= 50) return 'text-yellow-600';
+    return 'text-red-600';
+}
+
+function getPerformanceColor(score) {
+    if (typeof score !== 'number' || isNaN(score)) return 'text-gray-600';
+    if (score >= 0.8) return 'text-green-600';
+    if (score >= 0.6) return 'text-yellow-600';
+    return 'text-red-600';
+}
 
 // Helper function to format time in MM:SS format
 function formatTime(seconds) {
@@ -956,6 +1079,9 @@ onMounted(() => {
     
     // Fetch quality metrics if available
     fetchQualityMetrics();
+    
+    // Fetch available models for testing
+    fetchAvailableModels();
     
     // Then start polling after a short delay to ensure backend has time to update
     setTimeout(() => {
@@ -1844,6 +1970,231 @@ function getStatusTitle(status) {
                                             </div>
                                         </div>
                                         
+                                        <!-- Model Testing Panel -->
+                                        <div v-if="transcriptionSuccess.success && guitarEnhancementAnalysis" class="space-y-4">
+                                            <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                                                <div class="flex items-center justify-between mb-4">
+                                                    <h4 class="font-medium text-purple-800 flex items-center">
+                                                        <svg class="w-5 h-5 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                                        </svg>
+                                                        Model Testing & Comparison
+                                                    </h4>
+                                                    <button 
+                                                        @click="showModelTestingPanel = !showModelTestingPanel"
+                                                        class="text-purple-600 hover:text-purple-800 transition"
+                                                    >
+                                                        <svg 
+                                                            :class="{ 'transform rotate-180': showModelTestingPanel }"
+                                                            class="w-5 h-5 transition-transform"
+                                                            fill="none" 
+                                                            stroke="currentColor" 
+                                                            viewBox="0 0 24 24"
+                                                        >
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                
+                                                <div v-if="!showModelTestingPanel" class="text-sm text-purple-700">
+                                                    Test different LLM models to compare guitar terminology recognition performance
+                                                </div>
+                                                
+                                                <!-- Model Testing Panel Content -->
+                                                <div v-if="showModelTestingPanel" class="space-y-4">
+                                                    <!-- Error Display -->
+                                                    <div v-if="modelTestError" class="p-3 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm">
+                                                        {{ modelTestError }}
+                                                    </div>
+                                                    
+                                                    <!-- Confidence Threshold Setting -->
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-purple-700 mb-2">Confidence Threshold</label>
+                                                        <input 
+                                                            v-model.number="confidenceThreshold" 
+                                                            type="range" 
+                                                            min="0.1" 
+                                                            max="1.0" 
+                                                            step="0.05" 
+                                                            class="w-full"
+                                                        >
+                                                        <div class="flex justify-between text-xs text-purple-600 mt-1">
+                                                            <span>0.1 (Low)</span>
+                                                            <span class="font-medium">{{ confidenceThreshold.toFixed(2) }}</span>
+                                                            <span>1.0 (High)</span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Single Model Testing -->
+                                                    <div class="border border-purple-200 rounded-lg p-4 bg-white">
+                                                        <h5 class="font-medium text-purple-800 mb-3">Test Single Model</h5>
+                                                        <div class="flex items-center space-x-3 mb-3">
+                                                            <select 
+                                                                v-model="selectedTestModel" 
+                                                                class="flex-1 rounded-md border-purple-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm"
+                                                            >
+                                                                <option v-for="model in availableModels" :key="model.name" :value="model.name">
+                                                                    {{ getModelDisplayName(model.name) }}
+                                                                    <span v-if="model.size_gb > 0" class="text-gray-500">({{ model.size_gb }}GB)</span>
+                                                                </option>
+                                                            </select>
+                                                            <button 
+                                                                @click="testSingleModel" 
+                                                                :disabled="isTestingModel || !selectedTestModel"
+                                                                class="px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-md transition text-sm"
+                                                            >
+                                                                <span v-if="isTestingModel" class="flex items-center">
+                                                                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                    </svg>
+                                                                    Testing...
+                                                                </span>
+                                                                <span v-else>Test</span>
+                                                            </button>
+                                                        </div>
+                                                        
+                                                        <!-- Single Model Results -->
+                                                        <div v-if="singleModelTestResults" class="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                                                            <h6 class="font-medium text-purple-800 mb-2">{{ getModelDisplayName(singleModelTestResults.model) }} Results</h6>
+                                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                                                <div class="text-center">
+                                                                    <div class="text-lg font-bold text-purple-700">{{ singleModelTestResults.guitar_term_evaluation?.musical_terms_found || 0 }}</div>
+                                                                    <div class="text-purple-600 text-xs">Terms Found</div>
+                                                                </div>
+                                                                <div class="text-center">
+                                                                    <div class="text-lg font-bold text-blue-700">{{ singleModelTestResults.guitar_term_evaluation?.llm_queries_made || 0 }}</div>
+                                                                    <div class="text-blue-600 text-xs">LLM Queries</div>
+                                                                </div>
+                                                                <div class="text-center">
+                                                                    <div class="text-lg font-bold text-green-700">{{ (singleModelTestResults.processing_time || 0).toFixed(2) }}s</div>
+                                                                    <div class="text-green-600 text-xs">Processing Time</div>
+                                                                </div>
+                                                                <div class="text-center">
+                                                                    <div class="text-lg font-bold text-orange-700">{{ ((singleModelTestResults.guitar_term_evaluation?.llm_successful_responses || 0) / Math.max(singleModelTestResults.guitar_term_evaluation?.llm_queries_made || 1, 1) * 100).toFixed(0) }}%</div>
+                                                                    <div class="text-orange-600 text-xs">Success Rate</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Multi-Model Comparison -->
+                                                    <div class="border border-purple-200 rounded-lg p-4 bg-white">
+                                                        <h5 class="font-medium text-purple-800 mb-3">Compare Multiple Models</h5>
+                                                        <div class="mb-3">
+                                                            <p class="text-sm text-purple-700 mb-2">Select models to compare:</p>
+                                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                                                                <label v-for="model in availableModels" :key="model.name" class="flex items-center space-x-2 p-2 border rounded hover:bg-purple-50 text-sm">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        :value="model.name"
+                                                                        @change="toggleModelComparison(model.name)"
+                                                                        :checked="selectedComparisonModels.includes(model.name)"
+                                                                        class="rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                                                                    >
+                                                                    <span class="text-sm">
+                                                                        {{ getModelDisplayName(model.name) }}
+                                                                        <span v-if="model.size_gb > 0" class="text-gray-500">({{ model.size_gb }}GB)</span>
+                                                                    </span>
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex justify-between items-center">
+                                                            <span class="text-sm text-purple-700">{{ selectedComparisonModels.length }} model(s) selected</span>
+                                                            <button 
+                                                                @click="compareModels" 
+                                                                :disabled="isComparingModels || selectedComparisonModels.length === 0"
+                                                                class="px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-md transition text-sm"
+                                                            >
+                                                                <span v-if="isComparingModels" class="flex items-center">
+                                                                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                    </svg>
+                                                                    Comparing...
+                                                                </span>
+                                                                <span v-else>Compare</span>
+                                                            </button>
+                                                        </div>
+                                                        
+                                                        <!-- Model Comparison Results -->
+                                                        <div v-if="modelComparisonResults" class="mt-4">
+                                                            <h6 class="font-medium text-purple-800 mb-3">Comparison Results</h6>
+                                                            
+                                                            <!-- Best Performer Highlight -->
+                                                            <div v-if="modelComparisonResults.comparison?.best_performer" class="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                                                <div class="flex items-center justify-between">
+                                                                    <div>
+                                                                        <span class="text-sm font-medium text-green-800">🏆 Best Performer:</span>
+                                                                        <span class="text-sm text-green-700 ml-2">{{ getModelDisplayName(modelComparisonResults.comparison.best_performer.model) }}</span>
+                                                                    </div>
+                                                                    <div class="text-sm text-green-600">
+                                                                        Score: {{ (modelComparisonResults.comparison.best_performer.score * 100).toFixed(1) }}%
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <!-- Comparison Table -->
+                                                            <div class="overflow-x-auto">
+                                                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                                                    <thead class="bg-purple-50">
+                                                                        <tr>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Model</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Terms</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Success</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Speed</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody class="bg-white divide-y divide-gray-200">
+                                                                        <tr v-for="(modelData, modelName) in modelComparisonResults.comparison?.models" :key="modelName || 'unknown'">
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 font-medium text-sm">
+                                                                                {{ getModelDisplayName(modelName) }}
+                                                                                <span v-if="modelComparisonResults.comparison?.best_performer?.model === modelName" class="ml-1 text-yellow-500">🏆</span>
+                                                                            </td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 text-sm">{{ (modelData && modelData.musical_terms_found) || 0 }}</td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm" :class="getPerformanceColor((modelData && modelData.success_rate) ? modelData.success_rate / 100 : 0)">
+                                                                                {{ ((modelData && modelData.success_rate) || 0).toFixed(1) }}%
+                                                                            </td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 text-sm">{{ ((modelData && modelData.response_time) || 0).toFixed(2) }}s</td>
+                                                                        </tr>
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                            
+                                                            <!-- Agreement Analysis -->
+                                                            <div v-if="modelComparisonResults.comparison?.agreement_analysis" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                                                <h6 class="font-medium text-blue-800 mb-2 text-sm">Term Agreement</h6>
+                                                                <div class="grid grid-cols-3 gap-3 text-sm">
+                                                                    <div class="text-center">
+                                                                        <div class="font-bold text-green-600">{{ modelComparisonResults.comparison.agreement_analysis.high_agreement_terms }}</div>
+                                                                        <div class="text-green-600 text-xs">High (75%+)</div>
+                                                                    </div>
+                                                                    <div class="text-center">
+                                                                        <div class="font-bold text-yellow-600">{{ modelComparisonResults.comparison.agreement_analysis.moderate_agreement_terms }}</div>
+                                                                        <div class="text-yellow-600 text-xs">Moderate</div>
+                                                                    </div>
+                                                                    <div class="text-center">
+                                                                        <div class="font-bold text-red-600">{{ modelComparisonResults.comparison.agreement_analysis.low_agreement_terms }}</div>
+                                                                        <div class="text-red-600 text-xs">Low (<50%)</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Clear Results Button -->
+                                                    <div v-if="singleModelTestResults || modelComparisonResults" class="text-center">
+                                                        <button 
+                                                            @click="clearModelTestResults" 
+                                                            class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition text-sm"
+                                                        >
+                                                            Clear Results
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
                                         <!-- Detailed Quality Metrics -->
                                         <div v-if="qualityMetrics" class="space-y-4">
                                             <h4 class="font-medium text-gray-800">Detailed Quality Analysis</h4>
@@ -1871,14 +2222,14 @@ function getStatusTitle(status) {
                                                 </div>
                                                 
                                                 <!-- Low Confidence Alert with Details -->
-                                                <div v-if="confidenceAnalysis.lowConfidenceSegments.length > 0" class="mt-4 bg-orange-100 rounded-lg p-3 border border-orange-200">
+                                                <div v-if="confidenceAnalysis.lowConfidenceWords > 0" class="mt-4 bg-orange-100 rounded-lg p-3 border border-orange-200">
                                                     <div class="flex items-start">
                                                         <svg class="w-5 h-5 mr-2 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.734 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
                                                         </svg>
                                                         <div class="flex-1">
                                                             <div class="font-medium text-orange-800 mb-1">
-                                                                {{ confidenceAnalysis.lowConfidenceSegments.length }} section(s) may need review
+                                                                {{ confidenceAnalysis.lowConfidenceWords }} section(s) may need review
                                                             </div>
                                                             <div class="text-sm text-orange-700 mb-3">
                                                                 These sections have average confidence below 60% and may contain transcription errors.

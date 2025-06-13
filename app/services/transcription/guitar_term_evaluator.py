@@ -41,37 +41,46 @@ class GuitarTerminologyEvaluator:
                  llm_endpoint: str = None,
                  model_name: str = None,
                  confidence_threshold: float = 0.75,  # Only evaluate words below this confidence
-                 target_confidence: float = 1.0):    # Set to 100% as requested
+                 target_confidence: float = 1.0,     # Set to 100% as requested
+                 force_llm_only: bool = False):       # NEW: Force pure LLM evaluation for model testing
         
         # Use environment variables with fallbacks for Docker container networking
         self.llm_endpoint = llm_endpoint or os.getenv('LLM_ENDPOINT', 'http://ollama-service:11434/api/generate')
         self.model_name = model_name or os.getenv('LLM_MODEL', 'llama3:latest')
         self.llm_enabled = os.getenv('LLM_ENABLED', 'true').lower() == 'true'
+        self.force_llm_only = force_llm_only  # NEW: Pure LLM mode for model testing
         
         self.confidence_threshold = confidence_threshold
         self.target_confidence = target_confidence
         self.evaluation_cache = {}
         
-        logger.info(f"Guitar Term Evaluator initialized - LLM: {self.llm_endpoint}, Model: {self.model_name}, Enabled: {self.llm_enabled}")
+        logger.info(f"Guitar Term Evaluator initialized - LLM: {self.llm_endpoint}, Model: {self.model_name}, Enabled: {self.llm_enabled}, Force LLM Only: {self.force_llm_only}")
         
         # Initialize dictionary checker for common English words
         self.dictionary = None
-        if ENCHANT_AVAILABLE:
+        if ENCHANT_AVAILABLE and not self.force_llm_only:  # Skip dictionary loading in LLM-only mode
             try:
                 self.dictionary = enchant.Dict("en_US")
                 logger.info("English dictionary loaded for common word filtering")
             except Exception as e:
                 logger.warning(f"Could not load English dictionary: {e}")
         else:
-            logger.warning("enchant library not available - using fallback word filtering")
+            if self.force_llm_only:
+                logger.info("Skipping dictionary loading - Force LLM Only mode enabled")
+            else:
+                logger.warning("enchant library not available - using fallback word filtering")
         
         # Load comprehensive guitar terms library
-        try:
-            from guitar_terms_library import get_guitar_terms_library
-            self.guitar_library = get_guitar_terms_library()
-            logger.info(f"Loaded comprehensive guitar library with {len(self.guitar_library.get_all_terms())} terms")
-        except ImportError:
-            logger.warning("Guitar terms library not available, using basic fallback")
+        if not self.force_llm_only:  # Skip library loading in LLM-only mode
+            try:
+                from guitar_terms_library import get_guitar_terms_library
+                self.guitar_library = get_guitar_terms_library()
+                logger.info(f"Loaded comprehensive guitar library with {len(self.guitar_library.get_all_terms())} terms")
+            except ImportError:
+                logger.warning("Guitar terms library not available, using basic fallback")
+                self.guitar_library = None
+        else:
+            logger.info("Skipping guitar library loading - Force LLM Only mode enabled")
             self.guitar_library = None
             
         # Enhanced basic fallback guitar terms (updated with more terms including fingerstyle)

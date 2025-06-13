@@ -1411,82 +1411,487 @@ class TruefireSegmentController extends Controller
      */
     private function createPerformanceVideoTranscript($processing, $detectionInfo)
     {
-        try {
-            // Create minimal transcript JSON structure
-            $transcriptData = [
-                'task' => 'transcribe',
-                'language' => 'en',
-                'duration' => 0.0,
-                'text' => '[Instrumental Performance]',
-                'segments' => [
-                    [
-                        'id' => 0,
-                        'seek' => 0,
-                        'start' => 0.0,
-                        'end' => 0.0,
-                        'text' => '[Instrumental Performance]',
-                        'temperature' => 0.0,
-                        'avg_logprob' => -0.1,
-                        'compression_ratio' => 1.0,
-                        'no_speech_prob' => 0.99,
-                        'words' => [
-                            [
-                                'word' => '[Instrumental Performance]',
-                                'start' => 0.0,
-                                'end' => 0.0,
-                                'probability' => 1.0
-                            ]
+        $transcriptData = [
+            "text" => "[Instrumental Performance]",
+            "language" => "en",
+            "duration" => $processing->audio_duration ?? 0,
+            "segments" => [
+                [
+                    "id" => 0,
+                    "seek" => 0,
+                    "start" => 0.0,
+                    "end" => $processing->audio_duration ?? 0,
+                    "text" => "[Instrumental Performance]",
+                    "tokens" => [50364, 50365, 50366],
+                    "temperature" => 0.0,
+                    "avg_logprob" => -0.1,
+                    "compression_ratio" => 1.0,
+                    "no_speech_prob" => 0.95,
+                    "words" => [
+                        [
+                            "word" => "[Instrumental",
+                            "start" => 0.0,
+                            "end" => 1.0,
+                            "probability" => 1.0
+                        ],
+                        [
+                            "word" => "Performance]",
+                            "start" => 1.0,
+                            "end" => 2.0,
+                            "probability" => 1.0
                         ]
                     ]
-                ],
-                'performance_video_metadata' => [
-                    'auto_generated' => true,
-                    'detection_reason' => $detectionInfo['reason'],
-                    'detection_details' => $detectionInfo['details'],
-                    'generated_at' => now()->toISOString()
-                ],
-                'speech_activity' => [
-                    'speech_activity_ratio' => 0.0,
-                    'total_duration_seconds' => 0.0,
-                    'speaking_rate_wpm' => 0.0,
-                    'pause_count' => 0
-                ],
-                'content_quality' => [
-                    'total_words' => 0,
-                    'unique_words' => 0,
-                    'vocabulary_richness' => 0.0,
-                    'music_term_count' => 0
-                ],
-                'teaching_patterns' => [
-                    'content_classification' => [
-                        'primary_type' => 'performance',
-                        'confidence' => 0.95,
-                        'content_focus' => 'instrumental_performance'
-                    ]
-                ],
-                'quality_metrics' => [
-                    'overall_quality_score' => 1.0, // High quality for what it is (performance)
-                    'overall_confidence' => 1.0
                 ]
-            ];
+            ],
+            "word_segments" => [
+                [
+                    "word" => "[Instrumental",
+                    "start" => 0.0,
+                    "end" => 1.0,
+                    "score" => 1.0
+                ],
+                [
+                    "word" => "Performance]",
+                    "start" => 1.0,
+                    "end" => 2.0,
+                    "score" => 1.0
+                ]
+            ],
+            "quality_metrics" => [
+                "overall_quality_score" => 0.95,
+                "speech_activity" => [
+                    "speech_ratio" => 0.05,
+                    "non_speech_ratio" => 0.95,
+                    "speech_segments" => 1,
+                    "activity_pattern" => "performance"
+                ]
+            ],
+            "performance_video_metadata" => [
+                "detection_method" => "early_audio_analysis",
+                "detection_reason" => $detectionInfo['reason'] ?? 'Unknown',
+                "detection_criteria" => $detectionInfo['criteria'] ?? [],
+                "file_characteristics" => $detectionInfo['file_characteristics'] ?? []
+            ]
+        ];
+
+        return $transcriptData;
+    }
+
+    /**
+     * Get available LLM models from Ollama service
+     */
+    public function getAvailableModels()
+    {
+        try {
+            $ollamaUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            $response = file_get_contents($ollamaUrl . '/get-available-models');
             
-            // Store transcript JSON in processing record
-            $processing->update([
-                'transcript_json' => $transcriptData,
-                'transcript_json_path' => null // No physical file created
-            ]);
+            if ($response === false) {
+                throw new \Exception('Failed to fetch models from transcription service');
+            }
             
-            Log::info('Created minimal transcript for performance video', [
-                'segment_id' => $processing->segment_id,
-                'detection_reason' => $detectionInfo['reason'],
-                'detection_details' => $detectionInfo['details']
+            $models = json_decode($response, true);
+            
+            return response()->json([
+                'success' => true,
+                'models' => $models['models'] ?? []
             ]);
             
         } catch (\Exception $e) {
-            Log::error('Failed to create performance video transcript', [
-                'segment_id' => $processing->segment_id,
+            Log::error('Error fetching available models', [
                 'error' => $e->getMessage()
             ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch available models: ' . $e->getMessage(),
+                'models' => []
+            ], 500);
+        }
+    }
+
+    /**
+     * Test guitar term evaluation with a specific model using pure LLM approach
+     */
+    public function testGuitarTermEvaluation($courseId, $segmentId, Request $request)
+    {
+        try {
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->firstOrFail();
+            
+            if (empty($processing->transcript_json)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No transcript data available for testing'
+                ], 400);
+            }
+            
+            $model = $request->input('model', 'llama3:latest');
+            $confidenceThreshold = $request->input('confidence_threshold', 0.75);
+            
+            // Call transcription service for pure LLM testing
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            $payload = [
+                'segment_id' => $segmentId,  // Pass segment ID for pure LLM testing
+                'model' => $model,
+                'confidence_threshold' => $confidenceThreshold
+            ];
+            
+            $ch = curl_init($transcriptionServiceUrl . '/test-guitar-term-model');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // 1 minute timeout
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception("HTTP error: $httpCode");
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid response from transcription service');
+            }
+            
+            Log::info('Pure LLM guitar term evaluation test completed', [
+                'segment_id' => $segmentId,
+                'model' => $model,
+                'terms_found' => $result['guitar_term_evaluation']['musical_terms_found'] ?? 0,
+                'llm_queries' => $result['guitar_term_evaluation']['llm_queries_made'] ?? 0,
+                'evaluation_mode' => $result['guitar_term_evaluation']['evaluation_mode'] ?? 'unknown'
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'model' => $model,
+                'confidence_threshold' => $confidenceThreshold,
+                'results' => $result,
+                'test_metadata' => [
+                    'segment_id' => $segmentId,
+                    'course_id' => $courseId,
+                    'tested_at' => now()->toISOString(),
+                    'evaluation_mode' => 'pure_llm'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error testing pure LLM guitar term evaluation', [
+                'segment_id' => $segmentId,
+                'model' => $request->input('model'),
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error testing model: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Compare multiple models for guitar term evaluation using pure LLM approach
+     */
+    public function compareModels($courseId, $segmentId, Request $request)
+    {
+        try {
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->firstOrFail();
+            
+            if (empty($processing->transcript_json)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No transcript data available for comparison'
+                ], 400);
+            }
+            
+            $models = $request->input('models', ['llama3:latest']);
+            $confidenceThreshold = $request->input('confidence_threshold', 0.75);
+            
+            if (!is_array($models) || empty($models)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'At least one model must be specified for comparison'
+                ], 400);
+            }
+            
+            // Call transcription service for pure LLM comparison
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            $payload = [
+                'segment_id' => $segmentId,  // Pass segment ID for pure LLM testing
+                'models' => $models,
+                'confidence_threshold' => $confidenceThreshold
+            ];
+            
+            $ch = curl_init($transcriptionServiceUrl . '/compare-guitar-term-models');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 300); // 5 minute timeout for multiple models
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception("HTTP error: $httpCode");
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid response from transcription service');
+            }
+            
+            // Calculate additional comparison metrics
+            $comparison = $this->calculateModelComparison($result['results'] ?? []);
+            
+            Log::info('Pure LLM model comparison completed', [
+                'segment_id' => $segmentId,
+                'models_tested' => $result['models_tested'] ?? [],
+                'models_completed' => $result['timing']['models_completed'] ?? 0,
+                'models_failed' => $result['timing']['models_failed'] ?? 0,
+                'total_time' => $result['timing']['total_comparison_time'] ?? 0
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'models_tested' => $models,
+                'confidence_threshold' => $confidenceThreshold,
+                'results' => $result['results'] ?? [],
+                'errors' => $result['errors'] ?? [],
+                'comparison' => $comparison,
+                'comparison_analysis' => $result['comparison_analysis'] ?? null,
+                'timing' => $result['timing'] ?? [],
+                'test_metadata' => [
+                    'segment_id' => $segmentId,
+                    'course_id' => $courseId,
+                    'compared_at' => now()->toISOString(),
+                    'total_models' => count($models),
+                    'evaluation_mode' => 'pure_llm'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error comparing pure LLM models', [
+                'segment_id' => $segmentId,
+                'models' => $request->input('models'),
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error comparing models: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Calculate comparison metrics between different model results
+     */
+    private function calculateModelComparison($results)
+    {
+        if (empty($results)) {
+            return null;
+        }
+        
+        $comparison = [
+            'models' => [],
+            'best_performer' => null,
+            'agreement_analysis' => [],
+            'performance_summary' => []
+        ];
+        
+        // Analyze each model's performance
+        foreach ($results as $model => $metrics) {
+            $guitarEval = $metrics['guitar_term_evaluation'] ?? [];
+            $enhancedTerms = $guitarEval['enhanced_terms'] ?? [];
+            
+            $modelMetrics = [
+                'model' => $model,
+                'guitar_terms_found' => $guitarEval['musical_terms_found'] ?? 0,
+                'total_words_enhanced' => $guitarEval['llm_queries_made'] ?? 0,
+                'llm_queries_made' => $guitarEval['llm_queries_made'] ?? 0,
+                'llm_successful_responses' => $guitarEval['llm_successful_responses'] ?? 0,
+                'response_time' => $guitarEval['processing_time'] ?? 0,
+                'enhanced_terms' => $enhancedTerms,
+                'unique_terms' => array_unique(array_column($enhancedTerms, 'word')),
+                'accuracy_score' => $this->calculateAccuracyScore($guitarEval),
+                'efficiency_score' => $this->calculateEfficiencyScore($guitarEval)
+            ];
+            
+            $comparison['models'][$model] = $modelMetrics;
+        }
+        
+        // Find best performer
+        $bestScore = 0;
+        $bestModel = null;
+        
+        foreach ($comparison['models'] as $model => $metrics) {
+            $overallScore = ($metrics['accuracy_score'] * 0.7) + ($metrics['efficiency_score'] * 0.3);
+            if ($overallScore > $bestScore) {
+                $bestScore = $overallScore;
+                $bestModel = $model;
+            }
+        }
+        
+        $comparison['best_performer'] = [
+            'model' => $bestModel,
+            'score' => $bestScore,
+            'metrics' => $comparison['models'][$bestModel] ?? null
+        ];
+        
+        // Agreement analysis
+        $comparison['agreement_analysis'] = $this->analyzeModelAgreement($comparison['models']);
+        
+        return $comparison;
+    }
+
+    /**
+     * Calculate accuracy score for a model
+     */
+    private function calculateAccuracyScore($guitarEval)
+    {
+        $termsFound = $guitarEval['musical_terms_found'] ?? 0;
+        $totalQueries = $guitarEval['llm_queries_made'] ?? 1;
+        $successRate = $guitarEval['llm_successful_responses'] ?? 0;
+        
+        // Weighted score: terms found (60%) + success rate (40%)
+        $termScore = min($termsFound / 10, 1.0); // Normalize to 0-1 (assume 10+ terms is excellent)
+        $queryScore = $totalQueries > 0 ? $successRate / $totalQueries : 0;
+        
+        return ($termScore * 0.6) + ($queryScore * 0.4);
+    }
+
+    /**
+     * Calculate efficiency score for a model
+     */
+    private function calculateEfficiencyScore($guitarEval)
+    {
+        $processingTime = $guitarEval['processing_time'] ?? 1;
+        $queries = $guitarEval['llm_queries_made'] ?? 1;
+        
+        // Efficiency = terms found per second
+        $termsPerSecond = ($guitarEval['musical_terms_found'] ?? 0) / max($processingTime, 0.1);
+        $queriesPerSecond = $queries / max($processingTime, 0.1);
+        
+        // Normalize to 0-1 scale (assume 5 terms/second is excellent)
+        $efficiency = min($termsPerSecond / 5, 1.0);
+        
+        return $efficiency;
+    }
+
+    /**
+     * Analyze agreement between different models
+     */
+    private function analyzeModelAgreement($modelResults)
+    {
+        $allTerms = [];
+        $modelTerms = [];
+        
+        // Collect all terms found by each model
+        foreach ($modelResults as $model => $metrics) {
+            $terms = array_map('strtolower', $metrics['unique_terms']);
+            $modelTerms[$model] = $terms;
+            $allTerms = array_merge($allTerms, $terms);
+        }
+        
+        $allTerms = array_unique($allTerms);
+        $agreementMatrix = [];
+        
+        // Calculate agreement for each term
+        foreach ($allTerms as $term) {
+            $foundBy = [];
+            foreach ($modelTerms as $model => $terms) {
+                if (in_array($term, $terms)) {
+                    $foundBy[] = $model;
+                }
+            }
+            
+            $agreementMatrix[$term] = [
+                'found_by' => $foundBy,
+                'agreement_count' => count($foundBy),
+                'agreement_percentage' => (count($foundBy) / count($modelResults)) * 100
+            ];
+        }
+        
+        // Calculate overall agreement metrics
+        $highAgreement = array_filter($agreementMatrix, function($item) {
+            return $item['agreement_percentage'] >= 75;
+        });
+        
+        $lowAgreement = array_filter($agreementMatrix, function($item) {
+            return $item['agreement_percentage'] < 50;
+        });
+        
+        return [
+            'total_unique_terms' => count($allTerms),
+            'high_agreement_terms' => count($highAgreement),
+            'low_agreement_terms' => count($lowAgreement),
+            'agreement_details' => $agreementMatrix,
+            'consensus_terms' => array_keys($highAgreement),
+            'disputed_terms' => array_keys($lowAgreement)
+        ];
+    }
+
+    /**
+     * Get segment transcript data for transcription service
+     */
+    public function getSegmentTranscriptData($segmentId)
+    {
+        try {
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+            
+            if (!$processing || empty($processing->transcript_json)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment not found or no transcript available'
+                ], 404);
+            }
+            
+            $transcriptData = json_decode($processing->transcript_json, true);
+            
+            if (!$transcriptData || !isset($transcriptData['word_segments'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid transcript data - no word segments found'
+                ], 400);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'segment_id' => $segmentId,
+                'transcription_result' => $transcriptData,
+                'segment_info' => [
+                    'course_id' => $processing->course_id,
+                    'status' => $processing->status,
+                    'updated_at' => $processing->updated_at
+                ]
+            ]);
+            
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrieving segment data',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 } 

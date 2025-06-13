@@ -4326,5 +4326,456 @@ def test_teaching_pattern_analysis():
             'timestamp': datetime.now().isoformat()
         }), 500
 
+@app.route('/get-available-models', methods=['GET'])
+def get_available_models():
+    """Get available LLM models from Ollama service"""
+    try:
+        logger.info("Fetching available models from Ollama service")
+        
+        ollama_endpoint = os.getenv('LLM_ENDPOINT', 'http://ollama-service:11434')
+        ollama_base_url = ollama_endpoint.replace('/api/generate', '')
+        
+        # Call Ollama's list endpoint to get available models
+        response = requests.get(f"{ollama_base_url}/api/tags", timeout=10)
+        
+        if response.status_code != 200:
+            raise Exception(f"Ollama service returned status {response.status_code}")
+        
+        ollama_data = response.json()
+        
+        # Extract model names from Ollama response
+        models = []
+        if 'models' in ollama_data:
+            for model_info in ollama_data['models']:
+                model_name = model_info.get('name', '')
+                model_size = model_info.get('size', 0)
+                model_digest = model_info.get('digest', '')
+                modified_at = model_info.get('modified_at', '')
+                
+                models.append({
+                    'name': model_name,
+                    'size': model_size,
+                    'size_gb': round(model_size / (1024**3), 2) if model_size > 0 else 0,
+                    'digest': model_digest,
+                    'modified_at': modified_at,
+                    'display_name': model_name.replace(':latest', '').replace(':', ' ').title(),
+                    'suitable_for_guitar_terms': 'instruct' in model_name.lower() or 'chat' in model_name.lower()
+                })
+        
+        # Sort models by suitability for guitar terms, then by name
+        models.sort(key=lambda x: (not x['suitable_for_guitar_terms'], x['name']))
+        
+        logger.info(f"Found {len(models)} available models")
+        
+        return jsonify({
+            "success": True,
+            "models": models,
+            "total_models": len(models),
+            "ollama_endpoint": ollama_base_url,
+            "current_model": os.getenv('LLM_MODEL', 'llama3:latest')
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching available models: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "Failed to fetch available models",
+            "models": []
+        }), 500
+
+@app.route('/test-guitar-term-model', methods=['POST'])
+def test_guitar_term_model():
+    """Test a single model's guitar terminology recognition using pure LLM evaluation"""
+    try:
+        data = request.get_json()
+        model = data.get('model', 'llama3:latest')
+        confidence_threshold = data.get('confidence_threshold', 0.75)
+        segment_id = data.get('segment_id')
+        
+        if not segment_id:
+            return jsonify({'success': False, 'error': 'segment_id is required'}), 400
+        
+        logger.info(f"Testing pure LLM guitar term evaluation with model: {model}")
+        
+        # Get segment data from database
+        segment_data = get_segment_from_database(segment_id)
+        if not segment_data or 'transcription_result' not in segment_data:
+            return jsonify({'success': False, 'error': 'Segment or transcription not found'}), 404
+        
+        # Extract word segments for pure LLM testing
+        transcription_result = segment_data['transcription_result']
+        word_segments = transcription_result.get('word_segments', [])
+        
+        if not word_segments:
+            return jsonify({'success': False, 'error': 'No word segments found in transcription'}), 400
+        
+        # Pure LLM Model Testing - No Libraries, No Fallbacks
+        start_time = time.time()
+        results = test_model_pure_llm(word_segments, model, confidence_threshold)
+        processing_time = time.time() - start_time
+        
+        logger.info(f"Pure LLM model test completed - Model: {model}, Terms found: {results['terms_found']}, LLM Queries: {results['llm_queries']}, Time: {processing_time:.2f}s")
+        
+        return jsonify({
+            'success': True,
+            'model': model,
+            'confidence_threshold': confidence_threshold,
+            'guitar_term_evaluation': {
+                'musical_terms_found': results['terms_found'],
+                'llm_queries_made': results['llm_queries'],
+                'llm_successful_responses': results['successful_responses'],
+                'processing_time': processing_time,
+                'enhanced_terms': results['enhanced_terms'],
+                'word_count': len(word_segments),
+                'evaluation_mode': 'pure_llm',
+                'model_responses': results['model_responses']  # Raw LLM responses for analysis
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in pure LLM model testing: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def test_model_pure_llm(word_segments, model, confidence_threshold):
+    """Pure LLM testing - no libraries, no fallbacks, just raw model comparison"""
+    terms_found = 0
+    llm_queries = 0
+    successful_responses = 0
+    enhanced_terms = []
+    model_responses = []
+    
+    # Only test words below confidence threshold
+    test_words = [
+        (i, segment) for i, segment in enumerate(word_segments) 
+        if segment.get('score', segment.get('confidence', 1.0)) < confidence_threshold
+    ]
+    
+    logger.info(f"Pure LLM testing {len(test_words)} low-confidence words with model {model}")
+    
+    for word_index, word_segment in test_words:
+        word = word_segment.get('word', '').strip()
+        if not word or len(word) < 2:
+            continue
+            
+        # Get context around the word
+        context = get_word_context(word_segments, word_index)
+        
+        # Query LLM directly - no library checks
+        is_guitar_term, raw_response = query_llm_for_guitar_term(word, context, model)
+        llm_queries += 1
+        
+        if raw_response:  # LLM responded successfully
+            successful_responses += 1
+            model_responses.append({
+                'word': word,
+                'context': context,
+                'raw_response': raw_response,
+                'interpreted_as_guitar_term': is_guitar_term
+            })
+            
+            if is_guitar_term:
+                terms_found += 1
+                enhanced_terms.append({
+                    'word': word,
+                    'start': word_segment.get('start', 0),
+                    'end': word_segment.get('end', 0),
+                    'original_confidence': word_segment.get('score', word_segment.get('confidence', 0)),
+                    'llm_response': raw_response,
+                    'context': context
+                })
+    
+    return {
+        'terms_found': terms_found,
+        'llm_queries': llm_queries,
+        'successful_responses': successful_responses,
+        'enhanced_terms': enhanced_terms,
+        'model_responses': model_responses
+    }
+
+def get_segment_from_database(segment_id):
+    """Fetch segment data from Laravel database via API"""
+    try:
+        # Use Laravel API to get segment data
+        laravel_base_url = os.getenv('LARAVEL_BASE_URL', 'http://laravel-app:80')
+        response = requests.get(
+            f"{laravel_base_url}/api/segments/{segment_id}/transcript-data",
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Failed to fetch segment {segment_id}: HTTP {response.status_code}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error fetching segment {segment_id} from database: {e}")
+        return None
+
+def get_word_context(word_segments, word_index, window_size=3):
+    """Get surrounding words for context"""
+    start_idx = max(0, word_index - window_size)
+    end_idx = min(len(word_segments), word_index + window_size + 1)
+    context_words = [
+        segment.get('word', '') for segment in word_segments[start_idx:end_idx]
+    ]
+    return ' '.join(context_words).strip()
+
+def query_llm_for_guitar_term(word, context, model):
+    """Pure LLM query - direct model testing with no fallbacks"""
+    try:
+        prompt = f"""You are an expert in guitar instruction and music education.
+
+Word to evaluate: "{word}"
+Context: "{context}"
+
+Is this word related to guitar playing, guitar instruction, or music theory?
+
+Consider these categories:
+- Guitar techniques: fingerpicking, strumming, hammer-on, pull-off, bending, slides
+- Music theory: chords, scales, progressions, intervals, keys, modes
+- Guitar hardware: frets, strings, pickups, amplifiers, effects, tuning
+- Musical notation: tablature, chord charts, time signatures, tempo
+- Teaching terms: lesson, practice, exercise, demonstration, technique
+
+Respond with ONLY:
+- "YES" if it's guitar/music related
+- "NO" if it's not guitar/music related
+
+Do not explain or elaborate."""
+
+        response = requests.post(
+            'http://ollama-service:11434/api/generate',
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 5
+                }
+            },
+            timeout=20
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            raw_response = result.get('response', '').strip()
+            
+            # Simple parsing: YES = guitar term, anything else = not guitar term
+            is_guitar_term = raw_response.upper().startswith('YES')
+            
+            logger.debug(f"LLM {model} evaluated '{word}': '{raw_response}' -> {is_guitar_term}")
+            return is_guitar_term, raw_response
+        else:
+            logger.warning(f"LLM request failed for {model}: HTTP {response.status_code}")
+            return False, None
+            
+    except Exception as e:
+        logger.error(f"LLM query failed for {model} on word '{word}': {e}")
+        return False, None
+
+@app.route('/compare-guitar-term-models', methods=['POST'])
+def compare_guitar_term_models():
+    """Compare multiple models for guitar term evaluation using pure LLM approach"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No JSON data provided"
+            }), 400
+        
+        segment_id = data.get('segment_id')
+        if not segment_id:
+            return jsonify({'success': False, 'error': 'segment_id is required'}), 400
+        
+        models = data.get('models', ['llama3:latest'])
+        confidence_threshold = data.get('confidence_threshold', 0.75)
+        
+        if not isinstance(models, list) or len(models) == 0:
+            return jsonify({
+                "success": False,
+                "error": "At least one model must be specified"
+            }), 400
+        
+        logger.info(f"Comparing pure LLM guitar term evaluation across {len(models)} models: {models}")
+        
+        # Get segment data from database  
+        segment_data = get_segment_from_database(segment_id)
+        if not segment_data or 'transcription_result' not in segment_data:
+            return jsonify({'success': False, 'error': 'Segment or transcription not found'}), 404
+        
+        # Extract word segments for pure LLM testing
+        transcription_result = segment_data['transcription_result']
+        word_segments = transcription_result.get('word_segments', [])
+        
+        if not word_segments:
+            return jsonify({'success': False, 'error': 'No word segments found in transcription'}), 400
+        
+        results = {}
+        errors = {}
+        comparison_start_time = time.time()
+        
+        # Test each model using pure LLM approach
+        for model in models:
+            try:
+                logger.info(f"Testing pure LLM model: {model}")
+                model_start_time = time.time()
+                
+                # Test the model using pure LLM approach
+                model_results = test_model_pure_llm(word_segments, model, confidence_threshold)
+                model_processing_time = time.time() - model_start_time
+                
+                # Format results to match expected structure
+                results[model] = {
+                    'guitar_term_evaluation': {
+                        'musical_terms_found': model_results['terms_found'],
+                        'llm_queries_made': model_results['llm_queries'],
+                        'llm_successful_responses': model_results['successful_responses'],
+                        'processing_time': model_processing_time,
+                        'enhanced_terms': model_results['enhanced_terms'],
+                        'word_count': len(word_segments),
+                        'evaluation_mode': 'pure_llm',
+                        'model_responses': model_results['model_responses']
+                    }
+                }
+                
+                logger.info(f"Pure LLM model {model} completed - Terms: {model_results['terms_found']}, LLM Queries: {model_results['llm_queries']}, Time: {model_processing_time:.2f}s")
+                
+            except Exception as e:
+                error_msg = str(e)
+                errors[model] = error_msg
+                logger.error(f"Pure LLM model {model} failed: {error_msg}")
+        
+        # Calculate comparison metrics
+        total_comparison_time = time.time() - comparison_start_time
+        comparison_analysis = calculate_model_comparison_analysis(results)
+        
+        logger.info(f"Pure LLM model comparison completed - {len(results)} successful, {len(errors)} failed, Total time: {total_comparison_time:.2f}s")
+        
+        return jsonify({
+            "success": True,
+            "models_tested": models,
+            "confidence_threshold": confidence_threshold,
+            "results": results,
+            "errors": errors,
+            "comparison_analysis": comparison_analysis,
+            "timing": {
+                "total_comparison_time": total_comparison_time,
+                "models_completed": len(results),
+                "models_failed": len(errors)
+            },
+            "test_metadata": {
+                "compared_at": datetime.now().isoformat(),
+                "service_version": "1.0.0",
+                "total_models": len(models),
+                "evaluation_mode": "pure_llm",
+                "segment_id": segment_id
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error comparing pure LLM guitar term models: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "Failed to compare guitar term models"
+        }), 500
+
+def calculate_model_comparison_analysis(results):
+    """Calculate analysis metrics for model comparison"""
+    if not results:
+        return None
+    
+    analysis = {
+        "performance_ranking": [],
+        "agreement_analysis": {},
+        "efficiency_metrics": {},
+        "best_performer": None
+    }
+    
+    # Analyze each model's performance
+    model_metrics = {}
+    for model, result in results.items():
+        guitar_eval = result.get('guitar_term_evaluation', {})
+        
+        metrics = {
+            "model": model,
+            "guitar_terms_found": guitar_eval.get('musical_terms_found', 0),
+            "total_words_enhanced": guitar_eval.get('total_words_enhanced', 0),
+            "llm_queries_made": guitar_eval.get('llm_queries_made', 0),
+            "llm_successful_responses": guitar_eval.get('llm_successful_responses', 0),
+            "processing_time": guitar_eval.get('processing_time', 0),
+            "enhanced_terms": guitar_eval.get('enhanced_terms', []),
+            "unique_terms": list(set([term.get('word', '').lower() for term in guitar_eval.get('enhanced_terms', [])])),
+            "success_rate": (guitar_eval.get('llm_successful_responses', 0) / max(guitar_eval.get('llm_queries_made', 1), 1)) * 100,
+            "terms_per_second": guitar_eval.get('musical_terms_found', 0) / max(guitar_eval.get('processing_time', 1), 0.1)
+        }
+        
+        model_metrics[model] = metrics
+    
+    # Rank models by performance (terms found + success rate)
+    ranked_models = sorted(model_metrics.items(), 
+                          key=lambda x: (x[1]['guitar_terms_found'], x[1]['success_rate'], -x[1]['processing_time']), 
+                          reverse=True)
+    
+    analysis["performance_ranking"] = [{"rank": i+1, **metrics} for i, (model, metrics) in enumerate(ranked_models)]
+    
+    # Find best performer
+    if ranked_models:
+        analysis["best_performer"] = ranked_models[0][1]
+    
+    # Agreement analysis - which terms were found by multiple models
+    all_terms = set()
+    model_terms = {}
+    
+    for model, metrics in model_metrics.items():
+        terms = set(metrics['unique_terms'])
+        model_terms[model] = terms
+        all_terms.update(terms)
+    
+    term_agreement = {}
+    for term in all_terms:
+        found_by = [model for model, terms in model_terms.items() if term in terms]
+        term_agreement[term] = {
+            "found_by": found_by,
+            "agreement_count": len(found_by),
+            "agreement_percentage": (len(found_by) / len(model_metrics)) * 100
+        }
+    
+    # Categorize terms by agreement level
+    high_agreement = {term: data for term, data in term_agreement.items() if data['agreement_percentage'] >= 75}
+    moderate_agreement = {term: data for term, data in term_agreement.items() if 50 <= data['agreement_percentage'] < 75}
+    low_agreement = {term: data for term, data in term_agreement.items() if data['agreement_percentage'] < 50}
+    
+    analysis["agreement_analysis"] = {
+        "total_unique_terms": len(all_terms),
+        "high_agreement_terms": len(high_agreement),
+        "moderate_agreement_terms": len(moderate_agreement),
+        "low_agreement_terms": len(low_agreement),
+        "consensus_terms": list(high_agreement.keys()),
+        "disputed_terms": list(low_agreement.keys()),
+        "term_details": term_agreement
+    }
+    
+    # Efficiency metrics
+    if model_metrics:
+        avg_processing_time = sum(m['processing_time'] for m in model_metrics.values()) / len(model_metrics)
+        avg_terms_found = sum(m['guitar_terms_found'] for m in model_metrics.values()) / len(model_metrics)
+        avg_success_rate = sum(m['success_rate'] for m in model_metrics.values()) / len(model_metrics)
+        
+        analysis["efficiency_metrics"] = {
+            "average_processing_time": avg_processing_time,
+            "average_terms_found": avg_terms_found,
+            "average_success_rate": avg_success_rate,
+            "fastest_model": min(model_metrics.items(), key=lambda x: x[1]['processing_time'])[0],
+            "most_accurate_model": max(model_metrics.items(), key=lambda x: x[1]['guitar_terms_found'])[0]
+        }
+    
+    return analysis
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

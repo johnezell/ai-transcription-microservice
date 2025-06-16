@@ -149,6 +149,24 @@ class LocalTruefireCourse extends Model
     }
 
     /**
+     * Get the author that created this course.
+     */
+    public function author()
+    {
+        return $this->belongsTo(LocalTruefireAuthor::class, 'authorid', 'authorid');
+    }
+
+    /**
+     * Get the instructor/author name for this course.
+     *
+     * @return string|null
+     */
+    public function getInstructorNameAttribute(): ?string
+    {
+        return $this->author?->full_name;
+    }
+
+    /**
      * Get the transcription preset for this course.
      *
      * @return string

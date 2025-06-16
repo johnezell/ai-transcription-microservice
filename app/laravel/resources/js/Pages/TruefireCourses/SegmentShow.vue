@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
@@ -53,6 +53,44 @@ const isComparingModels = ref(false);
 const singleModelTestResults = ref(null);
 const modelComparisonResults = ref(null);
 const modelTestError = ref('');
+
+// Model testing UI state
+const expandedModelDetails = ref({});
+const expandedModelResponses = ref({});
+const showPromptEditor = ref(false);
+const customPrompt = ref('');
+const defaultPrompt = ref('');
+const useCustomPrompt = ref(false);
+
+// Teaching pattern model testing state
+const showTeachingPatternPanel = ref(false);
+const selectedTeachingPatternModels = ref(['llama3.2:3b']);
+const isComparingTeachingPatterns = ref(false);
+const teachingPatternComparisonResults = ref(null);
+const teachingPatternError = ref('');
+
+// Teaching pattern UI state
+const expandedTeachingModelDetails = ref({});
+const expandedTeachingModelResponses = ref({});
+
+// Custom prompt testing state
+const showCustomPromptPanel = ref(false);
+const customPromptText = ref('');
+const productName = ref('TrueFire Guitar Lessons');
+const courseTitle = ref('');
+const instructorName = ref('');
+const selectedCustomPromptPreset = ref('balanced');
+const selectedCustomPromptModel = ref('');
+const enableComparisonMode = ref(false);
+const isTestingCustomPrompt = ref(false);
+const customPromptTestResults = ref(null);
+const customPromptTestError = ref('');
+
+// WhisperX transcription prompt display state
+const showWhisperPrompt = ref(false);
+const whisperPromptText = ref('');
+const whisperPromptLength = ref(0);
+const isLoadingWhisperPrompt = ref(false);
 
 // Check if this is a newly started processing that needs monitoring
 const isNewProcessing = computed(() => {
@@ -502,7 +540,7 @@ async function testSingleModel() {
     singleModelTestResults.value = null;
     
     try {
-        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${props.segment.id}/test-guitar-term-model`, {
+        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${props.segment.id}/test-contextual-evaluation`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -518,16 +556,16 @@ async function testSingleModel() {
         
         if (data.success) {
             // Validate the data structure before setting it
-            // Check if guitar_term_evaluation is in results (Laravel wrapper) or at top level (direct service)
-            const guitarEval = data.guitar_term_evaluation || (data.results && data.results.guitar_term_evaluation);
-            if (guitarEval && typeof guitarEval === 'object') {
+            // Check if contextual_evaluation is in results (Laravel wrapper) or at top level (direct service)
+            const contextualEval = data.contextual_evaluation || (data.results && data.results.contextual_evaluation);
+            if (contextualEval && typeof contextualEval === 'object') {
                 // Flatten the structure for consistent access
                 const flattenedData = {
                     ...data,
-                    guitar_term_evaluation: guitarEval
+                    contextual_evaluation: contextualEval
                 };
                 singleModelTestResults.value = flattenedData;
-                console.log('Single model test completed:', flattenedData);
+                console.log('Single model contextual test completed:', flattenedData);
             } else {
                 modelTestError.value = 'Invalid test data received from server';
                 console.error('Invalid test data:', data);
@@ -554,7 +592,7 @@ async function compareModels() {
     modelComparisonResults.value = null;
     
     try {
-        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${props.segment.id}/compare-models`, {
+        const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${props.segment.id}/compare-contextual-models`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -579,7 +617,7 @@ async function compareModels() {
                     comparison: comparison
                 };
                 modelComparisonResults.value = flattenedData;
-                console.log('Model comparison completed:', flattenedData);
+                console.log('Model contextual comparison completed:', flattenedData);
             } else {
                 modelTestError.value = 'Invalid comparison data received from server';
                 console.error('Invalid comparison data:', data);
@@ -604,13 +642,251 @@ function toggleModelComparison(modelName) {
     }
 }
 
-function clearModelTestResults() {
-    singleModelTestResults.value = null;
-    modelComparisonResults.value = null;
-    modelTestError.value = '';
-}
+    function clearModelTestResults() {
+        singleModelTestResults.value = null;
+        modelComparisonResults.value = null;
+        modelTestError.value = '';
+    }
 
-function getModelDisplayName(modelName) {
+    // Toggle functions for model details and responses
+    function toggleModelDetails(modelName) {
+        expandedModelDetails.value[modelName] = !expandedModelDetails.value[modelName];
+    }
+
+    function toggleModelResponses(modelName) {
+        expandedModelResponses.value[modelName] = !expandedModelResponses.value[modelName];
+    }
+
+    // Teaching Pattern Model Testing Functions
+    function toggleTeachingPatternModel(modelName) {
+        const index = selectedTeachingPatternModels.value.indexOf(modelName);
+        if (index > -1) {
+            selectedTeachingPatternModels.value.splice(index, 1);
+        } else {
+            selectedTeachingPatternModels.value.push(modelName);
+        }
+    }
+
+    async function compareTeachingPatternModels() {
+        if (selectedTeachingPatternModels.value.length === 0) {
+            teachingPatternError.value = 'Please select at least one model to compare';
+            return;
+        }
+
+        isComparingTeachingPatterns.value = true;
+        teachingPatternError.value = '';
+        teachingPatternComparisonResults.value = null;
+
+        try {
+            const response = await fetch('/api/teaching-pattern-models/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify({
+                    segment_id: props.segment.id,
+                    course_id: props.course.id,
+                    models: selectedTeachingPatternModels.value,
+                    transcription_data: transcriptData.value
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                teachingPatternComparisonResults.value = data.results;
+                console.log('Teaching pattern comparison completed:', data.results);
+            } else {
+                teachingPatternError.value = 'Failed to compare teaching pattern models: ' + (data.message || 'Unknown error');
+                console.error('Teaching pattern comparison failed:', data.message);
+            }
+        } catch (error) {
+            console.error('Error comparing teaching pattern models:', error);
+            teachingPatternError.value = 'Error comparing teaching pattern models: ' + error.message;
+        } finally {
+            isComparingTeachingPatterns.value = false;
+        }
+    }
+
+    function clearTeachingPatternResults() {
+        teachingPatternComparisonResults.value = null;
+        teachingPatternError.value = '';
+    }
+
+    // Teaching pattern UI toggle functions
+    function toggleTeachingModelDetails(modelName) {
+        expandedTeachingModelDetails.value[modelName] = !expandedTeachingModelDetails.value[modelName];
+    }
+
+    function toggleTeachingModelResponses(modelName) {
+        expandedTeachingModelResponses.value[modelName] = !expandedTeachingModelResponses.value[modelName];
+    }
+
+    // Prompt handling functions
+    async function loadDefaultPrompt() {
+        try {
+            const response = await fetch('/api/guitar-term-evaluator/default-prompt');
+            const data = await response.json();
+            defaultPrompt.value = data.prompt || 'Error loading default prompt';
+        } catch (error) {
+            console.error('Error loading default prompt:', error);
+            defaultPrompt.value = 'Error loading default prompt';
+        }
+    }
+
+    // Load WhisperX transcription prompt
+    async function loadWhisperPrompt() {
+        if (whisperPromptText.value) return; // Already loaded
+        
+        try {
+            isLoadingWhisperPrompt.value = true;
+            
+            // Get the preset configuration from the transcription service via Laravel proxy
+            const response = await fetch('/api/transcription-service/presets/info', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            const preset = segmentData.value.preset_used || 'balanced';
+            const presetConfig = data.presets?.[preset];
+            
+            if (presetConfig?.initial_prompt) {
+                // Process template variables in the WhisperX prompt
+                const processedPrompt = processTemplateVariables(presetConfig.initial_prompt);
+                whisperPromptText.value = processedPrompt;
+                whisperPromptLength.value = processedPrompt.length;
+            } else {
+                whisperPromptText.value = 'Unable to load WhisperX prompt for this preset';
+                whisperPromptLength.value = 0;
+            }
+        } catch (error) {
+            console.error('Error loading WhisperX prompt:', error);
+            whisperPromptText.value = 'Error loading WhisperX prompt from transcription service';
+            whisperPromptLength.value = 0;
+        } finally {
+            isLoadingWhisperPrompt.value = false;
+        }
+    }
+
+    // Custom prompt testing functions
+    async function testCustomPrompt() {
+        if (!customPromptText.value.trim() && !productName.value.trim() && !courseTitle.value.trim() && !instructorName.value.trim()) {
+            customPromptTestError.value = 'Please provide at least one of: custom prompt, product name, course title, or instructor name';
+            return;
+        }
+        
+        isTestingCustomPrompt.value = true;
+        customPromptTestError.value = '';
+        customPromptTestResults.value = null;
+        
+        try {
+            const requestBody = {
+                segment_id: props.segment.id,
+                course_id: props.course.id,
+                preset: selectedCustomPromptPreset.value,
+                comparison_mode: enableComparisonMode.value,
+                enable_guitar_term_evaluation: true
+            };
+            
+            // Add custom prompt if provided
+            if (customPromptText.value.trim()) {
+                requestBody.custom_prompt = customPromptText.value.trim();
+            }
+            
+            // Add product context if provided
+            if (productName.value.trim()) {
+                requestBody.product_name = productName.value.trim();
+            }
+            
+            if (courseTitle.value.trim()) {
+                requestBody.course_title = courseTitle.value.trim();
+            }
+            
+            if (instructorName.value.trim()) {
+                requestBody.instructor_name = instructorName.value.trim();
+            }
+            
+            // Add model override if selected
+            if (selectedCustomPromptModel.value) {
+                requestBody.model_name = selectedCustomPromptModel.value;
+            }
+            
+            console.log('Testing custom prompt with request:', requestBody);
+            
+            const response = await fetch('/api/transcription-service/test-custom-prompt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                customPromptTestResults.value = data;
+                console.log('Custom prompt test completed:', data);
+            } else {
+                customPromptTestError.value = 'Test failed: ' + (data.message || 'Unknown error');
+                console.error('Custom prompt test failed:', data);
+            }
+        } catch (error) {
+            console.error('Error testing custom prompt:', error);
+            customPromptTestError.value = 'Error testing custom prompt: ' + error.message;
+        } finally {
+            isTestingCustomPrompt.value = false;
+        }
+    }
+
+    function clearCustomPromptResults() {
+        customPromptTestResults.value = null;
+        customPromptTestError.value = '';
+    }
+
+    function populateCourseContext() {
+        // Auto-populate course context from props
+        if (props.course?.title) {
+            courseTitle.value = props.course.title;
+        }
+        if (props.course?.instructor_name) {
+            instructorName.value = props.course.instructor_name;
+        }
+    }
+
+    // Process template variables in prompts
+    function processTemplateVariables(promptText) {
+        if (!promptText) return '';
+        
+        let processedText = promptText;
+        
+        // Replace template variables with actual values
+        const variables = {
+            'product_name': productName.value || 'TrueFire Guitar Lessons',
+            'course_title': courseTitle.value || props.course?.title || 'Guitar Course',
+            'instructor_name': instructorName.value || props.course?.instructor_name || 'Guitar Instructor',
+            'segment_id': props.segment?.id || 'Unknown',
+            'preset': selectedCustomPromptPreset.value || segmentData.value?.preset_used || 'balanced'
+        };
+        
+        // Replace each template variable
+        Object.entries(variables).forEach(([key, value]) => {
+            const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi');
+            processedText = processedText.replace(pattern, value);
+        });
+        
+        return processedText;
+    }
+
+    function getModelDisplayName(modelName) {
     if (!modelName || typeof modelName !== 'string') {
         return 'Unknown Model';
     }
@@ -633,6 +909,11 @@ function getPerformanceColor(score) {
 
 // Helper function to format time in MM:SS format
 function formatTime(seconds) {
+    // Handle null, undefined, or NaN values
+    if (seconds == null || isNaN(seconds)) {
+        return '--';
+    }
+    
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -1083,6 +1364,12 @@ onMounted(() => {
     // Fetch available models for testing
     fetchAvailableModels();
     
+    // Load default prompt for model testing
+    loadDefaultPrompt();
+    
+        // Initialize custom prompt testing with course data
+    populateCourseContext();
+    
     // Then start polling after a short delay to ensure backend has time to update
     setTimeout(() => {
         startPolling();
@@ -1092,6 +1379,13 @@ onMounted(() => {
     nextTick(() => {
         initializeVideoSync();
     });
+});
+
+// Watch for when the WhisperX prompt section is expanded to load the prompt
+watch(showWhisperPrompt, (newValue) => {
+    if (newValue && !whisperPromptText.value) {
+        loadWhisperPrompt();
+    }
 });
 
 
@@ -1834,34 +2128,463 @@ function getStatusTitle(status) {
                                 </div>
                             </div>
 
-                            <!-- MAIN CONTENT AREA - Video and Transcript -->
+                            <!-- MAIN CONTENT AREA - Model Testing Lab -->
                             <div class="md:w-2/3">
-                                <!-- Video player -->
-                                <div class="bg-gray-900 rounded-lg overflow-hidden shadow-lg relative mb-6">
-                                    <video 
-                                        ref="videoElement"
-                                        :src="segmentData.url" 
-                                        controls
-                                        class="w-full max-h-[500px]"
-                                        preload="metadata"
-                                        @error="handleVideoError"
-                                    ></video>
+                                <!-- 🧪 MODEL TESTING LAB - Primary Focus -->
+                                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                                    <div class="flex items-center justify-between mb-6">
+                                        <h3 class="text-xl font-semibold text-gray-900 flex items-center space-x-2">
+                                            <svg class="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                            </svg>
+                                            <span>🧪 Model Testing Lab</span>
+                                        </h3>
+                                    </div>
+                                    <p class="text-gray-600 mb-6">Test different LLM models and prompts for contextual guitar terminology evaluation on this segment's low-confidence words.</p>
                                     
-                                    <div v-if="videoError" class="p-4 bg-red-50 text-red-800 text-sm">
-                                        <div class="font-medium">Error loading video:</div>
-                                        {{ videoError }}
+                                    <!-- Error Display -->
+                                    <div v-if="modelTestError" class="p-4 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm mb-6">
+                                        {{ modelTestError }}
+                                    </div>
+                                    
+                                    <!-- Configuration Section -->
+                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                                        <!-- Confidence Threshold -->
+                                        <div class="bg-gray-50 rounded-lg p-4">
+                                            <label class="block text-sm font-medium text-gray-700 mb-3">Confidence Threshold</label>
+                                            <div class="flex items-center space-x-4">
+                                                <input 
+                                                    v-model.number="confidenceThreshold" 
+                                                    type="range" 
+                                                    min="0.1" 
+                                                    max="1.0" 
+                                                    step="0.05" 
+                                                    class="flex-1"
+                                                >
+                                                <div class="flex items-center space-x-4 text-sm text-gray-600">
+                                                    <span>0.1 (Low)</span>
+                                                    <span class="font-medium bg-white px-2 py-1 rounded border">{{ confidenceThreshold.toFixed(2) }}</span>
+                                                    <span>1.0 (High)</span>
+                                                </div>
+                                            </div>
+                                            <p class="text-xs text-gray-500 mt-2">Only words below this confidence level will be evaluated for enhancement</p>
+                                        </div>
+
+                                        <!-- Quick Actions -->
+                                        <div class="bg-gray-50 rounded-lg p-4">
+                                            <label class="block text-sm font-medium text-gray-700 mb-3">Quick Test</label>
+                                            <div class="flex items-center space-x-3">
+                                                <select v-model="selectedTestModel" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                                                    <option v-for="model in availableModels" :key="model.name" :value="model.name">
+                                                        {{ getModelDisplayName(model.name) }}
+                                                    </option>
+                                                </select>
+                                                <button 
+                                                    @click="testSingleModel" 
+                                                    :disabled="isTestingModel || !selectedTestModel"
+                                                    class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-lg transition text-sm"
+                                                >
+                                                    <span v-if="isTestingModel" class="flex items-center">
+                                                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                        </svg>
+                                                        Testing...
+                                                    </span>
+                                                    <span v-else>Test Model</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- LLM Prompt Configuration - Prominent -->
+                                    <div class="bg-blue-50 rounded-lg p-6 mb-8 border border-blue-200">
+                                        <div class="flex items-center justify-between mb-4">
+                                            <h4 class="text-lg font-semibold text-blue-900 flex items-center">
+                                                <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                                </svg>
+                                                Prompt Editor
+                                            </h4>
+                                            <button 
+                                                @click="showPromptEditor = !showPromptEditor"
+                                                class="flex items-center space-x-2 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+                                            >
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                                </svg>
+                                                <span>{{ showPromptEditor ? 'Hide' : 'Customize' }} Prompt</span>
+                                            </button>
+                                        </div>
+                                        <p class="text-blue-700 text-sm mb-4">Customize how the LLM evaluates words in context to identify guitar terminology</p>
+                                        
+                                        <div v-if="showPromptEditor" class="space-y-4">
+                                            <!-- Use Custom Prompt Toggle -->
+                                            <div class="flex items-center space-x-2">
+                                                <input 
+                                                    id="useCustomPrompt"
+                                                    v-model="useCustomPrompt" 
+                                                    type="checkbox" 
+                                                    class="rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                                                >
+                                                <label for="useCustomPrompt" class="text-sm font-medium text-blue-800">
+                                                    Use Custom Prompt
+                                                </label>
+                                            </div>
+                                            
+                                            <!-- Default Prompt Display -->
+                                            <div class="bg-white rounded-lg p-4 border border-blue-200">
+                                                <h6 class="font-medium text-gray-800 mb-2 text-sm">Default Prompt:</h6>
+                                                <div class="text-xs text-gray-600 font-mono bg-gray-50 p-3 rounded border border-gray-200 max-h-32 overflow-y-auto">
+                                                    {{ defaultPrompt || 'Loading default prompt...' }}
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Custom Prompt Editor -->
+                                            <div v-if="useCustomPrompt">
+                                                <label class="block text-sm font-medium text-blue-800 mb-2">Custom Prompt:</label>
+                                                <textarea 
+                                                    v-model="customPrompt"
+                                                    rows="6"
+                                                    class="w-full rounded-lg border-blue-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm font-mono"
+                                                    placeholder="Enter your custom prompt for contextual guitar term evaluation..."
+                                                ></textarea>
+                                                <div class="text-xs text-blue-600 mt-2">
+                                                    The prompt should instruct the LLM how to evaluate low-confidence words in their context to identify legitimate guitar terms.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Whisper AI Transcription Prompt Display -->
+                                    <div class="bg-blue-50 rounded-lg p-6 mb-8 border border-blue-200">
+                                        <div class="flex items-center justify-between mb-4">
+                                            <h4 class="text-lg font-semibold text-blue-900 flex items-center">
+                                                <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                                </svg>
+                                                🎤 WhisperX Transcription Prompt
+                                            </h4>
+                                            <button 
+                                                @click="showWhisperPrompt = !showWhisperPrompt"
+                                                class="text-blue-600 hover:text-blue-800 transition"
+                                            >
+                                                <svg 
+                                                    :class="{ 'transform rotate-180': showWhisperPrompt }"
+                                                    class="w-5 h-5 transition-transform"
+                                                    fill="none" 
+                                                    stroke="currentColor" 
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        
+                                        <div v-if="!showWhisperPrompt" class="text-sm text-blue-700">
+                                            View the comprehensive guitar lesson context prompt used by WhisperX for transcription (~1,200 words)
+                                        </div>
+                                        
+                                        <div v-if="showWhisperPrompt" class="space-y-4">
+                                            <div class="bg-white rounded-lg p-4 border border-blue-200">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <div class="flex items-center space-x-2">
+                                                        <h5 class="font-medium text-blue-800">Current Transcription Prompt ({{segmentData.preset_used || 'Balanced'}} preset)</h5>
+                                                        <span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full flex items-center">
+                                                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                                            </svg>
+                                                            Variables Processed
+                                                        </span>
+                                                    </div>
+                                                    <div class="text-xs text-blue-600">
+                                                        Length: ~{{whisperPromptLength}} characters
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="text-xs text-blue-600 font-mono bg-gray-50 p-3 rounded border border-gray-200 max-h-64 overflow-y-auto leading-relaxed">
+                                                    {{ whisperPromptText || 'Loading WhisperX prompt...' }}
+                                                </div>
+                                                
+                                                <div class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Model Used</div>
+                                                        <div class="font-medium">{{ segmentData.model_used || 'Small' }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Language</div>
+                                                        <div class="font-medium">English</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Temperature</div>
+                                                        <div class="font-medium">0 (Deterministic)</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Word Timestamps</div>
+                                                        <div class="font-medium">✅ Enabled</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="bg-blue-100 rounded-lg p-3 border border-blue-200">
+                                                <h6 class="font-medium text-blue-800 mb-2">📋 Key Features of This Prompt:</h6>
+                                                <ul class="text-sm text-blue-700 space-y-1">
+                                                    <li>• <strong>Musical Terminology:</strong> Comprehensive guitar, chord, and music theory context</li>
+                                                    <li>• <strong>Critical Corrections:</strong> "chord" never "cord", "C sharp" not "see sharp"</li>
+                                                    <li>• <strong>Guitar Anatomy:</strong> Fretboard, capo, pickup, strings, hardware</li>
+                                                    <li>• <strong>Advanced Techniques:</strong> Fingerpicking, hammer-on, pull-off, string bending</li>
+                                                    <li>• <strong>Music Theory:</strong> Scale patterns, chord progressions, modal theory</li>
+                                                    <li>• <strong>Instructor Context:</strong> {{ props.course?.instructor_name || 'Educational content' }}</li>
+                                                    <li>• <strong>Dynamic Variables:</strong> Course title, instructor name, and segment-specific context automatically inserted</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Custom Prompt Testing - New Feature -->
+                                    <div class="bg-green-50 rounded-lg p-6 mb-8 border border-green-200">
+                                        <div class="flex items-center justify-between mb-4">
+                                            <h4 class="text-lg font-semibold text-green-900 flex items-center">
+                                                <svg class="w-5 h-5 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                                </svg>
+                                                🎯 Custom Prompt Testing
+                                            </h4>
+                                            <button 
+                                                @click="showCustomPromptPanel = !showCustomPromptPanel"
+                                                class="flex items-center space-x-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm"
+                                            >
+                                                <svg 
+                                                    :class="{ 'transform rotate-180': showCustomPromptPanel }"
+                                                    class="w-4 h-4 transition-transform" 
+                                                    fill="none" 
+                                                    stroke="currentColor" 
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                                <span>{{ showCustomPromptPanel ? 'Hide' : 'Test' }} Custom Prompts</span>
+                                            </button>
+                                        </div>
+                                        <p class="text-green-700 text-sm mb-4">Test transcription with custom prompts including product-specific context like TrueFire branding</p>
+                                        
+                                        <!-- Custom Prompt Testing Panel -->
+                                        <div v-if="showCustomPromptPanel" class="space-y-6">
+                                            <!-- Error Display -->
+                                            <div v-if="customPromptTestError" class="p-4 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm">
+                                                {{ customPromptTestError }}
+                                            </div>
+                                            
+                                            <!-- Configuration Grid -->
+                                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                                <!-- Product Context -->
+                                                <div class="bg-white rounded-lg p-4 border border-green-200">
+                                                    <h5 class="font-medium text-green-800 mb-3 flex items-center">
+                                                        <svg class="w-4 h-4 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                                        </svg>
+                                                        Product Context
+                                                    </h5>
+                                                    <div class="space-y-3">
+                                                        <div>
+                                                            <label class="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                                                            <input 
+                                                                v-model="productName"
+                                                                type="text"
+                                                                class="w-full rounded-md border-green-300 shadow-sm focus:border-green-500 focus:ring-green-500 text-sm"
+                                                                placeholder="e.g., TrueFire Guitar Lessons"
+                                                            >
+                                                        </div>
+                                                        <div>
+                                                            <label class="block text-sm font-medium text-gray-700 mb-1">Course Title</label>
+                                                            <input 
+                                                                v-model="courseTitle"
+                                                                type="text"
+                                                                class="w-full rounded-md border-green-300 shadow-sm focus:border-green-500 focus:ring-green-500 text-sm"
+                                                                placeholder="e.g., Advanced Fingerpicking Techniques"
+                                                            >
+                                                        </div>
+                                                        <div>
+                                                            <label class="block text-sm font-medium text-gray-700 mb-1">Instructor Name</label>
+                                                            <input 
+                                                                v-model="instructorName"
+                                                                type="text"
+                                                                class="w-full rounded-md border-green-300 shadow-sm focus:border-green-500 focus:ring-green-500 text-sm"
+                                                                placeholder="e.g., Tommy Emmanuel"
+                                                            >
+                                                        </div>
+                                                        <button 
+                                                            @click="populateCourseContext"
+                                                            class="text-xs text-green-600 hover:text-green-800 font-medium"
+                                                        >
+                                                            📋 Auto-fill from course data
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Custom Prompt -->
+                                                <div class="bg-white rounded-lg p-4 border border-green-200">
+                                                    <h5 class="font-medium text-green-800 mb-3 flex items-center">
+                                                        <svg class="w-4 h-4 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                                        </svg>
+                                                        Custom Prompt
+                                                    </h5>
+                                                    
+                                                    <!-- Template Variables Guide -->
+                                                    <div class="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                                        <div class="flex items-center mb-2">
+                                                            <svg class="w-4 h-4 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                            </svg>
+                                                            <span class="text-sm font-medium text-blue-800">✨ Template Variables Available</span>
+                                                        </div>
+                                                        <div class="text-xs text-blue-700 space-y-1">
+                                                            <div><code class="bg-blue-100 px-1.5 py-0.5 rounded font-mono">{{product_name}}</code> - Product/platform name</div>
+                                                            <div><code class="bg-blue-100 px-1.5 py-0.5 rounded font-mono">{{course_title}}</code> - Course title</div>
+                                                            <div><code class="bg-blue-100 px-1.5 py-0.5 rounded font-mono">{{instructor_name}}</code> - Instructor name</div>
+                                                            <div><code class="bg-blue-100 px-1.5 py-0.5 rounded font-mono">{{segment_id}}</code> - Current segment ID</div>
+                                                            <div><code class="bg-blue-100 px-1.5 py-0.5 rounded font-mono">{{preset}}</code> - Transcription preset name</div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <textarea 
+                                                        v-model="customPromptText"
+                                                        rows="6"
+                                                        class="w-full rounded-md border-green-300 shadow-sm focus:border-green-500 focus:ring-green-500 text-sm font-mono"
+                                                        placeholder="This is a {{product_name}} lesson about {{course_title}} taught by {{instructor_name}}. Please focus on guitar terminology, chord names, and musical techniques."
+                                                    ></textarea>
+                                                    <div class="text-xs text-green-600 mt-2">
+                                                        🧪 Use template variables like {{product_name}} for dynamic content, or write a custom prompt from scratch
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Test Configuration -->
+                                            <div class="bg-white rounded-lg p-4 border border-green-200">
+                                                <h5 class="font-medium text-green-800 mb-3">Test Configuration</h5>
+                                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700 mb-1">Base Preset</label>
+                                                        <select 
+                                                            v-model="selectedCustomPromptPreset"
+                                                            class="w-full rounded-md border-green-300 shadow-sm focus:border-green-500 focus:ring-green-500 text-sm"
+                                                        >
+                                                            <option value="fast">Fast (Tiny Model)</option>
+                                                            <option value="balanced">Balanced (Small Model)</option>
+                                                            <option value="high">High Quality (Medium Model)</option>
+                                                            <option value="premium">Premium (Large Model)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700 mb-1">Model Override (Optional)</label>
+                                                        <select 
+                                                            v-model="selectedCustomPromptModel"
+                                                            class="w-full rounded-md border-green-300 shadow-sm focus:border-green-500 focus:ring-green-500 text-sm"
+                                                        >
+                                                            <option value="">Use Preset Default</option>
+                                                            <option value="tiny">Tiny</option>
+                                                            <option value="base">Base</option>
+                                                            <option value="small">Small</option>
+                                                            <option value="medium">Medium</option>
+                                                            <option value="large-v3">Large-v3</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="flex items-center">
+                                                        <input 
+                                                            id="enableComparisonMode"
+                                                            v-model="enableComparisonMode"
+                                                            type="checkbox"
+                                                            class="rounded border-green-300 text-green-600 focus:ring-green-500"
+                                                        >
+                                                        <label for="enableComparisonMode" class="ml-2 text-sm text-gray-700">
+                                                            Compare with original prompt
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Test Button -->
+                                            <div class="flex justify-center">
+                                                <button 
+                                                    @click="testCustomPrompt"
+                                                    :disabled="isTestingCustomPrompt"
+                                                    class="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition text-base font-medium flex items-center space-x-2"
+                                                >
+                                                    <span v-if="isTestingCustomPrompt" class="flex items-center">
+                                                        <svg class="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                        </svg>
+                                                        Testing Custom Prompt...
+                                                    </span>
+                                                    <span v-else class="flex items-center">
+                                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                                        </svg>
+                                                        🚀 Test Custom Prompt
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Multi-Model Comparison - Primary Feature -->
+                                    <div class="bg-purple-50 rounded-lg p-6 border border-purple-200">
+                                        <h4 class="text-lg font-semibold text-purple-900 mb-4">Multi-Model Comparison</h4>
+                                        <div class="mb-4">
+                                            <p class="text-purple-700 text-sm mb-3">Select models to compare:</p>
+                                            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                                <label v-for="model in availableModels" :key="model.name" class="flex items-center space-x-2 p-3 bg-white border border-purple-200 rounded-lg hover:bg-purple-50 text-sm cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        :value="model.name"
+                                                        @change="toggleModelComparison(model.name)"
+                                                        :checked="selectedComparisonModels.includes(model.name)"
+                                                        class="rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                                                    >
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="font-medium text-gray-900 truncate">{{ getModelDisplayName(model.name) }}</div>
+                                                        <div v-if="model.size_gb > 0" class="text-xs text-gray-500">{{ model.size_gb }}GB</div>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-sm text-purple-700 font-medium">{{ selectedComparisonModels.length }} model(s) selected</span>
+                                            <button 
+                                                @click="compareModels" 
+                                                :disabled="isComparingModels || selectedComparisonModels.length === 0"
+                                                class="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-lg transition text-sm font-medium"
+                                            >
+                                                <span v-if="isComparingModels" class="flex items-center">
+                                                    <svg class="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                    Comparing Models...
+                                                </span>
+                                                <span v-else>🚀 Compare Models</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <!-- INTERACTIVE TRANSCRIPT - Compact -->
-                                <div v-if="segmentData.transcript_json_api_url && transcriptData" class="mb-6">
-                                    <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                                        <h3 class="text-lg font-medium flex items-center">
-                                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                                <!-- Interactive Transcript - Secondary -->
+                                <div v-if="segmentData.transcript_json_api_url && transcriptData" class="bg-white rounded-lg shadow-md p-6 mb-6">
+                                    <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                        <svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                                        </svg>
+                                        Interactive Transcript
+                                    </h3>
+                                    <div class="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div class="flex items-center">
+                                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                             </svg>
-                                            Interactive Transcript
-                                        </h3>
+                                            <span class="text-sm text-blue-700">Click words to jump to timestamps - low confidence words are highlighted for testing</span>
+                                        </div>
                                     </div>
                                     <div class="max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
                                         <AdvancedSubtitles
@@ -1875,19 +2598,187 @@ function getStatusTitle(status) {
                                     </div>
                                 </div>
 
-                                <!-- ADVANCED METRICS - Hidden by Default -->
-                                <div v-if="hasAdvancedMetricsData" class="mb-6">
-                                    <button 
-                                        @click="showAdvancedMetrics = !showAdvancedMetrics" 
-                                        class="flex items-center text-sm px-3 py-2 rounded-md transition bg-gray-100 text-gray-700 hover:bg-gray-200 mb-4"
-                                    >
-                                        <svg class="w-4 h-4 mr-1 transition-transform" :class="{'rotate-180': showAdvancedMetrics}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                        </svg>
-                                        {{ showAdvancedMetrics ? 'Hide Advanced Metrics' : 'Show Advanced Metrics' }}
-                                    </button>
+                                <!-- Video Player - Tertiary -->
+                                <div class="bg-white rounded-lg shadow-md p-6">
+                                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Video Player</h3>
+                                    <div class="bg-gray-900 rounded-lg overflow-hidden shadow-lg relative">
+                                        <video 
+                                            ref="videoElement"
+                                            :src="segmentData.url" 
+                                            controls
+                                            class="w-full max-h-[400px]"
+                                            preload="metadata"
+                                            @error="handleVideoError"
+                                        ></video>
+                                        
+                                        <div v-if="videoError" class="p-4 bg-red-50 text-red-800 text-sm">
+                                            <div class="font-medium">Error loading video:</div>
+                                            {{ videoError }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- MODEL TESTING RESULTS -->
+                                <div v-if="singleModelTestResults || modelComparisonResults || customPromptTestResults" class="bg-white rounded-lg shadow-md p-6 mb-6">
+                                    <div class="flex items-center justify-between mb-6">
+                                        <h3 class="text-xl font-semibold text-gray-900 flex items-center space-x-2">
+                                            <svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                            </svg>
+                                            <span>📊 Testing Results</span>
+                                        </h3>
+                                        <button 
+                                            @click="clearModelTestResults(); clearCustomPromptResults();" 
+                                            class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition text-sm"
+                                        >
+                                            Clear All Results
+                                        </button>
+                                    </div>
                                     
-                                    <div v-if="showAdvancedMetrics" class="space-y-6 border-t border-gray-200 pt-6">
+                                    <!-- Custom Prompt Test Results -->
+                                    <div v-if="customPromptTestResults" class="mb-8">
+                                        <h4 class="text-lg font-semibold text-gray-900 mb-4">🎯 Custom Prompt Test Results</h4>
+                                        <div class="bg-green-50 rounded-lg p-6 border border-green-200">
+                                            <!-- Test Configuration Summary -->
+                                            <div class="mb-6 p-4 bg-white rounded-lg border border-green-200">
+                                                <h5 class="font-medium text-green-800 mb-3">Test Configuration</h5>
+                                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Model Used</div>
+                                                        <div class="font-medium">{{ customPromptTestResults.test_configuration?.model_used || 'Unknown' }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Preset Used</div>
+                                                        <div class="font-medium">{{ customPromptTestResults.test_configuration?.preset_used || 'Unknown' }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Product Context</div>
+                                                        <div class="font-medium">{{ customPromptTestResults.test_configuration?.product_name_injected ? '✅ Yes' : '❌ No' }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Comparison Mode</div>
+                                                        <div class="font-medium">{{ customPromptTestResults.test_configuration?.comparison_mode ? '✅ Enabled' : '❌ Disabled' }}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Custom Prompt Performance -->
+                                            <div class="mb-6">
+                                                <h5 class="font-medium text-green-800 mb-4">Custom Prompt Performance</h5>
+                                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                                                    <div>
+                                                        <div class="text-2xl font-bold text-green-700">{{ (customPromptTestResults.results?.custom_prompt?.confidence_score * 100).toFixed(1) || '0' }}%</div>
+                                                        <div class="text-sm text-green-600">Confidence Score</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-2xl font-bold text-blue-700">{{ customPromptTestResults.results?.custom_prompt?.guitar_term_evaluation?.musical_terms_found || 0 }}</div>
+                                                        <div class="text-sm text-blue-600">Guitar Terms Found</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-2xl font-bold text-purple-700">{{ customPromptTestResults.results?.custom_prompt?.word_segments?.length || 0 }}</div>
+                                                        <div class="text-sm text-purple-600">Total Words</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-2xl font-bold text-orange-700">{{ (customPromptTestResults.results?.custom_prompt?.processing_time || 0).toFixed(1) }}s</div>
+                                                        <div class="text-sm text-orange-600">Processing Time</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Comparison Results (if enabled) -->
+                                            <div v-if="customPromptTestResults.results?.comparison_analysis" class="mb-6 p-4 bg-white rounded-lg border border-green-200">
+                                                <h5 class="font-medium text-green-800 mb-4">📊 Comparison Analysis</h5>
+                                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div class="text-center">
+                                                        <div class="text-lg font-bold text-blue-700">
+                                                            {{ customPromptTestResults.results.comparison_analysis.confidence_scores?.improvement > 0 ? '+' : '' }}{{ (customPromptTestResults.results.comparison_analysis.confidence_scores?.improvement * 100).toFixed(1) || '0' }}%
+                                                        </div>
+                                                        <div class="text-sm text-blue-600">Confidence Improvement</div>
+                                                    </div>
+                                                    <div class="text-center">
+                                                        <div class="text-lg font-bold text-green-700">
+                                                            {{ customPromptTestResults.results.comparison_analysis.guitar_term_comparison?.terms_improvement > 0 ? '+' : '' }}{{ customPromptTestResults.results.comparison_analysis.guitar_term_comparison?.terms_improvement || 0 }}
+                                                        </div>
+                                                        <div class="text-sm text-green-600">Additional Guitar Terms</div>
+                                                    </div>
+                                                    <div class="text-center">
+                                                        <div class="text-lg font-bold text-purple-700">{{ customPromptTestResults.results.comparison_analysis.text_comparison?.similarity_percentage || 0 }}%</div>
+                                                        <div class="text-sm text-purple-600">Text Similarity</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Overall Assessment -->
+                                                <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+                                                    <div class="text-sm">
+                                                        <div class="font-medium text-gray-800 mb-2">📋 Assessment:</div>
+                                                        <div class="text-gray-700">{{ customPromptTestResults.results.comparison_analysis.overall_assessment || 'No assessment available' }}</div>
+                                                        
+                                                        <!-- Recommendations -->
+                                                        <div v-if="customPromptTestResults.results.comparison_analysis.recommendation?.length" class="mt-3">
+                                                            <div class="font-medium text-gray-800 mb-2">💡 Recommendations:</div>
+                                                            <ul class="list-disc list-inside space-y-1 text-gray-700">
+                                                                <li v-for="rec in customPromptTestResults.results.comparison_analysis.recommendation" :key="rec" class="text-sm">
+                                                                    {{ rec }}
+                                                                </li>
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Prompt Details -->
+                                            <div class="bg-white rounded-lg p-4 border border-green-200">
+                                                <h5 class="font-medium text-green-800 mb-3">🔍 Prompt Analysis</h5>
+                                                <div class="grid grid-cols-2 gap-4 text-sm">
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Custom Prompt Length</div>
+                                                        <div class="font-medium">{{ customPromptTestResults.prompt_analysis?.custom_prompt_length || 0 }} characters</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-gray-600 mb-1">Enhancement Applied</div>
+                                                        <div class="font-medium">{{ customPromptTestResults.prompt_analysis?.enhancement_applied ? '✅ Yes' : '❌ No' }}</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Expandable Prompt Preview -->
+                                                <details class="mt-3">
+                                                    <summary class="text-xs text-green-600 cursor-pointer hover:text-green-800">Show final prompt used</summary>
+                                                    <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-200 text-xs text-gray-600 font-mono max-h-32 overflow-y-auto">
+                                                        {{ customPromptTestResults.results?.custom_prompt?.prompt_used || 'Prompt not available' }}
+                                                    </div>
+                                                </details>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Single Model Results -->
+                                    <div v-if="singleModelTestResults" class="mb-8">
+                                        <h4 class="text-lg font-semibold text-gray-900 mb-4">Single Model Test Results</h4>
+                                        <div class="bg-purple-50 rounded-lg p-6 border border-purple-200">
+                                            <h5 class="font-medium text-purple-800 mb-4">{{ getModelDisplayName(singleModelTestResults.model) }} Performance</h5>
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                                                <div>
+                                                    <div class="text-2xl font-bold text-purple-700">{{ singleModelTestResults.contextual_evaluation?.enhanced_words_count || 0 }}</div>
+                                                    <div class="text-sm text-purple-600">Terms Enhanced</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-2xl font-bold text-blue-700">{{ singleModelTestResults.contextual_evaluation?.low_confidence_words_analyzed || 0 }}</div>
+                                                    <div class="text-sm text-blue-600">Words Analyzed</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-2xl font-bold text-green-700">{{ (singleModelTestResults.processing_time || 0).toFixed(2) }}s</div>
+                                                    <div class="text-sm text-green-600">Processing Time</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-2xl font-bold text-orange-700">{{ (((singleModelTestResults.contextual_evaluation?.enhanced_words_count || 0) / Math.max(singleModelTestResults.contextual_evaluation?.low_confidence_words_analyzed || 1, 1)) * 100).toFixed(0) }}%</div>
+                                                    <div class="text-sm text-orange-600">Precision Rate</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Model Comparison Results -->
+                                    <div v-if="modelComparisonResults"
                                         <!-- Guitar Enhancement Details -->
                                         <div v-if="guitarEnhancementAnalysis" class="space-y-4">
                                             <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
@@ -1978,7 +2869,7 @@ function getStatusTitle(status) {
                                                         <svg class="w-5 h-5 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
                                                         </svg>
-                                                        Model Testing & Comparison
+                                                        Contextual Guitar Term Evaluation
                                                     </h4>
                                                     <button 
                                                         @click="showModelTestingPanel = !showModelTestingPanel"
@@ -1997,7 +2888,7 @@ function getStatusTitle(status) {
                                                 </div>
                                                 
                                                 <div v-if="!showModelTestingPanel" class="text-sm text-purple-700">
-                                                    Test different LLM models to compare guitar terminology recognition performance
+                                                    Test different LLM models for contextual guitar terminology evaluation in low-confidence segments
                                                 </div>
                                                 
                                                 <!-- Model Testing Panel Content -->
@@ -2022,6 +2913,69 @@ function getStatusTitle(status) {
                                                             <span>0.1 (Low)</span>
                                                             <span class="font-medium">{{ confidenceThreshold.toFixed(2) }}</span>
                                                             <span>1.0 (High)</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- LLM Prompt Configuration -->
+                                                    <div class="border border-purple-200 rounded-lg p-4 bg-white">
+                                                        <div class="flex items-center justify-between mb-3">
+                                                            <h5 class="font-medium text-purple-800">LLM Prompt Configuration</h5>
+                                                            <button 
+                                                                @click="showPromptEditor = !showPromptEditor"
+                                                                class="text-purple-600 hover:text-purple-800 transition text-sm"
+                                                            >
+                                                                <svg 
+                                                                    :class="{ 'transform rotate-180': showPromptEditor }"
+                                                                    class="w-4 h-4 transition-transform inline mr-1"
+                                                                    fill="none" 
+                                                                    stroke="currentColor" 
+                                                                    viewBox="0 0 24 24"
+                                                                >
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                                </svg>
+                                                                {{ showPromptEditor ? 'Hide' : 'Show' }} Prompt Editor
+                                                            </button>
+                                                        </div>
+                                                        
+                                                        <div v-if="!showPromptEditor" class="text-sm text-purple-700">
+                                                            Customize the LLM prompt to control contextual guitar term evaluation
+                                                        </div>
+                                                        
+                                                        <div v-if="showPromptEditor" class="space-y-4">
+                                                            <!-- Use Custom Prompt Toggle -->
+                                                            <div class="flex items-center space-x-2">
+                                                                <input 
+                                                                    id="useCustomPrompt"
+                                                                    v-model="useCustomPrompt" 
+                                                                    type="checkbox" 
+                                                                    class="rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                                                                >
+                                                                <label for="useCustomPrompt" class="text-sm font-medium text-purple-700">
+                                                                    Use Custom Prompt
+                                                                </label>
+                                                            </div>
+                                                            
+                                                            <!-- Default Prompt Display -->
+                                                            <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                                                <h6 class="font-medium text-gray-800 mb-2 text-sm">Default Prompt:</h6>
+                                                                <div class="text-xs text-gray-600 font-mono bg-white p-2 rounded border border-gray-200 max-h-32 overflow-y-auto">
+                                                                    {{ defaultPrompt || 'Loading default prompt...' }}
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <!-- Custom Prompt Editor -->
+                                                            <div v-if="useCustomPrompt">
+                                                                <label class="block text-sm font-medium text-purple-700 mb-2">Custom Prompt:</label>
+                                                                <textarea 
+                                                                    v-model="customPrompt"
+                                                                    rows="6"
+                                                                    class="w-full rounded-md border-purple-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm font-mono"
+                                                                    placeholder="Enter your custom prompt for contextual guitar term evaluation..."
+                                                                ></textarea>
+                                                                <div class="text-xs text-purple-600 mt-1">
+                                                                    The prompt should instruct the LLM how to evaluate low-confidence words in their context to identify legitimate guitar terms.
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     
@@ -2059,20 +3013,20 @@ function getStatusTitle(status) {
                                                             <h6 class="font-medium text-purple-800 mb-2">{{ getModelDisplayName(singleModelTestResults.model) }} Results</h6>
                                                             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                                                                 <div class="text-center">
-                                                                    <div class="text-lg font-bold text-purple-700">{{ singleModelTestResults.guitar_term_evaluation?.musical_terms_found || 0 }}</div>
-                                                                    <div class="text-purple-600 text-xs">Terms Found</div>
+                                                                    <div class="text-lg font-bold text-purple-700">{{ singleModelTestResults.contextual_evaluation?.enhanced_words_count || 0 }}</div>
+                                                                    <div class="text-purple-600 text-xs">Terms Enhanced</div>
                                                                 </div>
                                                                 <div class="text-center">
-                                                                    <div class="text-lg font-bold text-blue-700">{{ singleModelTestResults.guitar_term_evaluation?.llm_queries_made || 0 }}</div>
-                                                                    <div class="text-blue-600 text-xs">LLM Queries</div>
+                                                                    <div class="text-lg font-bold text-blue-700">{{ singleModelTestResults.contextual_evaluation?.low_confidence_words_analyzed || 0 }}</div>
+                                                                    <div class="text-blue-600 text-xs">Words Analyzed</div>
                                                                 </div>
                                                                 <div class="text-center">
                                                                     <div class="text-lg font-bold text-green-700">{{ (singleModelTestResults.processing_time || 0).toFixed(2) }}s</div>
                                                                     <div class="text-green-600 text-xs">Processing Time</div>
                                                                 </div>
                                                                 <div class="text-center">
-                                                                    <div class="text-lg font-bold text-orange-700">{{ ((singleModelTestResults.guitar_term_evaluation?.llm_successful_responses || 0) / Math.max(singleModelTestResults.guitar_term_evaluation?.llm_queries_made || 1, 1) * 100).toFixed(0) }}%</div>
-                                                                    <div class="text-orange-600 text-xs">Success Rate</div>
+                                                                    <div class="text-lg font-bold text-orange-700">{{ (((singleModelTestResults.contextual_evaluation?.enhanced_words_count || 0) / Math.max(singleModelTestResults.contextual_evaluation?.low_confidence_words_analyzed || 1, 1)) * 100).toFixed(0) }}%</div>
+                                                                    <div class="text-orange-600 text-xs">Precision Rate</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -2140,8 +3094,8 @@ function getStatusTitle(status) {
                                                                     <thead class="bg-purple-50">
                                                                         <tr>
                                                                             <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Model</th>
-                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Terms</th>
-                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Success</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Enhanced</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Precision</th>
                                                                             <th class="px-3 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Speed</th>
                                                                         </tr>
                                                                     </thead>
@@ -2151,9 +3105,9 @@ function getStatusTitle(status) {
                                                                                 {{ getModelDisplayName(modelName) }}
                                                                                 <span v-if="modelComparisonResults.comparison?.best_performer?.model === modelName" class="ml-1 text-yellow-500">🏆</span>
                                                                             </td>
-                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 text-sm">{{ (modelData && modelData.musical_terms_found) || 0 }}</td>
-                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm" :class="getPerformanceColor((modelData && modelData.success_rate) ? modelData.success_rate / 100 : 0)">
-                                                                                {{ ((modelData && modelData.success_rate) || 0).toFixed(1) }}%
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 text-sm">{{ (modelData && modelData.enhanced_words_count) || 0 }}</td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm" :class="getPerformanceColor((modelData && modelData.precision_rate) ? modelData.precision_rate / 100 : 0)">
+                                                                                {{ ((modelData && modelData.precision_rate) || 0).toFixed(1) }}%
                                                                             </td>
                                                                             <td class="px-3 py-2 whitespace-nowrap text-gray-900 text-sm">{{ ((modelData && modelData.response_time) || 0).toFixed(2) }}s</td>
                                                                         </tr>
@@ -2179,6 +3133,84 @@ function getStatusTitle(status) {
                                                                     </div>
                                                                 </div>
                                                             </div>
+                                                            
+                                                            <!-- Detailed Term Analysis -->
+                                                            <div v-if="modelComparisonResults.results" class="mt-4 bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                                                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                                                    <h6 class="font-medium text-gray-800 text-sm flex items-center">
+                                                                        🔍 Detailed Terms Found by Each Model
+                                                                        <span class="ml-2 text-xs text-gray-500">(Click to expand)</span>
+                                                                    </h6>
+                                                                </div>
+                                                                <div class="max-h-96 overflow-y-auto">
+                                                                    <div v-for="(modelResult, modelName) in modelComparisonResults.results" :key="modelName" class="border-b border-gray-100 last:border-b-0">
+                                                                        <button @click="toggleModelDetails(modelName)" class="w-full text-left px-4 py-3 hover:bg-gray-50 focus:outline-none focus:bg-gray-50">
+                                                                            <div class="flex items-center justify-between">
+                                                                                <div class="flex items-center">
+                                                                                    <span class="font-medium text-gray-900">{{ getModelDisplayName(modelName) }}</span>
+                                                                                    <span class="ml-2 text-sm text-gray-500">
+                                                                                        ({{ (modelResult.contextual_evaluation?.enhanced_words || []).length }} terms)
+                                                                                    </span>
+                                                                                </div>
+                                                                                <svg class="w-4 h-4 transform transition-transform" :class="{ 'rotate-180': expandedModelDetails[modelName] }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                                                </svg>
+                                                                            </div>
+                                                                        </button>
+                                                                        
+                                                                        <div v-if="expandedModelDetails[modelName]" class="px-4 pb-4">
+                                                                            <div v-if="modelResult.contextual_evaluation?.enhanced_words?.length > 0" class="space-y-2">
+                                                                                <div v-for="(word, index) in modelResult.contextual_evaluation.enhanced_words" :key="index" 
+                                                                                     class="p-3 bg-gray-50 rounded border border-gray-200">
+                                                                                    <div class="flex items-start justify-between mb-2">
+                                                                                        <div>
+                                                                                            <span class="font-medium text-gray-900">"{{ word.word }}"</span>
+                                                                                            <span class="ml-2 text-xs text-gray-500">
+                                                                                                {{ formatTime(word.start) }} - {{ formatTime(word.end) }}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <div class="text-xs text-gray-600">
+                                                                                            {{ (word.original_confidence != null ? (word.original_confidence * 100).toFixed(0) + '%' : 'N/A') }} → {{ (word.confidence != null ? (word.confidence * 100).toFixed(0) + '%' : 'N/A') }}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <div v-if="word.context" class="text-xs text-gray-600 mb-2">
+                                                                                        <strong>Context:</strong> "{{ word.context }}"
+                                                                                    </div>
+                                                                                    <div v-if="word.llm_response" class="text-xs">
+                                                                                        <strong class="text-blue-600">LLM Response:</strong> 
+                                                                                        <span class="font-mono bg-blue-50 px-1 py-0.5 rounded">{{ word.llm_response }}</span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div v-else class="text-sm text-gray-500 italic">
+                                                                                No contextual guitar terms found by this model.
+                                                                            </div>
+                                                                            
+                                                                            <!-- Show model responses for debugging -->
+                                                                            <div v-if="modelResult.contextual_evaluation?.analysis_details?.length > 0" class="mt-4">
+                                                                                <button @click="toggleModelResponses(modelName)" class="text-xs text-blue-600 hover:text-blue-800">
+                                                                                    {{ expandedModelResponses[modelName] ? 'Hide' : 'Show' }} All LLM Responses ({{ modelResult.contextual_evaluation.analysis_details.length }})
+                                                                                </button>
+                                                                                
+                                                                                <div v-if="expandedModelResponses[modelName]" class="mt-2 max-h-64 overflow-y-auto space-y-1">
+                                                                                    <div v-for="(analysis, idx) in modelResult.contextual_evaluation.analysis_details" :key="idx" 
+                                                                                         class="p-2 text-xs border rounded" 
+                                                                                         :class="analysis.enhanced ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
+                                                                                        <div class="flex items-center justify-between mb-1">
+                                                                                            <span class="font-medium">"{{ analysis.word }}"</span>
+                                                                                            <span :class="analysis.enhanced ? 'text-green-600' : 'text-red-600'">
+                                                                                                {{ analysis.enhanced ? '✓ Contextual Guitar Term' : '✗ Not Contextual Guitar Term' }}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <div class="text-gray-600 mb-1">Context: "{{ analysis.context }}"</div>
+                                                                                        <div class="font-mono bg-gray-100 px-2 py-1 rounded">{{ analysis.llm_response }}</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     
@@ -2186,6 +3218,291 @@ function getStatusTitle(status) {
                                                     <div v-if="singleModelTestResults || modelComparisonResults" class="text-center">
                                                         <button 
                                                             @click="clearModelTestResults" 
+                                                            class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition text-sm"
+                                                        >
+                                                            Clear Results
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Teaching Pattern Model Comparison Panel -->
+                                        <div v-if="transcriptionSuccess.success && teachingPatternAnalysis" class="space-y-4">
+                                            <div class="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
+                                                <div class="flex items-center justify-between mb-4">
+                                                    <h4 class="font-medium text-indigo-800 flex items-center">
+                                                        <svg class="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                                                        </svg>
+                                                        Teaching Pattern Analysis
+                                                    </h4>
+                                                    <button 
+                                                        @click="showTeachingPatternPanel = !showTeachingPatternPanel"
+                                                        class="text-indigo-600 hover:text-indigo-800 transition"
+                                                    >
+                                                        <svg 
+                                                            :class="{ 'transform rotate-180': showTeachingPatternPanel }"
+                                                            class="w-5 h-5 transition-transform"
+                                                            fill="none" 
+                                                            stroke="currentColor" 
+                                                            viewBox="0 0 24 24"
+                                                        >
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                
+                                                <div v-if="!showTeachingPatternPanel" class="text-sm text-indigo-700">
+                                                    Compare different LLM models' ability to analyze pedagogical quality and teaching effectiveness
+                                                </div>
+                                                
+                                                <!-- Teaching Pattern Panel Content -->
+                                                <div v-if="showTeachingPatternPanel" class="space-y-4">
+                                                    <!-- Error Display -->
+                                                    <div v-if="teachingPatternError" class="p-3 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm">
+                                                        {{ teachingPatternError }}
+                                                    </div>
+                                                    
+                                                    <!-- Current Teaching Pattern Analysis -->
+                                                    <div v-if="teachingPatternAnalysis" class="border border-indigo-200 rounded-lg p-4 bg-white">
+                                                        <h5 class="font-medium text-indigo-800 mb-3">Current Analysis (from transcription)</h5>
+                                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            <div>
+                                                                <div class="text-sm font-medium text-gray-700 mb-1">Primary Pattern</div>
+                                                                <div class="flex items-center">
+                                                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+                                                                          :class="getPatternStyle(teachingPatternAnalysis.content_classification.primary_type).bgColor + ' ' + getPatternStyle(teachingPatternAnalysis.content_classification.primary_type).textColor">
+                                                                        {{ getPatternStyle(teachingPatternAnalysis.content_classification.primary_type).icon }}
+                                                                        {{ teachingPatternAnalysis.content_classification.primary_type }}
+                                                                    </span>
+                                                                    <span class="ml-2 text-sm text-gray-600">
+                                                                        ({{ (teachingPatternAnalysis.content_classification.confidence * 100).toFixed(0) }}% confidence)
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <div class="text-sm font-medium text-gray-700 mb-1">Teaching Cycles</div>
+                                                                <div class="text-lg font-bold text-indigo-600">
+                                                                    {{ teachingPatternAnalysis.temporal_analysis?.alternation_cycles || 0 }}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div v-if="teachingPatternAnalysis.summary?.recommendations" class="mt-3">
+                                                            <div class="text-sm font-medium text-gray-700 mb-1">Recommendations</div>
+                                                            <ul class="text-sm text-gray-600 list-disc list-inside space-y-1">
+                                                                <li v-for="rec in teachingPatternAnalysis.summary.recommendations" :key="rec">{{ rec }}</li>
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Multi-Model Teaching Pattern Comparison -->
+                                                    <div class="border border-indigo-200 rounded-lg p-4 bg-white">
+                                                        <h5 class="font-medium text-indigo-800 mb-3">Compare Teaching Pattern Models</h5>
+                                                        <div class="mb-3">
+                                                            <p class="text-sm text-indigo-700 mb-2">Select models to compare for pedagogical analysis:</p>
+                                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                                                                <label v-for="model in availableModels" :key="model.name" class="flex items-center space-x-2 p-2 border rounded hover:bg-indigo-50 text-sm">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        :value="model.name"
+                                                                        @change="toggleTeachingPatternModel(model.name)"
+                                                                        :checked="selectedTeachingPatternModels.includes(model.name)"
+                                                                        class="rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                                                                    >
+                                                                    <span class="text-sm">
+                                                                        {{ getModelDisplayName(model.name) }}
+                                                                        <span v-if="model.size_gb > 0" class="text-gray-500">({{ model.size_gb }}GB)</span>
+                                                                    </span>
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex justify-between items-center">
+                                                            <span class="text-sm text-indigo-700">{{ selectedTeachingPatternModels.length }} model(s) selected</span>
+                                                            <button 
+                                                                @click="compareTeachingPatternModels" 
+                                                                :disabled="isComparingTeachingPatterns || selectedTeachingPatternModels.length === 0"
+                                                                class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-md transition text-sm"
+                                                            >
+                                                                <span v-if="isComparingTeachingPatterns" class="flex items-center">
+                                                                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                    </svg>
+                                                                    Analyzing...
+                                                                </span>
+                                                                <span v-else>Analyze Teaching Patterns</span>
+                                                            </button>
+                                                        </div>
+                                                        
+                                                        <!-- Teaching Pattern Comparison Results -->
+                                                        <div v-if="teachingPatternComparisonResults" class="mt-4">
+                                                            <h6 class="font-medium text-indigo-800 mb-3">Pedagogical Analysis Results</h6>
+                                                            
+                                                            <!-- Best Performer Highlight -->
+                                                            <div v-if="teachingPatternComparisonResults.comparison_summary?.best_pedagogical_analyzer" class="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                                                <div class="flex items-center justify-between">
+                                                                    <div>
+                                                                        <span class="text-sm font-medium text-green-800">🏆 Best Pedagogical Analyzer:</span>
+                                                                        <span class="text-sm text-green-700 ml-2">{{ getModelDisplayName(teachingPatternComparisonResults.comparison_summary.best_pedagogical_analyzer) }}</span>
+                                                                    </div>
+                                                                    <div class="text-sm text-green-600">
+                                                                        Fastest: {{ getModelDisplayName(teachingPatternComparisonResults.comparison_summary.fastest_model) }}
+                                                                    </div>
+                                                                </div>
+                                                                <div v-if="teachingPatternComparisonResults.comparison_summary.recommendation" class="mt-2 text-sm text-green-700">
+                                                                    {{ teachingPatternComparisonResults.comparison_summary.recommendation }}
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <!-- Comparison Table -->
+                                                            <div class="overflow-x-auto">
+                                                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                                                    <thead class="bg-indigo-50">
+                                                                        <tr>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-indigo-700 uppercase tracking-wider">Model</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-indigo-700 uppercase tracking-wider">Pattern</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-indigo-700 uppercase tracking-wider">Quality</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-indigo-700 uppercase tracking-wider">Cycles</th>
+                                                                            <th class="px-3 py-2 text-left text-xs font-medium text-indigo-700 uppercase tracking-wider">Speed</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody class="bg-white divide-y divide-gray-200">
+                                                                        <tr v-for="(modelData, modelName) in teachingPatternComparisonResults.model_results" :key="modelName || 'unknown'">
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 font-medium text-sm">
+                                                                                {{ getModelDisplayName(modelName) }}
+                                                                                <span v-if="teachingPatternComparisonResults.comparison_summary?.best_pedagogical_analyzer === modelName" class="ml-1 text-yellow-500">🏆</span>
+                                                                            </td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm">
+                                                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+                                                                                      :class="getPatternStyle(modelData.teaching_pattern_detected).bgColor + ' ' + getPatternStyle(modelData.teaching_pattern_detected).textColor">
+                                                                                    {{ getPatternStyle(modelData.teaching_pattern_detected).icon }}
+                                                                                    {{ modelData.teaching_pattern_detected }}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm" :class="getPerformanceColor(modelData.pedagogical_quality_score / 10)">
+                                                                                {{ (modelData.pedagogical_quality_score || 0).toFixed(1) }}/10
+                                                                            </td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 text-sm">{{ modelData.teaching_cycles_detected || 0 }}</td>
+                                                                            <td class="px-3 py-2 whitespace-nowrap text-gray-900 text-sm">{{ (modelData.processing_time || 0).toFixed(2) }}s</td>
+                                                                        </tr>
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                            
+                                                            <!-- Model Agreement Analysis -->
+                                                            <div v-if="teachingPatternComparisonResults.comparison_summary?.model_agreement_analysis" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                                                <h6 class="font-medium text-blue-800 mb-2 text-sm">Model Agreement</h6>
+                                                                <div class="grid grid-cols-3 gap-3 text-sm">
+                                                                    <div class="text-center">
+                                                                        <div class="font-bold text-blue-600">{{ (teachingPatternComparisonResults.comparison_summary.model_agreement_analysis.pattern_agreement_score * 100).toFixed(0) }}%</div>
+                                                                        <div class="text-blue-600 text-xs">Pattern Agreement</div>
+                                                                    </div>
+                                                                    <div class="text-center">
+                                                                        <div class="font-bold text-green-600">{{ teachingPatternComparisonResults.comparison_summary.model_agreement_analysis.average_quality_score?.toFixed(1) || 'N/A' }}</div>
+                                                                        <div class="text-green-600 text-xs">Avg Quality</div>
+                                                                    </div>
+                                                                    <div class="text-center">
+                                                                        <div class="font-bold" :class="teachingPatternComparisonResults.comparison_summary.model_agreement_analysis.high_agreement ? 'text-green-600' : 'text-orange-600'">
+                                                                            {{ teachingPatternComparisonResults.comparison_summary.model_agreement_analysis.high_agreement ? 'High' : 'Low' }}
+                                                                        </div>
+                                                                        <div class="text-gray-600 text-xs">Agreement</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <!-- Detailed Analysis per Model -->
+                                                            <div v-if="teachingPatternComparisonResults.model_results" class="mt-4 bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                                                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                                                    <h6 class="font-medium text-gray-800 text-sm flex items-center">
+                                                                        📚 Detailed Pedagogical Analysis by Model
+                                                                        <span class="ml-2 text-xs text-gray-500">(Click to expand)</span>
+                                                                    </h6>
+                                                                </div>
+                                                                <div class="max-h-96 overflow-y-auto">
+                                                                    <div v-for="(modelResult, modelName) in teachingPatternComparisonResults.model_results" :key="modelName" class="border-b border-gray-100 last:border-b-0">
+                                                                        <button @click="toggleTeachingModelDetails(modelName)" class="w-full text-left px-4 py-3 hover:bg-gray-50 focus:outline-none focus:bg-gray-50">
+                                                                            <div class="flex items-center justify-between">
+                                                                                <div class="flex items-center">
+                                                                                    <span class="font-medium text-gray-900">{{ getModelDisplayName(modelName) }}</span>
+                                                                                    <span class="ml-2 text-sm text-gray-500">
+                                                                                        (Quality: {{ (modelResult.pedagogical_quality_score || 0).toFixed(1) }}/10)
+                                                                                    </span>
+                                                                                </div>
+                                                                                <svg class="w-4 h-4 transform transition-transform" :class="{ 'rotate-180': expandedTeachingModelDetails[modelName] }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                                                </svg>
+                                                                            </div>
+                                                                        </button>
+                                                                        
+                                                                        <div v-if="expandedTeachingModelDetails[modelName]" class="px-4 pb-4">
+                                                                            <!-- Model Analysis Summary -->
+                                                                            <div class="bg-gray-50 rounded-lg p-3 mb-3">
+                                                                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                                                                    <div>
+                                                                                        <div class="font-medium text-gray-700">Pattern</div>
+                                                                                        <div class="text-gray-600">{{ modelResult.teaching_pattern_detected }}</div>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <div class="font-medium text-gray-700">Confidence</div>
+                                                                                        <div class="text-gray-600">{{ (modelResult.confidence_score * 100).toFixed(0) }}%</div>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <div class="font-medium text-gray-700">Target</div>
+                                                                                        <div class="text-gray-600">{{ modelResult.target_audience }}</div>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <div class="font-medium text-gray-700">Effectiveness</div>
+                                                                                        <div class="text-gray-600">{{ modelResult.lesson_effectiveness }}</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            
+                                                                            <!-- Strengths -->
+                                                                            <div v-if="modelResult.strengths_identified?.length > 0" class="mb-3">
+                                                                                <div class="font-medium text-green-700 mb-2 text-sm">✅ Identified Strengths</div>
+                                                                                <ul class="space-y-1">
+                                                                                    <li v-for="strength in modelResult.strengths_identified" :key="strength" 
+                                                                                        class="text-sm text-green-800 bg-green-50 px-2 py-1 rounded border border-green-200">
+                                                                                        {{ strength }}
+                                                                                    </li>
+                                                                                </ul>
+                                                                            </div>
+                                                                            
+                                                                            <!-- Improvement Suggestions -->
+                                                                            <div v-if="modelResult.improvement_suggestions?.length > 0" class="mb-3">
+                                                                                <div class="font-medium text-blue-700 mb-2 text-sm">💡 Improvement Suggestions</div>
+                                                                                <ul class="space-y-1">
+                                                                                    <li v-for="suggestion in modelResult.improvement_suggestions" :key="suggestion" 
+                                                                                        class="text-sm text-blue-800 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                                                                                        {{ suggestion }}
+                                                                                    </li>
+                                                                                </ul>
+                                                                            </div>
+                                                                            
+                                                                            <!-- Raw LLM Response -->
+                                                                            <div v-if="modelResult.raw_llm_response" class="mt-3">
+                                                                                <button @click="toggleTeachingModelResponses(modelName)" class="text-xs text-blue-600 hover:text-blue-800">
+                                                                                    {{ expandedTeachingModelResponses[modelName] ? 'Hide' : 'Show' }} Raw LLM Response
+                                                                                </button>
+                                                                                
+                                                                                <div v-if="expandedTeachingModelResponses[modelName]" class="mt-2 max-h-64 overflow-y-auto">
+                                                                                    <div class="p-3 text-xs border rounded bg-gray-50 font-mono">
+                                                                                        {{ modelResult.raw_llm_response }}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Clear Results Button -->
+                                                    <div v-if="teachingPatternComparisonResults" class="text-center">
+                                                        <button 
+                                                            @click="clearTeachingPatternResults" 
                                                             class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition text-sm"
                                                         >
                                                             Clear Results

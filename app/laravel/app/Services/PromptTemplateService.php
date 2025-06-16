@@ -24,13 +24,17 @@ class PromptTemplateService
                 $content = $matches[2];
                 
                 if (!empty($context[$variable])) {
-                    // Replace {{variable}} with actual value in the content
-                    $processedContent = str_replace("{{$variable}}", $context[$variable], $content);
-                    // Also handle any other variable replacements in the content
+                    // First, replace the specific variable reference in the content
+                    // Use concatenation instead of interpolation to avoid PHP string interpolation issues
+                    $searchPattern = '{{' . $variable . '}}';
+                    $processedContent = str_replace($searchPattern, $context[$variable], $content);
+                    
+                    // Then handle any other variable replacements in the content
                     $processedContent = preg_replace_callback('/\{\{(\w+)\}\}/', function ($innerMatches) use ($context) {
                         $innerVariable = $innerMatches[1];
                         return $context[$innerVariable] ?? '';
                     }, $processedContent);
+                    
                     return $processedContent;
                 }
                 
@@ -43,7 +47,12 @@ class PromptTemplateService
                 $content = $matches[2];
                 
                 if (empty($context[$variable])) {
-                    return $content;
+                    // Process any variable replacements in the content
+                    $processedContent = preg_replace_callback('/\{\{(\w+)\}\}/', function ($innerMatches) use ($context) {
+                        $innerVariable = $innerMatches[1];
+                        return $context[$innerVariable] ?? '';
+                    }, $content);
+                    return $processedContent;
                 }
                 
                 return '';

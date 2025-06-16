@@ -4092,10 +4092,170 @@ class TruefireCourseController extends Controller
             'has_video_url' => !empty($segmentData['url'])
         ]);
         
+        // Load author relationship for instructor information
+        $truefireCourse->load('author');
+        
         return Inertia::render('TruefireCourses/SegmentShow', [
-            'course' => $truefireCourse,
+            'course' => [
+                'id' => $truefireCourse->id,
+                'title' => $truefireCourse->title,
+                'name' => $truefireCourse->title, // For backward compatibility
+                'instructor_name' => $truefireCourse->instructor_name, // Uses the accessor from the model
+                'author' => $truefireCourse->author ? [
+                    'id' => $truefireCourse->author->id,
+                    'authorid' => $truefireCourse->author->authorid,
+                    'full_name' => $truefireCourse->author->full_name,
+                    'display_name' => $truefireCourse->author->display_name,
+                ] : null,
+            ],
             'segment' => $segmentData
         ]);
+    }
+
+    /**
+     * Show TrueFire course segment in review mode (simplified interface for transcript review)
+     */
+    public function showSegmentReview(LocalTruefireCourse $truefireCourse, $segmentId)
+    {
+        // Find the segment and ensure it belongs to the course
+        $segment = LocalTruefireSegment::with('channel')->findOrFail($segmentId);
+        
+        // Verify the segment belongs to this course through the channel
+        if ($segment->channel->courseid != $truefireCourse->id) {
+            abort(404, 'Segment not found in this course');
+        }
+        
+        // Get processing record
+        $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+        
+        if (!$processing) {
+            // Create basic processing record for review
+            $processing = TruefireSegmentProcessing::create([
+                'segment_id' => $segmentId,
+                'course_id' => $truefireCourse->id,
+                'status' => 'ready',
+                'progress_percentage' => 0
+            ]);
+        }
+        
+        // Check if local video file exists and use it, otherwise fallback to S3
+        $courseDir = "truefire-courses/{$truefireCourse->id}";
+        $videoFilename = "{$segmentId}.mp4";
+        $videoPath = "{$courseDir}/{$videoFilename}";
+        $disk = 'd_drive';
+        
+        $videoUrl = null;
+        $isLocalVideo = false;
+        
+        if (Storage::disk($disk)->exists($videoPath)) {
+            // Use local video file - serve it through Laravel
+            $videoUrl = route('truefire-courses.segment.video', [
+                'truefireCourse' => $truefireCourse->id,
+                'segment' => $segmentId
+            ]);
+            $isLocalVideo = true;
+        } else {
+            // Fallback to S3 signed URL
+            try {
+                $videoUrl = $segment->getSignedUrl();
+            } catch (\Exception $e) {
+                Log::error('Failed to generate S3 signed URL for segment review', [
+                    'segment_id' => $segmentId,
+                    'error' => $e->getMessage()
+                ]);
+                $videoUrl = null;
+            }
+        }
+        
+        // Build simplified segment data for review
+        $segmentData = [
+            'id' => $segment->id,
+            'title' => $segment->title,
+            'name' => $segment->name,
+            'runtime' => $segment->runtime,
+            'course_id' => $truefireCourse->id,
+            
+            // Video URL (prioritizes local file)
+            'url' => $videoUrl,
+            'is_local_video' => $isLocalVideo,
+            
+            // Basic processing status
+            'status' => $processing->status,
+            'error_message' => $processing->error_message,
+            
+            // Audio duration for context
+            'audio_duration' => $processing->audio_duration,
+            'formatted_duration' => $processing->formatted_duration,
+            
+            // Transcript data for review
+            'transcript_text' => $processing->transcript_text,
+            'transcript_json_api_url' => ($processing->transcript_path || $processing->transcript_text) ? 
+                "/api/truefire-courses/{$truefireCourse->id}/segments/{$segmentId}/transcript-json" : null,
+                
+            // Basic quality indicator (simplified)
+            'has_transcript' => !empty($processing->transcript_text) || !empty($processing->transcript_path),
+            'quality_grade' => $this->getSimpleQualityGrade($processing),
+            
+            // Timestamps
+            'updated_at' => $processing->updated_at,
+            
+            // Review fields
+            'review_status' => $processing->review_status,
+            'review_feedback' => $processing->review_feedback,
+            'reviewed_by' => $processing->reviewed_by,
+            'reviewed_at' => $processing->reviewed_at,
+        ];
+        
+        Log::info('Showing TrueFire course segment in review mode', [
+            'course_id' => $truefireCourse->id,
+            'segment_id' => $segmentId,
+            'status' => $processing->status,
+            'has_transcript' => $segmentData['has_transcript']
+        ]);
+        
+        return Inertia::render('TruefireCourses/SegmentReview', [
+            'course' => [
+                'id' => $truefireCourse->id,
+                'name' => $truefireCourse->name,
+                'title' => $truefireCourse->title,
+            ],
+            'segment' => $segmentData
+        ]);
+    }
+
+    /**
+     * Get simplified quality grade for review mode
+     */
+    private function getSimpleQualityGrade($processing)
+    {
+        if (empty($processing->transcript_json)) {
+            return 'No Data';
+        }
+        
+        try {
+            // Check if transcript_json is already an array or needs decoding
+            if (is_array($processing->transcript_json)) {
+                $transcriptData = $processing->transcript_json;
+            } else {
+                $transcriptData = json_decode($processing->transcript_json, true);
+            }
+            
+            if (!$transcriptData) {
+                return 'No Data';
+            }
+            
+            // Extract basic confidence
+            $confidence = $this->extractSegmentConfidence($transcriptData);
+            
+            // Simple grading
+            if ($confidence >= 80) return 'Excellent';
+            if ($confidence >= 70) return 'Good';
+            if ($confidence >= 60) return 'Fair';
+            return 'Needs Review';
+            
+        } catch (\Exception $e) {
+            return 'No Data';
+        }
     }
 
     /**

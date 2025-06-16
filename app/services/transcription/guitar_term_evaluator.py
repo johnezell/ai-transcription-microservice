@@ -83,17 +83,30 @@ class GuitarTerminologyEvaluator:
             logger.info("Skipping guitar library loading - Force LLM Only mode enabled")
             self.guitar_library = None
             
-        # Enhanced basic fallback guitar terms (updated with more terms including fingerstyle)
+        # CONSERVATIVE guitar terms that are guitar-specific and unlikely to be common English words
+        # Removed ambiguous words: "major", "minor", "strings", "bridge", "natural", "open", "technique"
         self.basic_guitar_terms = {
-            "fret", "frets", "fretting", "fretboard", "chord", "chords", 
-            "strumming", "picking", "capo", "tuning", "tablature", "tab", 
-            "hammer-on", "pull-off", "slide", "bend", "vibrato", "fingerpicking",
-            "fingerstyle", "flatpicking", "alternate", "downstroke", "upstroke",
-            "progression", "arpeggio", "scale", "pentatonic", "major", "minor", 
-            "seventh", "guitar", "acoustic", "electric", "bass", "amp", 
-            "distortion", "overdrive", "tremolo", "bridge", "pickup", "strings",
-            "sharp", "flat", "natural", "diminished", "augmented", "suspended",
-            "barre", "open", "mute", "harmonics", "tapping", "palm", "muting"
+            # Guitar-specific playing techniques (unambiguous)
+            "chord", "fret", "fretboard", "capo", "pickup", "strum", "strumming", 
+            "fingerpicking", "flatpicking", "palm-muting", "hammer-on", "pull-off",
+            "slide", "bending", "vibrato", "tapping", "harmonics", "tremolo",
+            
+            # Guitar hardware (unambiguous)
+            "tuning", "headstock", "nut", "saddle", "soundhole", "rosette",
+            "inlay", "binding", "purfling", "bracing", "truss-rod",
+            
+            # Music theory (guitar-specific context)
+            "tablature", "tab", "fretwork", "chord-progression", "arpeggio",
+            "pentatonic", "chromatic", "diatonic", "scale-pattern",
+            
+            # Guitar types and gear (unambiguous)  
+            "acoustic", "electric", "classical", "steel-string", "nylon-string",
+            "amp", "amplifier", "distortion", "overdrive", "reverb", "delay",
+            "chorus", "phaser", "wah", "compressor", "equalizer",
+            
+            # Advanced techniques (unambiguous)
+            "fingerstyle", "hybrid-picking", "sweep-picking", "alternate-picking",
+            "economy-picking", "legato", "staccato", "pizzicato"
         }
     
     def _normalize_word(self, word: str) -> str:
@@ -330,31 +343,19 @@ class GuitarTerminologyEvaluator:
         # Use regular normalization for library lookups (removes some punctuation)
         normalized_word = self._normalize_word(word)
         
-        if cache_key in self.evaluation_cache:
-            logger.debug(f"Cache hit for '{word}' (cache_key: '{cache_key}')")
-            return self.evaluation_cache[cache_key], False  # Cache hit, no LLM used
+        # STEP 1: Check if it's a common English dictionary word FIRST - if yes, don't enhance
+        if self._is_common_english_word(word):
+            logger.debug(f"Dictionary word '{word}' - will not enhance common English word")
+            return False, False  # Dictionary word, no LLM used
         
-        # STEP 1: Check comprehensive guitar library first (confirmed guitar terms)
+        # STEP 2: Check comprehensive guitar library (confirmed guitar terms)
         if self.guitar_library:
             is_guitar_term = self.guitar_library.is_guitar_term(normalized_word)
             if is_guitar_term:
                 logger.debug(f"Guitar library confirmed '{word}' (normalized: '{normalized_word}') as guitar term")
-                self.evaluation_cache[cache_key] = True
                 return True, False  # Library found it, no LLM used
         
-        # STEP 2: Check basic fallback guitar terms
-        if normalized_word in self.basic_guitar_terms:
-            logger.debug(f"Basic fallback confirmed '{word}' (normalized: '{normalized_word}') as guitar term")
-            self.evaluation_cache[cache_key] = True
-            return True, False  # Library found it, no LLM used
-        
-        # STEP 3: Check if it's a common English dictionary word - if yes, don't enhance
-        if self._is_common_english_word(word):
-            logger.debug(f"Dictionary word '{word}' (cache_key: '{cache_key}') - will not enhance common English word")
-            self.evaluation_cache[cache_key] = False
-            return False, False  # Dictionary word, no LLM used
-        
-        # STEP 4: Only query LLM for non-dictionary words that might be specialized guitar terms
+        # STEP 3: Only query LLM for non-dictionary words that might be specialized guitar terms
         if self.llm_enabled:
             try:
                 prompt = f"""
@@ -404,7 +405,6 @@ class GuitarTerminologyEvaluator:
                     is_guitar_term = llm_response.startswith("YES") or llm_response == "YES"
                     
                     logger.debug(f"LLM evaluation for original word '{word}': response='{llm_response}', result={is_guitar_term}")
-                    self.evaluation_cache[cache_key] = is_guitar_term
                     return is_guitar_term, True  # LLM was used successfully
                 else:
                     logger.warning(f"LLM request failed with status {response.status_code} for word '{word}' - falling back to library-only mode")
@@ -418,7 +418,6 @@ class GuitarTerminologyEvaluator:
         
         # Final fallback: conservative approach - don't boost unknown terms
         logger.debug(f"Term '{word}' not found in guitar libraries and LLM unavailable/failed, marking as non-guitar term")
-        self.evaluation_cache[cache_key] = False
         return False, False  # No LLM used, library only
 
     def get_context_window(self, segments: List[WordSegment], index: int, window_size: int = 3) -> str:

@@ -131,7 +131,7 @@ services:
       - LARAVEL_API_URL=http://laravel/api
       # LLM Configuration for guitar term evaluation - Now using containerized Ollama
       - LLM_ENDPOINT=http://ollama-service:11434/api/generate
-      - LLM_MODEL=llama3.1:8b-instruct
+      - LLM_MODEL=llama3.2:3b
       - LLM_ENABLED=true
       # MODEL CACHE CONFIGURATION - Prevents re-downloading
       - WHISPERX_CACHE_DIR=/app/models
@@ -184,6 +184,8 @@ services:
       - OLLAMA_ORIGINS=*
       # GPU configuration
       - CUDA_VISIBLE_DEVICES=0
+      # Model configuration - specify which models to pull
+      - OLLAMA_MODELS=llama3.2:3b,llama3.1:latest,mistral:7b-instruct,phi3:medium,phi3.5:latest,qwen2.5:7b
     ports:
       - "11435:11434"  # Changed to avoid conflict with local Ollama (11434)
     entrypoint: ["/bin/bash", "/entrypoint.sh"]

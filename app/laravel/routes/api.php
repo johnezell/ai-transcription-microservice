@@ -79,6 +79,14 @@ Route::prefix('truefire-courses/{courseId}/segments/{segmentId}')->group(functio
     Route::post('/test-guitar-term-model', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testGuitarTermEvaluation']);
     Route::post('/compare-models', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'compareModels']);
     
+    // Contextual guitar term evaluation endpoints
+    Route::post('/test-contextual-evaluation', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testContextualEvaluation']);
+    Route::post('/compare-contextual-models', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'compareContextualModels']);
+    Route::post('/contextual-segment-evaluation', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'contextualSegmentEvaluation']);
+    
+    // Teaching Pattern Model Comparison endpoints
+    Route::post('/compare-teaching-pattern-models', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'compareTeachingPatternModels']);
+    
     // Callback routes for service completion notifications
     Route::post('/audio-extraction-callback', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'audioExtractionCallback']);
     Route::post('/transcription-callback', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'transcriptionCallback']);
@@ -86,6 +94,53 @@ Route::prefix('truefire-courses/{courseId}/segments/{segmentId}')->group(functio
     
     // Abort/cancel processing
     Route::post('/abort', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'abortProcessing']);
+    
+    // Review endpoints
+    Route::post('/review', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'submitReview']);
+    Route::delete('/review', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'clearReview']);
+});
+
+// Teaching Pattern Model Testing endpoint (standalone)
+Route::post('/teaching-pattern-models/test', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testTeachingPatternModels']);
+
+// Custom Prompt Testing endpoint
+Route::post('/transcription-service/test-custom-prompt', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testCustomPrompt']);
+
+// Transcription Service Proxy Routes
+Route::get('/transcription-service/presets/info', function () {
+    $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+    
+    try {
+        $ch = curl_init($transcriptionServiceUrl . '/presets/info');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/json'
+        ]);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        
+        if ($error) {
+            return response()->json(['error' => 'CURL error: ' . $error], 500);
+        }
+        
+        if ($httpCode !== 200) {
+            return response()->json(['error' => 'HTTP error: ' . $httpCode], 500);
+        }
+        
+        $data = json_decode($response, true);
+        if (!$data) {
+            return response()->json(['error' => 'Invalid JSON response'], 500);
+        }
+        
+        return response()->json($data);
+        
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Error connecting to transcription service: ' . $e->getMessage()], 500);
+    }
 });
 
 // Status polling endpoint for video processing
@@ -575,6 +630,10 @@ Route::get('/transcription-test/results/{testId}', [TranscriptionTestController:
 // Test routes for model comparison and evaluation
 Route::post('/truefire-segments/test-guitar-term-model', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testGuitarTermEvaluation']);
 Route::post('/truefire-segments/compare-models', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'compareModels']);
+
+// Guitar Term Evaluator Configuration
+Route::get('/guitar-term-evaluator/default-prompt', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getDefaultGuitarTermPrompt']);
+Route::post('/guitar-term-evaluator/test-prompt', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'testCustomPrompt']);
 
 // Segment transcript data endpoint for transcription service
 Route::get('/segments/{segmentId}/transcript-data', [\App\Http\Controllers\Api\TruefireSegmentController::class, 'getSegmentTranscriptData']);

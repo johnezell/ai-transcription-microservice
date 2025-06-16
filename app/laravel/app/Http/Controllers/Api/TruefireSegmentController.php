@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\LocalTruefireSegment;
 use App\Models\LocalTruefireCourse;
 use App\Models\TruefireSegmentProcessing;
+use App\Models\LocalTruefireAuthor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -1877,7 +1878,12 @@ class TruefireSegmentController extends Controller
                 ], 404);
             }
             
-            $transcriptData = json_decode($processing->transcript_json, true);
+            // Check if transcript_json is already an array (Laravel auto-decoded) or needs decoding
+            if (is_array($processing->transcript_json)) {
+                $transcriptData = $processing->transcript_json;
+            } else {
+                $transcriptData = json_decode($processing->transcript_json, true);
+            }
             
             if (!$transcriptData) {
                 Log::error("Failed to decode JSON for segment $segmentId");
@@ -1917,4 +1923,1058 @@ class TruefireSegmentController extends Controller
             ], 500);
         }
     }
-} 
+
+    /**
+     * Get the default guitar term evaluator prompt
+     */
+    public function getDefaultGuitarTermPrompt()
+    {
+        try {
+            // Return the current contextual evaluation prompt used by the transcription service
+            $defaultPrompt = 'You are an expert in guitar instruction and music education analyzing transcribed audio from guitar lessons.
+
+Low-confidence word: "{word}"
+Surrounding context: "{context}"
+
+CONTEXT-AWARE QUESTION: Is this low-confidence word "{word}" a legitimate guitar-related term when considered in this specific context?
+
+EVALUATION CRITERIA:
+✓ Guitar techniques: fingerpicking, strumming, hammer-on, pull-off, bending, slides, vibrato, tapping
+✓ Guitar anatomy: frets, strings, neck, bridge, nut, soundhole, pickup, tuning pegs
+✓ Guitar hardware: capo, pick, plectrum, amplifier, effects pedals, cables
+✓ Guitar playing styles: fingerstyle, flatpicking, classical, acoustic, electric
+✓ Musical elements: chord names (C, D, Em, F#, etc.), scale names, progressions
+✓ Music theory IN GUITAR CONTEXT: intervals, keys, chord progressions when teaching guitar
+
+CONTEXT CONSIDERATIONS:
+- Single letters (A, B, C, D, E, F, G) ARE legitimate if referring to chords/notes in guitar instruction
+- Common words CAN be guitar terms if used in guitar-specific context
+- Ambiguous words need context to determine guitar relevance
+
+RESPOND WITH:
+- "yes" if it\'s a legitimate guitar term in this context
+- "no" if it\'s not guitar-related or context is insufficient
+
+Be precise and context-aware.';
+            
+            return response()->json([
+                'success' => true,
+                'prompt' => $defaultPrompt,
+                'prompt_version' => '2.0_restrictive',
+                'description' => 'Restrictive prompt that only identifies guitar-specific terminology, excluding general music theory and teaching terms',
+                'last_updated' => now()->toISOString()
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrieving default prompt',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Test a custom prompt with guitar term evaluation
+     */
+    public function testCustomPrompt(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'segment_id' => 'required|integer',
+                'course_id' => 'required|integer',
+                'custom_prompt' => 'nullable|string',
+                'product_name' => 'nullable|string',
+                'course_title' => 'nullable|string',
+                'instructor_name' => 'nullable|string',
+                'preset' => 'string|in:fast,balanced,high,premium',
+                'model_name' => 'nullable|string',
+                'comparison_mode' => 'boolean',
+                'enable_guitar_term_evaluation' => 'boolean'
+            ]);
+            
+            $segmentId = $validated['segment_id'];
+            $courseId = $validated['course_id'];
+            
+            // Automatically load course and instructor information 
+            $course = LocalTruefireCourse::with('author')->find($courseId);
+            if (!$course) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Course not found'
+                ], 404);
+            }
+            
+            // Auto-populate missing fields from course data
+            $productName = $validated['product_name'] ?: 'TrueFire Guitar Lessons';
+            $courseTitle = $validated['course_title'] ?: $course->title;
+            $instructorName = $validated['instructor_name'] ?: $course->instructor_name; // Uses accessor that gets author name
+            
+            // Ensure at least one prompt context is provided (after auto-population)
+            if (empty($validated['custom_prompt']) && 
+                empty($productName) && 
+                empty($courseTitle) && 
+                empty($instructorName)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unable to determine course context for custom prompt testing'
+                ], 422);
+            }
+            
+            // Get the audio file path for this segment
+            $processing = TruefireSegmentProcessing::where('course_id', $courseId)
+                ->where('segment_id', $segmentId)
+                ->first();
+                
+            if (!$processing || empty($processing->audio_path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Audio file not found for this segment'
+                ], 404);
+            }
+            
+            // Build the request payload for the transcription service
+            $payload = [
+                'audio_path' => $processing->audio_path,
+                'preset' => $validated['preset'] ?? 'balanced',
+                'comparison_mode' => $validated['comparison_mode'] ?? false,
+                'enable_guitar_term_evaluation' => $validated['enable_guitar_term_evaluation'] ?? true
+            ];
+            
+            // Add custom prompt context (using auto-populated values)
+            if (!empty($validated['custom_prompt'])) {
+                $payload['custom_prompt'] = $validated['custom_prompt'];
+            }
+            
+            // Always include context information (auto-populated if not provided)
+            $payload['product_name'] = $productName;
+            $payload['course_title'] = $courseTitle;
+            $payload['instructor_name'] = $instructorName;
+            $payload['segment_id'] = $segmentId;
+            
+            if (!empty($validated['model_name'])) {
+                $payload['model_name'] = $validated['model_name'];
+            }
+            
+            // Call the new custom prompt testing endpoint
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            
+            $ch = curl_init($transcriptionServiceUrl . '/test-custom-prompt');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 300); // Extended timeout for transcription
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                Log::error('Custom prompt test service error', [
+                    'segment_id' => $segmentId,
+                    'status_code' => $httpCode,
+                    'response_body' => substr($response, 0, 500)
+                ]);
+                throw new \Exception("HTTP error: $httpCode");
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result || !$result['success']) {
+                throw new \Exception('Custom prompt test failed: ' . ($result['error'] ?? 'Unknown error'));
+            }
+            
+            Log::info('Custom prompt test completed', [
+                'segment_id' => $segmentId,
+                'course_id' => $courseId,
+                'preset_used' => $result['test_configuration']['preset_used'] ?? 'unknown',
+                'model_used' => $result['test_configuration']['model_used'] ?? 'unknown',
+                'product_context' => !empty($validated['product_name']),
+                'comparison_mode' => $validated['comparison_mode'] ?? false
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'test_configuration' => $result['test_configuration'] ?? [],
+                'results' => $result['results'] ?? [],
+                'prompt_analysis' => $result['prompt_analysis'] ?? [],
+                'segment_id' => $segmentId,
+                'course_id' => $courseId,
+                'test_metadata' => [
+                    'tested_at' => now()->toISOString(),
+                    'test_type' => 'custom_prompt_transcription'
+                ]
+            ]);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error testing custom prompt', [
+                'segment_id' => $request->input('segment_id'),
+                'course_id' => $request->input('course_id'),
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error testing custom prompt: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Test contextual guitar term evaluation for a single model
+     */
+    public function testContextualEvaluation($courseId, $segmentId, Request $request)
+    {
+        try {
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->firstOrFail();
+            
+            if (empty($processing->transcript_json)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No transcript data available for contextual testing'
+                ], 400);
+            }
+            
+            $model = $request->input('model', 'llama3.2:3b');
+            $confidenceThreshold = $request->input('confidence_threshold', 0.6);
+            
+            // Get transcript data and send it to the service
+            // Check if transcript_json is already an array (Laravel auto-decoded) or needs decoding
+            if (is_array($processing->transcript_json)) {
+                $transcriptData = $processing->transcript_json;
+            } else {
+                $transcriptData = json_decode($processing->transcript_json, true);
+            }
+            
+            if (!$transcriptData) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid transcript data - JSON decode failed'
+                ], 400);
+            }
+            
+            // Call transcription service for contextual evaluation
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            $payload = [
+                'transcription_data' => $transcriptData,
+                'model_name' => $model,
+                'confidence_threshold' => $confidenceThreshold
+            ];
+            
+            $jsonPayload = json_encode($payload);
+            if ($jsonPayload === false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to encode request data as JSON'
+                ], 500);
+            }
+            
+            $ch = curl_init($transcriptionServiceUrl . '/contextual-guitar-evaluation');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonPayload);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception("HTTP error: $httpCode");
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid response from transcription service');
+            }
+            
+            Log::info('Contextual guitar term evaluation test completed', [
+                'segment_id' => $segmentId,
+                'model' => $model,
+                'enhanced_words' => $result['contextual_evaluation']['enhanced_words_count'] ?? 0,
+                'analyzed_words' => $result['contextual_evaluation']['low_confidence_words_analyzed'] ?? 0,
+                'evaluation_mode' => 'contextual'
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'model' => $model,
+                'confidence_threshold' => $confidenceThreshold,
+                'contextual_evaluation' => $result['contextual_evaluation'] ?? [],
+                'processing_time' => $result['processing_time'] ?? 0,
+                'test_metadata' => [
+                    'segment_id' => $segmentId,
+                    'course_id' => $courseId,
+                    'tested_at' => now()->toISOString(),
+                    'evaluation_mode' => 'contextual'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error testing contextual guitar term evaluation', [
+                'segment_id' => $segmentId,
+                'model' => $request->input('model'),
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error testing contextual model: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Compare multiple models for contextual guitar term evaluation
+     */
+    public function compareContextualModels($courseId, $segmentId, Request $request)
+    {
+        try {
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->firstOrFail();
+            
+            if (empty($processing->transcript_json)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No transcript data available for contextual comparison'
+                ], 400);
+            }
+            
+            $models = $request->input('models', ['llama3.2:3b']);
+            $confidenceThreshold = $request->input('confidence_threshold', 0.6);
+            
+            if (!is_array($models) || empty($models)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'At least one model must be specified for contextual comparison'
+                ], 400);
+            }
+            
+            // Get transcript data and send it to the service
+            // Check if transcript_json is already an array (Laravel auto-decoded) or needs decoding
+            if (is_array($processing->transcript_json)) {
+                $transcriptData = $processing->transcript_json;
+            } else {
+                $transcriptData = json_decode($processing->transcript_json, true);
+            }
+            
+            if (!$transcriptData) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid transcript data - JSON decode failed'
+                ], 400);
+            }
+            
+            // Call transcription service for contextual model comparison
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            $payload = [
+                'transcription_data' => $transcriptData,
+                'models' => $models,
+                'confidence_threshold' => $confidenceThreshold
+            ];
+            
+            $ch = curl_init($transcriptionServiceUrl . '/compare-contextual-models');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception("HTTP error: $httpCode");
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid response from transcription service');
+            }
+            
+            // Calculate contextual comparison metrics
+            $comparison = $this->calculateContextualModelComparison($result['results'] ?? []);
+            
+            Log::info('Contextual model comparison completed', [
+                'segment_id' => $segmentId,
+                'models_tested' => $result['models_tested'] ?? [],
+                'models_completed' => $result['timing']['models_completed'] ?? 0,
+                'models_failed' => $result['timing']['models_failed'] ?? 0,
+                'total_time' => $result['timing']['total_comparison_time'] ?? 0
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'models_tested' => $models,
+                'confidence_threshold' => $confidenceThreshold,
+                'results' => $result['results'] ?? [],
+                'errors' => $result['errors'] ?? [],
+                'comparison' => $comparison,
+                'comparison_analysis' => $result['comparison_analysis'] ?? null,
+                'timing' => $result['timing'] ?? [],
+                'test_metadata' => [
+                    'segment_id' => $segmentId,
+                    'course_id' => $courseId,
+                    'compared_at' => now()->toISOString(),
+                    'total_models' => count($models),
+                    'evaluation_mode' => 'contextual'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error comparing contextual models', [
+                'segment_id' => $segmentId,
+                'models' => $request->input('models'),
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error comparing contextual models: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Perform full contextual segment evaluation
+     */
+    public function contextualSegmentEvaluation($courseId, $segmentId, Request $request)
+    {
+        try {
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->firstOrFail();
+            
+            if (empty($processing->transcript_json)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No transcript data available for contextual segment evaluation'
+                ], 400);
+            }
+            
+            $model = $request->input('model', 'llama3.2:3b');
+            $confidenceThreshold = $request->input('confidence_threshold', 0.6);
+            
+            // Get transcript data and send it to the service
+            // Check if transcript_json is already an array (Laravel auto-decoded) or needs decoding
+            if (is_array($processing->transcript_json)) {
+                $transcriptData = $processing->transcript_json;
+            } else {
+                $transcriptData = json_decode($processing->transcript_json, true);
+            }
+            
+            if (!$transcriptData) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid transcript data - JSON decode failed'
+                ], 400);
+            }
+            
+            // Call transcription service for full contextual segment evaluation
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            $payload = [
+                'transcription_data' => $transcriptData,
+                'model' => $model,
+                'confidence_threshold' => $confidenceThreshold
+            ];
+            
+            $ch = curl_init($transcriptionServiceUrl . '/contextual-segment-evaluation');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception("HTTP error: $httpCode");
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid response from transcription service');
+            }
+            
+            Log::info('Contextual segment evaluation completed', [
+                'segment_id' => $segmentId,
+                'model' => $model,
+                'enhanced_words' => $result['contextual_evaluation']['enhanced_words_count'] ?? 0,
+                'analyzed_words' => $result['contextual_evaluation']['low_confidence_words_analyzed'] ?? 0,
+                'precision_rate' => $result['contextual_evaluation']['precision_rate'] ?? 0
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'model' => $model,
+                'confidence_threshold' => $confidenceThreshold,
+                'contextual_evaluation' => $result['contextual_evaluation'] ?? [],
+                'enhanced_transcript' => $result['enhanced_transcript'] ?? null,
+                'processing_time' => $result['processing_time'] ?? 0,
+                'evaluation_metadata' => [
+                    'segment_id' => $segmentId,
+                    'course_id' => $courseId,
+                    'evaluated_at' => now()->toISOString(),
+                    'evaluation_mode' => 'contextual_full_segment'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error performing contextual segment evaluation', [
+                'segment_id' => $segmentId,
+                'model' => $request->input('model'),
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error performing contextual segment evaluation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Calculate comparison metrics between different contextual model results
+     */
+    private function calculateContextualModelComparison($results)
+    {
+        if (empty($results)) {
+            return null;
+        }
+        
+        $comparison = [
+            'models' => [],
+            'best_performer' => null,
+            'agreement_analysis' => [],
+            'performance_summary' => []
+        ];
+        
+        // Analyze each model's contextual performance
+        foreach ($results as $model => $metrics) {
+            $contextualEval = $metrics['contextual_evaluation'] ?? [];
+            $enhancedWords = $contextualEval['enhanced_words'] ?? [];
+            
+            $modelMetrics = [
+                'model' => $model,
+                'enhanced_words_count' => $contextualEval['enhanced_words_count'] ?? 0,
+                'low_confidence_words_analyzed' => $contextualEval['low_confidence_words_analyzed'] ?? 0,
+                'precision_rate' => $contextualEval['precision_rate'] ?? 0,
+                'response_time' => $contextualEval['processing_time'] ?? 0,
+                'enhanced_words' => $enhancedWords,
+                'unique_enhanced_words' => array_unique(array_column($enhancedWords, 'word')),
+                'contextual_accuracy' => $this->calculateContextualAccuracy($contextualEval),
+                'contextual_efficiency' => $this->calculateContextualEfficiency($contextualEval)
+            ];
+            
+            $comparison['models'][$model] = $modelMetrics;
+        }
+        
+        // Find best contextual performer
+        $bestScore = 0;
+        $bestModel = null;
+        
+        foreach ($comparison['models'] as $model => $metrics) {
+            $overallScore = ($metrics['contextual_accuracy'] * 0.7) + ($metrics['contextual_efficiency'] * 0.3);
+            if ($overallScore > $bestScore) {
+                $bestScore = $overallScore;
+                $bestModel = $model;
+            }
+        }
+        
+        $comparison['best_performer'] = [
+            'model' => $bestModel,
+            'score' => $bestScore,
+            'metrics' => $comparison['models'][$bestModel] ?? null
+        ];
+        
+        // Contextual agreement analysis
+        $comparison['agreement_analysis'] = $this->analyzeContextualModelAgreement($comparison['models']);
+        
+        return $comparison;
+    }
+
+    /**
+     * Calculate contextual accuracy score for a model
+     */
+    private function calculateContextualAccuracy($contextualEval)
+    {
+        $enhancedCount = $contextualEval['enhanced_words_count'] ?? 0;
+        $analyzedCount = $contextualEval['low_confidence_words_analyzed'] ?? 1;
+        $precisionRate = $contextualEval['precision_rate'] ?? 0;
+        
+        // Weighted score: precision rate (80%) + enhancement ratio (20%)
+        $precisionScore = $precisionRate / 100;
+        $enhancementRatio = $enhancedCount / max($analyzedCount, 1);
+        
+        return ($precisionScore * 0.8) + (min($enhancementRatio, 1.0) * 0.2);
+    }
+
+    /**
+     * Calculate contextual efficiency score for a model
+     */
+    private function calculateContextualEfficiency($contextualEval)
+    {
+        $processingTime = $contextualEval['processing_time'] ?? 1;
+        $analyzedWords = $contextualEval['low_confidence_words_analyzed'] ?? 1;
+        
+        // Efficiency = words analyzed per second
+        $wordsPerSecond = $analyzedWords / max($processingTime, 0.1);
+        
+        // Normalize to 0-1 scale (assume 10 words/second is excellent for contextual analysis)
+        $efficiency = min($wordsPerSecond / 10, 1.0);
+        
+        return $efficiency;
+    }
+
+    /**
+     * Analyze agreement between different contextual models
+     */
+    private function analyzeContextualModelAgreement($modelResults)
+    {
+        $allEnhancedWords = [];
+        $modelEnhancedWords = [];
+        
+        // Collect all enhanced words found by each model
+        foreach ($modelResults as $model => $metrics) {
+            $words = array_map('strtolower', $metrics['unique_enhanced_words']);
+            $modelEnhancedWords[$model] = $words;
+            $allEnhancedWords = array_merge($allEnhancedWords, $words);
+        }
+        
+        $allEnhancedWords = array_unique($allEnhancedWords);
+        $agreementMatrix = [];
+        
+        // Calculate agreement for each enhanced word
+        foreach ($allEnhancedWords as $word) {
+            $enhancedBy = [];
+            foreach ($modelEnhancedWords as $model => $words) {
+                if (in_array($word, $words)) {
+                    $enhancedBy[] = $model;
+                }
+            }
+            
+            $agreementMatrix[$word] = [
+                'enhanced_by' => $enhancedBy,
+                'agreement_count' => count($enhancedBy),
+                'agreement_percentage' => (count($enhancedBy) / count($modelResults)) * 100
+            ];
+        }
+        
+        // Calculate overall contextual agreement metrics
+        $highAgreement = array_filter($agreementMatrix, function($item) {
+            return $item['agreement_percentage'] >= 75;
+        });
+        
+        $moderateAgreement = array_filter($agreementMatrix, function($item) {
+            return $item['agreement_percentage'] >= 50 && $item['agreement_percentage'] < 75;
+        });
+        
+        $lowAgreement = array_filter($agreementMatrix, function($item) {
+            return $item['agreement_percentage'] < 50;
+        });
+        
+        return [
+            'total_unique_enhanced_words' => count($allEnhancedWords),
+            'high_agreement_terms' => count($highAgreement),
+            'moderate_agreement_terms' => count($moderateAgreement),
+            'low_agreement_terms' => count($lowAgreement),
+            'agreement_details' => $agreementMatrix,
+            'consensus_enhanced_words' => array_keys($highAgreement),
+            'disputed_enhanced_words' => array_keys($lowAgreement)
+        ];
+    }
+
+    /**
+     * Compare teaching pattern models for pedagogical analysis
+     */
+    public function compareTeachingPatternModels(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'segment_id' => 'required|integer',
+                'models' => 'array',
+                'models.*' => 'string'
+            ]);
+
+            $segmentId = $validatedData['segment_id'];
+            $models = $validatedData['models'] ?? ['llama3.2:3b', 'llama3.1:latest', 'mistral:7b-instruct'];
+
+            // Get segment processing record
+            $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+            
+            if (!$processing || !$processing->transcript_json) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Segment or transcription not found'
+                ], 404);
+            }
+
+            // Decode transcript JSON
+            // Check if transcript_json is already an array (Laravel auto-decoded) or needs decoding
+            if (is_array($processing->transcript_json)) {
+                $transcriptionData = $processing->transcript_json;
+            } else {
+                $transcriptionData = json_decode($processing->transcript_json, true);
+            }
+            
+            if (!$transcriptionData) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Invalid transcription data'
+                ], 400);
+            }
+
+            // Call transcription service for teaching pattern model comparison
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            
+            $ch = curl_init($transcriptionServiceUrl . '/compare-teaching-pattern-models');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+                'transcription_data' => $transcriptionData,
+                'models' => $models
+            ]));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                Log::error('Teaching pattern model comparison service error', [
+                    'segment_id' => $segmentId,
+                    'status_code' => $httpCode,
+                    'response_body' => $response
+                ]);
+                throw new \Exception("HTTP error: $httpCode");
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result || !$result['success']) {
+                throw new \Exception('Teaching pattern analysis service failed: ' . ($result['error'] ?? 'Unknown error'));
+            }
+            
+            return response()->json([
+                'success' => true,
+                'segment_id' => $segmentId,
+                'comparison_results' => $result['comparison_results'] ?? [],
+                'models_tested' => $models,
+                'analysis_type' => 'teaching_pattern_comparison'
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Validation failed',
+                'details' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Teaching pattern model comparison error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Internal server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Test teaching pattern models with segment data (modified to use actual segment data)
+     */
+    public function testTeachingPatternModels(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'segment_id' => 'required|integer',
+                'course_id' => 'required|integer',
+                'models' => 'array',
+                'models.*' => 'string',
+                'transcription_data' => 'array|nullable'
+            ]);
+
+            $segmentId = $validatedData['segment_id'];
+            $courseId = $validatedData['course_id']; 
+            $models = $validatedData['models'] ?? ['llama3.2:3b', 'llama3.1:latest', 'mistral:7b-instruct'];
+            $transcriptionData = $validatedData['transcription_data'];
+
+            // If no transcription data provided, get it from the segment
+            if (!$transcriptionData) {
+                $processing = TruefireSegmentProcessing::where('segment_id', $segmentId)->first();
+                
+                if (!$processing || !$processing->transcript_json) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'No transcription data available for this segment'
+                    ], 400);
+                }
+                
+                // Check if transcript_json is already an array (Laravel auto-decoded) or needs decoding
+                if (is_array($processing->transcript_json)) {
+                    $transcriptionData = $processing->transcript_json;
+                } else {
+                    $transcriptionData = json_decode($processing->transcript_json, true);
+                }
+                
+                if (!$transcriptionData) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Invalid transcription data'
+                    ], 400);
+                }
+            }
+
+            // Call transcription service for teaching pattern model comparison
+            $transcriptionServiceUrl = env('TRANSCRIPTION_SERVICE_URL', 'http://transcription-service:5000');
+            
+            $ch = curl_init($transcriptionServiceUrl . '/compare-teaching-pattern-models');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+                'transcription_data' => $transcriptionData,
+                'models' => $models
+            ]));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 180); // Longer timeout for multiple model analysis
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($error) {
+                throw new \Exception("CURL error: $error");
+            }
+            
+            if ($httpCode !== 200) {
+                Log::error('Teaching pattern model comparison service error', [
+                    'segment_id' => $segmentId,
+                    'status_code' => $httpCode,
+                    'response_body' => $response
+                ]);
+                throw new \Exception("HTTP error: $httpCode - Response: " . substr($response, 0, 500));
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result || !$result['success']) {
+                throw new \Exception('Teaching pattern analysis service failed: ' . ($result['error'] ?? 'Unknown error'));
+            }
+
+            Log::info('Teaching pattern model comparison completed', [
+                'segment_id' => $segmentId,
+                'models_tested' => $models,
+                'results_received' => !empty($result['comparison_results'])
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'results' => $result['comparison_results'] ?? [], // Frontend expects 'results' key
+                'segment_id' => $segmentId,
+                'course_id' => $courseId,
+                'models_tested' => $models,
+                'analysis_type' => 'teaching_pattern_comparison'
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Validation failed',
+                'details' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Teaching pattern model comparison error', [
+                'segment_id' => $request->input('segment_id'),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Internal server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Submit review feedback for a segment
+     */
+    public function submitReview(Request $request, $courseId, $segmentId)
+    {
+        try {
+            // Validate request
+            $validated = $request->validate([
+                'feedback' => 'nullable|string|max:2000',
+                'status' => 'required|in:approved,needs_revision,rejected'
+            ]);
+
+            // Find or create processing record
+            $processing = TruefireSegmentProcessing::firstOrCreate(
+                [
+                    'course_id' => $courseId,
+                    'segment_id' => $segmentId
+                ],
+                [
+                    'status' => 'pending',
+                    'progress_percentage' => 0,
+                    'priority' => 'normal'
+                ]
+            );
+
+            // Update review fields
+            $processing->update([
+                'review_status' => $validated['status'],
+                'review_feedback' => $validated['feedback'],
+                'reviewed_by' => $request->user()->name ?? 'Unknown User',
+                'reviewed_at' => now()
+            ]);
+
+            Log::info('Segment review submitted', [
+                'course_id' => $courseId,
+                'segment_id' => $segmentId,
+                'review_status' => $validated['status'],
+                'reviewed_by' => $request->user()->name ?? 'Unknown User'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Review submitted successfully',
+                'segment' => [
+                    'id' => $segmentId,
+                    'review_status' => $processing->review_status,
+                    'review_feedback' => $processing->review_feedback,
+                    'reviewed_by' => $processing->reviewed_by,
+                    'reviewed_at' => $processing->reviewed_at
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error submitting segment review', [
+                'course_id' => $courseId,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to submit review'
+            ], 500);
+        }
+    }
+
+    /**
+     * Clear review feedback for a segment
+     */
+    public function clearReview(Request $request, $courseId, $segmentId)
+    {
+        try {
+            // Find processing record
+            $processing = TruefireSegmentProcessing::where('course_id', $courseId)
+                ->where('segment_id', $segmentId)
+                ->first();
+
+            if (!$processing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Segment processing record not found'
+                ], 404);
+            }
+
+            // Clear review fields
+            $processing->update([
+                'review_status' => null,
+                'review_feedback' => null,
+                'reviewed_by' => null,
+                'reviewed_at' => null
+            ]);
+
+            Log::info('Segment review cleared', [
+                'course_id' => $courseId,
+                'segment_id' => $segmentId,
+                'cleared_by' => $request->user()->name ?? 'Unknown User'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Review cleared successfully',
+                'segment' => [
+                    'id' => $segmentId,
+                    'review_status' => null,
+                    'review_feedback' => null,
+                    'reviewed_by' => null,
+                    'reviewed_at' => null
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error clearing segment review', [
+                'course_id' => $courseId,
+                'segment_id' => $segmentId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to clear review'
+            ], 500);
+        }
+    }
+}

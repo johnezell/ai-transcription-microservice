@@ -51,6 +51,12 @@ class TruefireSegmentProcessing extends Model
         'terminology_started_at',
         'terminology_completed_at',
         'completed_at',
+        
+        // Review fields
+        'review_status',
+        'review_feedback',
+        'reviewed_by',
+        'reviewed_at',
     ];
 
     protected $casts = [
@@ -75,6 +81,7 @@ class TruefireSegmentProcessing extends Model
         'terminology_started_at' => 'datetime',
         'terminology_completed_at' => 'datetime',
         'completed_at' => 'datetime',
+        'reviewed_at' => 'datetime',
     ];
 
     /**

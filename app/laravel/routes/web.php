@@ -75,6 +75,8 @@ Route::get('/truefire-courses/{truefireCourse}/queue-status', [TruefireCourseCon
 // TrueFire Course Segment Viewer routes - NEW functionality for video transcription testing
 Route::get('/truefire-courses/{truefireCourse}/segments/{segment}', [TruefireCourseController::class, 'showSegment'])
     ->name('truefire-courses.segments.show');
+Route::get('/truefire-courses/{truefireCourse}/segments/{segment}/review', [TruefireCourseController::class, 'showSegmentReview'])
+    ->name('truefire-courses.segments.review');
 Route::post('/truefire-courses/{truefireCourse}/segments/{segment}/transcription', [TruefireCourseController::class, 'requestSegmentTranscription'])
     ->name('truefire-courses.segments.transcription.request');
 Route::post('/truefire-courses/{truefireCourse}/segments/{segment}/transcription/restart', [TruefireCourseController::class, 'restartSegmentTranscription'])

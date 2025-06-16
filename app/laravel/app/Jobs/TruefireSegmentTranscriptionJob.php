@@ -15,8 +15,8 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
 {
     use Queueable, InteractsWithQueue, SerializesModels;
 
-    public $timeout = 3600; // 60 minutes for transcription
-    public $tries = 3;
+    public $timeout = 600; // 10 minutes for transcription
+    public $tries = 2;
 
     protected $processing;
     protected $transcriptionPreset;
@@ -110,15 +110,18 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
                 $audioUrl = Storage::url($this->processing->audio_path);
             }
 
-            // The transcription service expects 'preset' parameter and will load preset configuration internally
+            // Prepare the transcription request data with timeout handling
             $requestData = [
-                'job_id' => "truefire_segment_{$this->processing->segment_id}",
-                'audio_path' => $this->processing->audio_path,
-                'preset' => $this->transcriptionPreset,  // Send preset name, not transcription_preset
-                'segment_id' => $this->processing->segment_id,
+                'job_id' => $this->job->getJobId(),
+                'audio_path' => $audioUrl,
                 'course_id' => $this->processing->course_id,
-                'enable_intelligent_selection' => true,  // Enable intelligent model selection
-                'enable_analytics_processing' => $this->enableAnalyticsProcessing // Control advanced analytics
+                'segment_id' => $this->processing->segment_id,
+                'preset' => $this->transcriptionPreset,
+                'enable_intelligent_selection' => true,
+                'enable_analytics_processing' => $this->enableAnalyticsProcessing,
+                'max_processing_time' => 300, // 5 minutes max processing time
+                'enable_early_performance_detection' => true,
+                'timeout_fallback_enabled' => true
             ];
 
             Log::info('Sending TrueFire segment transcription request', [
@@ -128,8 +131,8 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
                 'audio_path' => $this->processing->audio_path
             ]);
 
-            // Send request to transcription service (same endpoint as existing TranscriptionJob)
-            $response = Http::timeout(180)->post($transcriptionServiceUrl . '/process', $requestData);
+            // Send request to transcription service with shorter timeout to prevent hanging
+            $response = Http::timeout(120)->post($transcriptionServiceUrl . '/process', $requestData);
 
             if (!$response->successful()) {
                 throw new \Exception('Transcription service request failed: ' . $response->body());

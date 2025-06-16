@@ -18,6 +18,20 @@ let currentRequest = null;
 
 const notifications = ref([]); // For toast notifications
 
+// Modal state
+const showConfirmModal = ref(false);
+const confirmModalData = ref({
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    confirmAction: null,
+    isDestructive: false
+});
+
+// Dropdown state
+const showMoreActionsDropdown = ref(false);
+
 // Batch selection functionality
 const selectedCourses = ref(new Set());
 const selectAll = ref(false);
@@ -75,6 +89,40 @@ const clearSelection = () => {
     selectAll.value = false;
 };
 
+// Modal functions
+const showConfirm = (options) => {
+    confirmModalData.value = {
+        title: options.title || 'Confirm Action',
+        message: options.message || 'Are you sure?',
+        confirmText: options.confirmText || 'Confirm',
+        cancelText: options.cancelText || 'Cancel',
+        confirmAction: options.confirmAction || (() => {}),
+        isDestructive: options.isDestructive || false
+    };
+    showConfirmModal.value = true;
+};
+
+const closeConfirmModal = () => {
+    showConfirmModal.value = false;
+    confirmModalData.value.confirmAction = null;
+};
+
+const confirmAction = () => {
+    if (confirmModalData.value.confirmAction) {
+        confirmModalData.value.confirmAction();
+    }
+    closeConfirmModal();
+};
+
+// Dropdown functions
+const toggleMoreActionsDropdown = () => {
+    showMoreActionsDropdown.value = !showMoreActionsDropdown.value;
+};
+
+const closeMoreActionsDropdown = () => {
+    showMoreActionsDropdown.value = false;
+};
+
 // Batch action functions
 const performBatchRedo = async () => {
     if (selectedCourses.value.size === 0) {
@@ -83,12 +131,19 @@ const performBatchRedo = async () => {
     }
 
     const courseIds = Array.from(selectedCourses.value);
-    const confirmMessage = `Are you sure you want to redo transcription for ${courseIds.length} selected course(s)? This will restart the entire transcription process for all segments in these courses.`;
+    const confirmMessage = `This will restart the entire transcription process for all segments in ${courseIds.length} selected course(s). All existing transcripts will be replaced.`;
     
-    if (!confirm(confirmMessage)) {
-        return;
-    }
+    showConfirm({
+        title: 'Confirm Batch Redo',
+        message: confirmMessage,
+        confirmText: 'Redo Transcriptions',
+        cancelText: 'Cancel',
+        isDestructive: true,
+        confirmAction: () => executeBatchRedo(courseIds)
+    });
+};
 
+const executeBatchRedo = async (courseIds) => {
     isBatchActionLoading.value = true;
     
     try {
@@ -100,7 +155,7 @@ const performBatchRedo = async () => {
         
         for (const courseId of courseIds) {
             try {
-                const response = await axios.post(`/api/truefire-courses/${courseId}/redo-all-transcriptions`, {
+                const response = await axios.post(`/truefire-courses/${courseId}/restart-entire-processing`, {
                     use_intelligent_detection: true,
                     force_restart: true
                 });
@@ -113,7 +168,8 @@ const performBatchRedo = async () => {
                 }
             } catch (error) {
                 errorCount++;
-                console.error(`Error redoing course ${courseId}:`, error);
+                const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+                console.error(`Error redoing course ${courseId}:`, errorMessage, error);
             }
             
             // Small delay between requests to avoid overwhelming the server
@@ -146,13 +202,90 @@ const performBatchRedo = async () => {
 };
 
 const performBatchAction = async (action) => {
+    closeMoreActionsDropdown();
+    
     switch (action) {
         case 'redo':
             await performBatchRedo();
             break;
+        case 'export':
+            await exportSelectedCourses();
+            break;
+        case 'analyze':
+            await analyzeSelectedCourses();
+            break;
+        case 'download_transcripts':
+            await downloadTranscripts();
+            break;
         default:
             showNotification(`Batch action "${action}" not implemented yet`, 'info');
     }
+};
+
+const exportSelectedCourses = async () => {
+    if (selectedCourses.value.size === 0) {
+        showNotification('No courses selected', 'warning');
+        return;
+    }
+
+    const courseIds = Array.from(selectedCourses.value);
+    showConfirm({
+        title: 'Export Course Data',
+        message: `Export detailed data for ${courseIds.length} selected course(s) to CSV format?`,
+        confirmText: 'Export',
+        cancelText: 'Cancel',
+        confirmAction: () => {
+            showNotification(`Exporting data for ${courseIds.length} course(s)...`, 'info');
+            // TODO: Implement export functionality
+            setTimeout(() => {
+                showNotification('Export feature coming soon!', 'info');
+            }, 1000);
+        }
+    });
+};
+
+const analyzeSelectedCourses = async () => {
+    if (selectedCourses.value.size === 0) {
+        showNotification('No courses selected', 'warning');
+        return;
+    }
+
+    const courseIds = Array.from(selectedCourses.value);
+    showConfirm({
+        title: 'Analyze Course Quality',
+        message: `Run comprehensive quality analysis on ${courseIds.length} selected course(s)?`,
+        confirmText: 'Analyze',
+        cancelText: 'Cancel',
+        confirmAction: () => {
+            showNotification(`Starting quality analysis for ${courseIds.length} course(s)...`, 'info');
+            // TODO: Implement analysis functionality
+            setTimeout(() => {
+                showNotification('Analysis feature coming soon!', 'info');
+            }, 1000);
+        }
+    });
+};
+
+const downloadTranscripts = async () => {
+    if (selectedCourses.value.size === 0) {
+        showNotification('No courses selected', 'warning');
+        return;
+    }
+
+    const courseIds = Array.from(selectedCourses.value);
+    showConfirm({
+        title: 'Download Transcripts',
+        message: `Download all transcripts for ${courseIds.length} selected course(s) as a ZIP file?`,
+        confirmText: 'Download',
+        cancelText: 'Cancel',
+        confirmAction: () => {
+            showNotification(`Preparing transcript download for ${courseIds.length} course(s)...`, 'info');
+            // TODO: Implement download functionality
+            setTimeout(() => {
+                showNotification('Download feature coming soon!', 'info');
+            }, 1000);
+        }
+    });
 };
 
 // Clear selection when navigating to different pages
@@ -449,19 +582,67 @@ const removeNotification = (id) => {
                                             {{ isBatchActionLoading ? 'Processing...' : 'Redo Selected' }}
                                         </button>
                                         
-                                        <!-- Additional batch actions can be added here -->
-                                        <div class="relative">
-                                            <button
-                                                type="button"
-                                                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                                                disabled
-                                            >
-                                                More Actions
-                                                <svg class="-mr-1 ml-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                                </svg>
-                                            </button>
-                                        </div>
+                                                                <!-- More Actions Dropdown -->
+                        <div class="relative">
+                            <button
+                                type="button"
+                                @click="toggleMoreActionsDropdown"
+                                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                :class="{ 'ring-2 ring-indigo-500': showMoreActionsDropdown }"
+                            >
+                                More Actions
+                                <svg class="-mr-1 ml-2 h-4 w-4 transition-transform duration-200" 
+                                     :class="{ 'rotate-180': showMoreActionsDropdown }"
+                                     fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+
+                            <!-- Dropdown Menu -->
+                            <div v-if="showMoreActionsDropdown" 
+                                 @click.away="closeMoreActionsDropdown"
+                                 class="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                <div class="py-1">
+                                    <button
+                                        @click="performBatchAction('export')"
+                                        class="group flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                    >
+                                        <svg class="mr-3 h-4 w-4 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Export Course Data
+                                    </button>
+                                    <button
+                                        @click="performBatchAction('analyze')"
+                                        class="group flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                    >
+                                        <svg class="mr-3 h-4 w-4 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                        </svg>
+                                        Analyze Quality
+                                    </button>
+                                    <button
+                                        @click="performBatchAction('download_transcripts')"
+                                        class="group flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                    >
+                                        <svg class="mr-3 h-4 w-4 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                        </svg>
+                                        Download Transcripts
+                                    </button>
+                                    <div class="border-t border-gray-100"></div>
+                                    <button
+                                        @click="clearSelection"
+                                        class="group flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                    >
+                                        <svg class="mr-3 h-4 w-4 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                        Clear Selection
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -756,6 +937,57 @@ const removeNotification = (id) => {
             </div>
         </div>
 
+        <!-- Professional Confirmation Modal -->
+        <div v-if="showConfirmModal" class="fixed inset-0 z-50 overflow-y-auto">
+            <div class="flex min-h-screen items-end justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <!-- Background overlay -->
+                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeConfirmModal"></div>
+
+                <!-- Modal panel -->
+                <div class="inline-block transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6 sm:align-middle">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full sm:mx-0 sm:h-10 sm:w-10"
+                             :class="confirmModalData.isDestructive ? 'bg-red-100' : 'bg-blue-100'">
+                            <svg v-if="confirmModalData.isDestructive" class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                            </svg>
+                            <svg v-else class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                            <h3 class="text-lg font-medium leading-6 text-gray-900">
+                                {{ confirmModalData.title }}
+                            </h3>
+                            <div class="mt-2">
+                                <p class="text-sm text-gray-500">
+                                    {{ confirmModalData.message }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                        <button
+                            type="button"
+                            @click="confirmAction"
+                            class="inline-flex w-full justify-center rounded-md border border-transparent px-4 py-2 text-base font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm"
+                            :class="confirmModalData.isDestructive 
+                                ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' 
+                                : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'"
+                        >
+                            {{ confirmModalData.confirmText }}
+                        </button>
+                        <button
+                            type="button"
+                            @click="closeConfirmModal"
+                            class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:w-auto sm:text-sm"
+                        >
+                            {{ confirmModalData.cancelText }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
     </AuthenticatedLayout>
 </template>

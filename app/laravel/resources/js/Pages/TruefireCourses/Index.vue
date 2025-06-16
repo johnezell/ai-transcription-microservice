@@ -18,6 +18,148 @@ let currentRequest = null;
 
 const notifications = ref([]); // For toast notifications
 
+// Batch selection functionality
+const selectedCourses = ref(new Set());
+const selectAll = ref(false);
+const isBatchActionLoading = ref(false);
+
+// Computed properties for batch selection
+const allCoursesSelected = computed(() => {
+    return props.courses.data && props.courses.data.length > 0 && 
+           props.courses.data.every(course => selectedCourses.value.has(course.id));
+});
+
+const someCoursesSelected = computed(() => {
+    return selectedCourses.value.size > 0 && !allCoursesSelected.value;
+});
+
+const selectedCourseCount = computed(() => {
+    return selectedCourses.value.size;
+});
+
+const hasSelectedCourses = computed(() => {
+    return selectedCourses.value.size > 0;
+});
+
+// Batch selection functions
+const toggleSelectAll = () => {
+    if (allCoursesSelected.value) {
+        // Deselect all
+        selectedCourses.value.clear();
+        selectAll.value = false;
+    } else {
+        // Select all courses on current page
+        selectedCourses.value.clear();
+        if (props.courses.data) {
+            props.courses.data.forEach(course => {
+                selectedCourses.value.add(course.id);
+            });
+        }
+        selectAll.value = true;
+    }
+};
+
+const toggleCourseSelection = (courseId) => {
+    if (selectedCourses.value.has(courseId)) {
+        selectedCourses.value.delete(courseId);
+    } else {
+        selectedCourses.value.add(courseId);
+    }
+    
+    // Update select all state
+    selectAll.value = allCoursesSelected.value;
+};
+
+const clearSelection = () => {
+    selectedCourses.value.clear();
+    selectAll.value = false;
+};
+
+// Batch action functions
+const performBatchRedo = async () => {
+    if (selectedCourses.value.size === 0) {
+        showNotification('No courses selected', 'warning');
+        return;
+    }
+
+    const courseIds = Array.from(selectedCourses.value);
+    const confirmMessage = `Are you sure you want to redo transcription for ${courseIds.length} selected course(s)? This will restart the entire transcription process for all segments in these courses.`;
+    
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+
+    isBatchActionLoading.value = true;
+    
+    try {
+        showNotification(`Starting batch redo for ${courseIds.length} course(s)...`, 'info');
+        
+        // Process each course individually to avoid overwhelming the system
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const courseId of courseIds) {
+            try {
+                const response = await axios.post(`/api/truefire-courses/${courseId}/redo-all-transcriptions`, {
+                    use_intelligent_detection: true,
+                    force_restart: true
+                });
+                
+                if (response.data.success) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                    console.error(`Failed to redo course ${courseId}:`, response.data.message);
+                }
+            } catch (error) {
+                errorCount++;
+                console.error(`Error redoing course ${courseId}:`, error);
+            }
+            
+            // Small delay between requests to avoid overwhelming the server
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        // Clear selection after successful batch operation
+        clearSelection();
+        
+        // Show results
+        if (successCount > 0 && errorCount === 0) {
+            showNotification(`Successfully started batch redo for ${successCount} course(s)`, 'success');
+        } else if (successCount > 0 && errorCount > 0) {
+            showNotification(`Batch redo started for ${successCount} course(s), ${errorCount} failed`, 'warning');
+        } else {
+            showNotification(`Batch redo failed for all selected courses`, 'error');
+        }
+        
+        // Refresh the page to show updated status
+        setTimeout(() => {
+            router.reload({ only: ['courses'] });
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Batch redo error:', error);
+        showNotification('Failed to perform batch redo operation', 'error');
+    } finally {
+        isBatchActionLoading.value = false;
+    }
+};
+
+const performBatchAction = async (action) => {
+    switch (action) {
+        case 'redo':
+            await performBatchRedo();
+            break;
+        default:
+            showNotification(`Batch action "${action}" not implemented yet`, 'info');
+    }
+};
+
+// Clear selection when navigating to different pages
+watch(() => props.courses.current_page, () => {
+    clearSelection();
+});
+
 // Debounced search function to avoid excessive API calls
 const debouncedSearch = debounce((searchTerm, status) => {
     // Cancel any existing request
@@ -274,12 +416,75 @@ const removeNotification = (id) => {
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Batch Actions Bar -->
+                            <div v-if="hasSelectedCourses" class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-4">
+                                        <span class="text-sm font-medium text-blue-900">
+                                            {{ selectedCourseCount }} course(s) selected
+                                        </span>
+                                        <button
+                                            @click="clearSelection"
+                                            class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                        >
+                                            Clear Selection
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="flex items-center space-x-2">
+                                        <!-- Batch Redo Button -->
+                                        <button
+                                            @click="performBatchAction('redo')"
+                                            :disabled="isBatchActionLoading"
+                                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <svg v-if="isBatchActionLoading" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            <svg v-else class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                            {{ isBatchActionLoading ? 'Processing...' : 'Redo Selected' }}
+                                        </button>
+                                        
+                                        <!-- Additional batch actions can be added here -->
+                                        <div class="relative">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                                disabled
+                                            >
+                                                More Actions
+                                                <svg class="-mr-1 ml-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
+                                        <!-- Select All Checkbox -->
+                                        <th scope="col" class="px-6 py-3 text-left">
+                                            <div class="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="allCoursesSelected"
+                                                    :indeterminate="someCoursesSelected"
+                                                    @change="toggleSelectAll"
+                                                    class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                                    :disabled="!courses.data || courses.data.length === 0"
+                                                />
+                                                <span class="sr-only">Select all courses</span>
+                                            </div>
+                                        </th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             ID
                                         </th>
@@ -304,7 +509,21 @@ const removeNotification = (id) => {
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="course in courses.data" :key="course.id" class="hover:bg-gray-50">
+                                    <tr v-for="course in courses.data" :key="course.id" 
+                                        class="hover:bg-gray-50"
+                                        :class="{ 'bg-blue-50': selectedCourses.has(course.id) }">
+                                        <!-- Course Selection Checkbox -->
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="selectedCourses.has(course.id)"
+                                                    @change="toggleCourseSelection(course.id)"
+                                                    class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                                />
+                                                <span class="sr-only">Select course {{ course.id }}</span>
+                                            </div>
+                                        </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {{ course.id }}
                                         </td>

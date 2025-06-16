@@ -131,7 +131,7 @@ services:
       - LARAVEL_API_URL=http://laravel/api
       # LLM Configuration for guitar term evaluation - Now using containerized Ollama
       - LLM_ENDPOINT=http://ollama-service:11434/api/generate
-      - LLM_MODEL=llama3.2:3b
+      - LLM_MODEL=qwen2.5:7b
       - LLM_ENABLED=true
       # MODEL CACHE CONFIGURATION - Prevents re-downloading
       - WHISPERX_CACHE_DIR=/app/models

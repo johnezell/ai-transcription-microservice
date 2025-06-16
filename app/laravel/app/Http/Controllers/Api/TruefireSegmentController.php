@@ -162,6 +162,30 @@ class TruefireSegmentController extends Controller
             ]);
         }
         
+        // Extract quality metrics, teaching patterns, and guitar term evaluation from transcript JSON
+        $qualityMetrics = null;
+        $teachingPatterns = null;
+        $guitarTermEvaluation = null;
+        
+        if (!empty($processing->transcript_json)) {
+            $transcriptData = $processing->transcript_json;
+            
+            // Extract quality metrics
+            if (isset($transcriptData['quality_metrics'])) {
+                $qualityMetrics = $transcriptData['quality_metrics'];
+                
+                // Extract teaching patterns from within quality_metrics
+                if (isset($qualityMetrics['teaching_patterns'])) {
+                    $teachingPatterns = $qualityMetrics['teaching_patterns'];
+                }
+            }
+            
+            // Extract guitar term evaluation data
+            if (isset($transcriptData['guitar_term_evaluation'])) {
+                $guitarTermEvaluation = $transcriptData['guitar_term_evaluation'];
+            }
+        }
+        
         // Build response with all segment details
         $segmentData = [
             'id' => $segment->id,
@@ -202,6 +226,11 @@ class TruefireSegmentController extends Controller
             'terminology_json_api_url' => "/api/truefire-courses/{$courseId}/segments/{$segmentId}/terminology-json",
             'terminology_count' => $processing->terminology_count,
             'terminology_metadata' => $processing->terminology_metadata,
+            
+            // Analytics data (extracted from transcript JSON)
+            'quality_metrics' => $qualityMetrics,
+            'teaching_patterns' => $teachingPatterns,
+            'guitar_term_evaluation' => $guitarTermEvaluation,
             
             // Timestamps
             'created_at' => $processing->created_at,

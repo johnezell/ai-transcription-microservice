@@ -269,6 +269,9 @@ class GuitarTerminologyEvaluator:
         original_word = word.strip().lower()
         normalized_word = self._normalize_word(word)
         
+        # NOTE: This function is no longer used in the main evaluation flow
+        # We removed the dictionary check to allow guitar terms to be evaluated properly
+        
         # STEP 1: Check if it's a contraction with apostrophe pattern
         if self._is_contraction(original_word):
             return self._check_contraction_parts(original_word)
@@ -343,19 +346,18 @@ class GuitarTerminologyEvaluator:
         # Use regular normalization for library lookups (removes some punctuation)
         normalized_word = self._normalize_word(word)
         
-        # STEP 1: Check if it's a common English dictionary word FIRST - if yes, don't enhance
-        if self._is_common_english_word(word):
-            logger.debug(f"Dictionary word '{word}' - will not enhance common English word")
-            return False, False  # Dictionary word, no LLM used
+        # REMOVED: Dictionary check was preventing guitar terms like "guitar", "chord", "fret" from enhancement
+        # Many guitar terms are also common English words, so this check was too restrictive
+        # Let the LLM and guitar library handle the evaluation instead
         
-        # STEP 2: Check comprehensive guitar library (confirmed guitar terms)
+        # STEP 1: Check comprehensive guitar library (confirmed guitar terms)
         if self.guitar_library:
             is_guitar_term = self.guitar_library.is_guitar_term(normalized_word)
             if is_guitar_term:
                 logger.debug(f"Guitar library confirmed '{word}' (normalized: '{normalized_word}') as guitar term")
                 return True, False  # Library found it, no LLM used
         
-        # STEP 3: Only query LLM for non-dictionary words that might be specialized guitar terms
+        # STEP 2: Query LLM for words that might be specialized guitar terms
         if self.llm_enabled:
             try:
                 prompt = f"""
@@ -364,22 +366,22 @@ class GuitarTerminologyEvaluator:
                 Word to evaluate: "{word}"
                 Context: "{context}"
                 
-                This word is NOT in standard English dictionaries, so it might be specialized terminology.
-                Is this word specific to guitar instruction, guitar playing techniques, or guitar-related music theory?
+                Is this word related to guitar instruction, guitar playing techniques, or guitar-related music theory in this context?
                 
-                INCLUDE these types of specialized terms:
-                - Playing techniques: hammer-on, pull-off, sweep-picking, palm-muting, finger_picking
+                INCLUDE these types of guitar and music terms:
+                - Basic guitar terms: guitar, chord, fret, strings, pick, strum, capo, amp, bass, thumb, finger
+                - Playing techniques: hammer-on, pull-off, sweep-picking, palm-muting, fingerpicking
                 - Musical notation: C#, F#, Bb, D♭, chord progressions like I-V-vi-IV
-                - Guitar hardware: pick-up, set-up, tune-up, whammy_bar, tremolo_arm
-                - Technical terms: tablature, fingerstyle, flatpicking, bottleneck
-                - Effects and gear: overdrive, fuzz-box, delay_pedal, reverb_tank
-                - Music theory: pentatonic, mixolydian, add9, sus4, maj7, dim7
+                - Guitar hardware: pickup, bridge, nut, neck, tuning, tremolo, whammy bar
+                - Technical terms: tablature, fingerstyle, flatpicking, bottleneck, arpeggios
+                - Effects and gear: overdrive, distortion, reverb, delay, chorus
+                - Music theory: pentatonic, scale, major, minor, sus4, maj7, dim7
                 
-                PRESERVE special characters like hyphens (-), underscores (_), sharps (#), flats (b), plus (+) 
-                as they are often meaningful in musical terminology.
+                Consider the CONTEXT - words like "guitar", "chord", "strings" should be enhanced 
+                when used in guitar instruction, even though they're common English words.
                 
-                Only respond "YES" for genuine specialized guitar/music terminology.
-                Respond "NO" if it's likely a typo, foreign word, or unrelated technical term.
+                Only respond "YES" for genuine guitar/music terminology in this context.
+                Respond "NO" if it's clearly unrelated to guitar or music instruction.
                 """
                 
                 response = requests.post(

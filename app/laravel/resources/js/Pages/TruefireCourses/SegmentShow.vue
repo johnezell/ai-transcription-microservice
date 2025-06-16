@@ -32,7 +32,8 @@ const transcriptData = ref(null);
 const overallConfidence = ref(null);
 const showSynchronizedTranscript = ref(false); // Hidden by default
 const showDetailedQualityMetrics = ref(false); // Hidden by default
-const showGuitarEnhancementDetails = ref(false); // Hidden by default
+const showGuitarEnhancementDetails = ref(true); // Show by default to display enhanced guitar terms // Hidden by default
+const showAllGuitarTerms = ref(false); // Show only first 5 enhanced terms by default
 
 // Modal state
 const showStartProcessingModal = ref(false);
@@ -352,6 +353,20 @@ const guitarEnhancementMetrics = ref(null);
 
 // Fetch quality metrics
 async function fetchQualityMetrics() {
+    // First try to get quality metrics from segment data if available
+    if (segmentData.value?.quality_metrics) {
+        qualityMetrics.value = segmentData.value.quality_metrics;
+        console.log('Quality metrics loaded from segment data:', qualityMetrics.value);
+        
+        // Also extract guitar term enhancement data from segment data if available
+        if (segmentData.value.quality_metrics?.guitar_term_evaluation) {
+            guitarEnhancementMetrics.value = segmentData.value.quality_metrics.guitar_term_evaluation;
+            console.log('Guitar enhancement metrics loaded from segment data:', guitarEnhancementMetrics.value);
+        }
+        return;
+    }
+    
+    // Fallback to transcript JSON API if segment data doesn't have quality metrics
     if (!segmentData.value?.transcript_json_api_url) return;
     
     try {
@@ -361,13 +376,13 @@ async function fetchQualityMetrics() {
         // Check if quality metrics are available in the transcript data
         if (data.quality_metrics || data.speech_activity || data.content_quality) {
             qualityMetrics.value = data.quality_metrics || data;
-            console.log('Quality metrics loaded:', qualityMetrics.value);
+            console.log('Quality metrics loaded from transcript API:', qualityMetrics.value);
         }
         
         // Extract guitar term enhancement data
         if (data.guitar_term_evaluation) {
             guitarEnhancementMetrics.value = data.guitar_term_evaluation;
-            console.log('Guitar enhancement metrics loaded:', guitarEnhancementMetrics.value);
+            console.log('Guitar enhancement metrics loaded from transcript API:', guitarEnhancementMetrics.value);
         }
     } catch (error) {
         console.error('Error fetching quality metrics:', error);
@@ -376,7 +391,7 @@ async function fetchQualityMetrics() {
 
 // Calculate guitar term enhancement analysis
 const guitarEnhancementAnalysis = computed(() => {
-    if (!guitarEnhancementMetrics.value || !transcriptData.value) {
+    if (!guitarEnhancementMetrics.value) {
         return null;
     }
     
@@ -402,8 +417,8 @@ const guitarEnhancementAnalysis = computed(() => {
         }
     });
     
-    // Calculate overall averages from all segments for comparison
-    if (transcriptData.value.segments) {
+    // Calculate overall averages from all segments for comparison (optional)
+    if (transcriptData.value && transcriptData.value.segments) {
         transcriptData.value.segments.forEach(segment => {
             if (segment.words) {
                 segment.words.forEach(word => {
@@ -432,7 +447,11 @@ const guitarEnhancementAnalysis = computed(() => {
 
 // Calculate teaching pattern analysis
 const teachingPatternAnalysis = computed(() => {
-    const patterns = qualityMetrics.value?.teaching_patterns;
+    // Check multiple sources for teaching patterns data
+    const patterns = qualityMetrics.value?.teaching_patterns || 
+                     segmentData.value?.teaching_patterns || 
+                     segmentData.value?.quality_metrics?.teaching_patterns;
+    
     if (!patterns) return null;
     
     return {
@@ -1185,7 +1204,78 @@ function jumpToTime(timeInSeconds) {
     }
 }
 
+// Helper methods for enhanced guitar terms display
+function getGuitarTermsToShow() {
+    const enhancedTerms = guitarEnhancementMetrics.value?.enhanced_terms || [];
+    return showAllGuitarTerms.value ? enhancedTerms : enhancedTerms.slice(0, 5);
+}
 
+function getRemainingGuitarTermsCount() {
+    const enhancedTerms = guitarEnhancementMetrics.value?.enhanced_terms || [];
+    return Math.max(0, enhancedTerms.length - 5);
+}
+
+function getSegmentContext(timeInSeconds) {
+    if (!transcriptData.value?.segments) return 'Unknown segment';
+    
+    // Find the segment that contains this timestamp
+    const segment = transcriptData.value.segments.find(seg => 
+        timeInSeconds >= seg.start && timeInSeconds <= seg.end
+    );
+    
+    if (segment?.text) {
+        // Return first 50 characters of the segment text for context
+        return segment.text.length > 50 ? 
+            segment.text.substring(0, 47) + '...' : 
+            segment.text;
+    }
+    
+    return `Segment at ${formatTime(timeInSeconds)}`;
+}
+
+function getConfidenceColor(confidence) {
+    if (confidence >= 0.9) return 'text-green-600';
+    if (confidence >= 0.7) return 'text-blue-600';
+    if (confidence >= 0.5) return 'text-yellow-600';
+    return 'text-red-600';
+}
+
+function getConfidenceImprovement(original, enhanced) {
+    if (!original || !enhanced) return 0;
+    return ((enhanced - original) / original * 100).toFixed(0);
+}
+
+// Additional helper functions for guitar enhancement display
+function getWordContext(term) {
+    return getSegmentContext(term.start);
+}
+
+function formatBoostReason(reason) {
+    if (!reason) return 'Unknown';
+    return reason
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, l => l.toUpperCase())
+        .replace('Guitar', '🎸 Guitar')
+        .replace('Musical', '🎵 Musical');
+}
+
+function formatPatternType(patternType) {
+    if (!patternType) return 'Unknown';
+    return patternType
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function calculateAverageBoost() {
+    const enhancedTerms = guitarEnhancementMetrics.value?.enhanced_terms || [];
+    if (enhancedTerms.length === 0) return 0;
+    
+    const totalBoost = enhancedTerms.reduce((sum, term) => {
+        return sum + ((term.new_confidence - term.original_confidence) * 100);
+    }, 0);
+    
+    return (totalBoost / enhancedTerms.length).toFixed(1);
+}
 
 // Show start processing confirmation modal
 function showStartProcessingConfirmation() {
@@ -1394,16 +1484,7 @@ watch(showWhisperPrompt, (newValue) => {
     }
 });
 
-// Watch processing mode to automatically adjust analytics processing
-watch(() => restartProcessingOptions.value.processingMode, (newMode) => {
-    if (newMode === 'basic') {
-        // Basic mode automatically disables analytics processing
-        restartProcessingOptions.value.enableAnalyticsProcessing = false;
-    } else if (newMode === 'full') {
-        // Full mode enables analytics processing by default
-        restartProcessingOptions.value.enableAnalyticsProcessing = true;
-    }
-}, { immediate: true }); // Apply immediately on component initialization
+// Processing mode watcher moved after restartProcessingOptions definition
 
 
 
@@ -1768,6 +1849,17 @@ const restartProcessingOptions = ref({
     overwriteExisting: true,
     processingMode: 'full' // 'full' or 'basic'
 });
+
+// Watch processing mode to automatically adjust analytics processing
+watch(() => restartProcessingOptions.value.processingMode, (newMode) => {
+    if (newMode === 'basic') {
+        // Basic mode automatically disables analytics processing
+        restartProcessingOptions.value.enableAnalyticsProcessing = false;
+    } else if (newMode === 'full') {
+        // Full mode enables analytics processing by default
+        restartProcessingOptions.value.enableAnalyticsProcessing = true;
+    }
+}); // Removed immediate: true to prevent circular reference
 </script> 
 
 <template>
@@ -1957,6 +2049,114 @@ const restartProcessingOptions = ref({
                                                     <div class="text-sm font-bold text-indigo-600 capitalize">{{ summaryMetrics.teachingPattern.type }}</div>
                                                     <div class="text-xs text-gray-600">Teaching Pattern</div>
                                                 </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Enhanced Guitar Terms Display -->
+                                <div v-if="guitarEnhancementMetrics?.enhanced_terms?.length > 0" class="bg-purple-50 rounded-lg shadow-sm border border-purple-200 p-6 mb-6">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <h3 class="text-lg font-semibold text-purple-900">🎸 Enhanced Guitar Terms ({{ guitarEnhancementMetrics.enhanced_terms.length }})</h3>
+                                        <div v-if="guitarEnhancementMetrics.enhanced_terms.length > 5" class="flex space-x-2">
+                                            <button 
+                                                @click="showAllGuitarTerms = !showAllGuitarTerms"
+                                                class="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded-md hover:bg-purple-200 transition-colors"
+                                            >
+                                                {{ showAllGuitarTerms ? 'Show Less' : 'Show All' }}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="text-sm text-purple-700 mb-4 flex items-center">
+                                        <i class="fas fa-play text-purple-500 mr-2"></i>
+                                        Click any term to jump to that point in the video
+                                    </div>
+                                    
+                                    <div class="space-y-3">
+                                        <div v-for="(term, index) in (showAllGuitarTerms ? guitarEnhancementMetrics.enhanced_terms : guitarEnhancementMetrics.enhanced_terms.slice(0, 5))" :key="index" 
+                                             @click="jumpToTime(term.start)"
+                                             class="bg-white rounded-lg p-4 border border-purple-100 shadow-sm cursor-pointer hover:bg-purple-50 hover:border-purple-200 transition-all duration-200 group">
+                                            <!-- Term Header -->
+                                            <div class="flex justify-between items-start mb-2">
+                                                <div class="flex-1">
+                                                    <span class="font-semibold text-purple-800 text-lg group-hover:text-purple-900">"{{ term.word }}"</span>
+                                                    <div class="flex items-center space-x-4 mt-1">
+                                                        <span class="text-sm text-gray-600 group-hover:text-purple-600">
+                                                            <i class="fas fa-clock text-purple-500"></i> {{ term.start?.toFixed(1) }}s - {{ term.end?.toFixed(1) }}s
+                                                        </span>
+                                                        <span class="text-sm text-gray-600">
+                                                            <i class="fas fa-music text-purple-500"></i> Guitar Term
+                                                        </span>
+                                                        <span class="text-xs text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                                                            <i class="fas fa-play mr-1"></i> Click to play
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div class="text-right">
+                                                    <div class="text-lg font-semibold text-green-600">
+                                                        {{ (term.original_confidence * 100).toFixed(1) }}% → {{ (term.new_confidence * 100).toFixed(1) }}%
+                                                    </div>
+                                                    <div class="text-sm text-green-700 font-medium">
+                                                        +{{ ((term.new_confidence - term.original_confidence) * 100).toFixed(1) }}% boost
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Context and Explanation -->
+                                            <div class="mt-3 pt-3 border-t border-purple-100">
+                                                <div v-if="term.context || getWordContext(term)" class="mb-2">
+                                                    <span class="text-sm font-medium text-gray-700">Context:</span>
+                                                    <span class="text-sm text-gray-600 ml-1 italic">"{{ term.context || getWordContext(term) }}"</span>
+                                                </div>
+                                                <div v-if="term.boost_reason" class="mb-2">
+                                                    <span class="text-sm font-medium text-gray-700">Enhancement Reason:</span>
+                                                    <span class="text-sm text-purple-600 ml-1">{{ formatBoostReason(term.boost_reason) }}</span>
+                                                </div>
+                                                <div v-if="term.pattern_type" class="mb-2">
+                                                    <span class="text-sm font-medium text-gray-700">Pattern Detected:</span>
+                                                    <span class="text-sm text-purple-600 ml-1">{{ formatPatternType(term.pattern_type) }}</span>
+                                                </div>
+                                                <div class="text-xs text-purple-600">
+                                                    <i class="fas fa-info-circle"></i>
+                                                    Enhanced for improved transcription accuracy
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Summary when not showing all -->
+                                        <div v-if="!showAllGuitarTerms && guitarEnhancementMetrics.enhanced_terms.length > 5" 
+                                             class="text-center pt-3 border-t border-purple-200">
+                                            <span class="text-sm text-purple-600 font-medium">
+                                                Showing 5 of {{ guitarEnhancementMetrics.enhanced_terms.length }} enhanced terms
+                                            </span>
+                                            <button 
+                                                @click="showAllGuitarTerms = true"
+                                                class="ml-2 text-sm text-purple-700 underline hover:text-purple-900"
+                                            >
+                                                Show all {{ guitarEnhancementMetrics.enhanced_terms.length }} enhanced terms
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Enhancement Summary -->
+                                    <div class="mt-4 pt-4 border-t border-purple-200">
+                                        <h4 class="text-md font-semibold text-purple-800 mb-2">Enhancement Summary</h4>
+                                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                            <div class="bg-purple-100 rounded-lg p-3 text-center">
+                                                <div class="font-semibold text-purple-800">{{ guitarEnhancementMetrics.enhanced_terms.length }}</div>
+                                                <div class="text-purple-600">Terms Enhanced</div>
+                                            </div>
+                                            <div class="bg-purple-100 rounded-lg p-3 text-center">
+                                                <div class="font-semibold text-purple-800">{{ guitarEnhancementMetrics.total_words_evaluated || guitarEnhancementMetrics.enhanced_terms.length }}</div>
+                                                <div class="text-purple-600">Words Evaluated</div>
+                                            </div>
+                                            <div class="bg-purple-100 rounded-lg p-3 text-center">
+                                                <div class="font-semibold text-purple-800">{{ calculateAverageBoost() }}%</div>
+                                                <div class="text-purple-600">Avg Boost</div>
+                                            </div>
+                                            <div class="bg-purple-100 rounded-lg p-3 text-center">
+                                                <div class="font-semibold text-purple-800">{{ guitarEnhancementMetrics.model_used || 'AI' }}</div>
+                                                <div class="text-purple-600">Enhanced By</div>
                                             </div>
                                         </div>
                                     </div>
@@ -2804,7 +3004,7 @@ const restartProcessingOptions = ref({
                                     </div>
 
                                     <!-- Model Comparison Results -->
-                                    <div v-if="modelComparisonResults"
+                                    <div v-if="modelComparisonResults">
                                         <!-- Guitar Enhancement Details -->
                                         <div v-if="guitarEnhancementAnalysis" class="space-y-4">
                                             <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">

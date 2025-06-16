@@ -57,6 +57,9 @@ return [
             'include_confidence_scores' => false,
             'include_speaker_detection' => false,
             
+            // Processing Configuration
+            'enable_analytics_processing' => true, // Quality metrics, advanced features
+            
             // Validation Rules
             'min_audio_duration' => 1, // seconds
             'max_audio_duration' => 3600, // 1 hour
@@ -103,6 +106,9 @@ return [
             'output_format' => ['txt', 'json', 'srt'],
             'include_confidence_scores' => true,
             'include_speaker_detection' => false,
+            
+            // Processing Configuration
+            'enable_analytics_processing' => true, // Quality metrics, advanced features
             
             // Validation Rules
             'min_audio_duration' => 1, // seconds
@@ -151,6 +157,9 @@ return [
             'include_confidence_scores' => true,
             'include_speaker_detection' => true,
             
+            // Processing Configuration
+            'enable_analytics_processing' => true, // Quality metrics, advanced features
+            
             // Validation Rules
             'min_audio_duration' => 1, // seconds
             'max_audio_duration' => 10800, // 3 hours
@@ -197,6 +206,9 @@ return [
             'output_format' => ['txt', 'json', 'srt', 'vtt', 'tsv'],
             'include_confidence_scores' => true,
             'include_speaker_detection' => true,
+            
+            // Processing Configuration
+            'enable_analytics_processing' => true, // Quality metrics, advanced features
             
             // Validation Rules
             'min_audio_duration' => 1, // seconds

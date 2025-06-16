@@ -692,7 +692,7 @@ def process_audio(audio_path, model_name="base", initial_prompt=None, preset_con
 
 def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str, preset_config: Dict, 
                         performance_metrics: Dict, effective_language: str, min_speakers: int, max_speakers: int, 
-                        preset_name: str = None) -> Dict:
+                        preset_name: str = None, enable_analytics_processing: bool = True) -> Dict:
     """
     Run all post-processing steps after initial transcription.
     
@@ -904,9 +904,9 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
         }
         performance_metrics['alignment_time'] = 0.0
     
-    # Step 3: Perform speaker diarization (if enabled)
+    # Step 3: Perform speaker diarization (if enabled and analytics processing enabled)
     diarization_metadata = {}
-    if enable_diarization:
+    if enable_diarization and enable_analytics_processing:
         try:
             logger.info(f"Step 3: Loading speaker diarization pipeline (speakers: {min_speakers}-{max_speakers})")
             diarization_step_start = time.time()
@@ -953,6 +953,15 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
                 'min_speakers': min_speakers,
                 'max_speakers': max_speakers
             }
+    elif enable_diarization and not enable_analytics_processing:
+        # Diarization is enabled in preset but analytics processing is disabled
+        diarization_metadata = {
+            'status': 'skipped_analytics_disabled',
+            'note': 'Diarization skipped because analytics processing is disabled',
+            'min_speakers': min_speakers,
+            'max_speakers': max_speakers
+        }
+        logger.info("Step 3: Diarization skipped - analytics processing disabled")
     
     # Store metadata in result
     result["alignment_metadata"] = alignment_metadata
@@ -1021,23 +1030,28 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
             text_length = len(segment.get('text', ''))
             segment['confidence'] = float(min(0.8, max(0.3, text_length / 100.0)))
     
-    # Calculate original overall confidence score and quality metrics using AdvancedQualityAnalyzer
-    from quality_metrics import AdvancedQualityAnalyzer
-    quality_analyzer = AdvancedQualityAnalyzer()
-    
-    original_confidence_score = calculate_confidence(segments)
-    original_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
-    
-    # Store original metrics for comparison
-    result["original_metrics"] = {
-        "confidence_score": original_confidence_score,
-        "quality_metrics": original_quality_metrics,
-        "calculated_before_enhancement": True,
-        "note": "These metrics reflect the raw transcription quality before guitar term enhancement"
-    }
-    
-    logger.info(f"Original transcription metrics - Confidence: {original_confidence_score:.3f}, "
-               f"Overall quality: {original_quality_metrics.get('overall_quality_score', 0):.3f}")
+    # Calculate original overall confidence score and quality metrics (if analytics processing enabled)
+    if enable_analytics_processing:
+        from quality_metrics import AdvancedQualityAnalyzer
+        quality_analyzer = AdvancedQualityAnalyzer()
+        
+        original_confidence_score = calculate_confidence(segments)
+        original_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
+        
+        # Store original metrics for comparison
+        result["original_metrics"] = {
+            "confidence_score": original_confidence_score,
+            "quality_metrics": original_quality_metrics,
+            "calculated_before_enhancement": True,
+            "note": "These metrics reflect the raw transcription quality before guitar term enhancement"
+        }
+        
+        logger.info(f"Original transcription metrics - Confidence: {original_confidence_score:.3f}, "
+                   f"Overall quality: {original_quality_metrics.get('overall_quality_score', 0):.3f}")
+    else:
+        # Skip analytics processing - calculate basic confidence only
+        original_confidence_score = calculate_confidence(segments)
+        logger.info(f"Analytics processing disabled - Basic confidence: {original_confidence_score:.3f}")
     
     # TEMPORARILY DISABLED: Guitar terminology evaluation and confidence boosting
     # Disabling due to LLM endpoint configuration issue - will re-enable after fix
@@ -1085,42 +1099,53 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
             text_length = len(segment.get('text', ''))
             segment['confidence'] = min(0.8, max(0.3, text_length / 100.0))
     
-    # Calculate enhanced overall confidence score and quality metrics using AdvancedQualityAnalyzer
+    # Calculate enhanced overall confidence score and quality metrics (if analytics processing enabled)
     enhanced_confidence_score = calculate_confidence(segments)
-    enhanced_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
     
-    # Set the final metrics (these are the enhanced versions)
-    result["confidence_score"] = enhanced_confidence_score
-    result["quality_metrics"] = enhanced_quality_metrics
-    
-    # COMPARISON: Create enhancement comparison summary
-    original_metrics = result.get("original_metrics", {})
-    original_confidence = original_metrics.get("confidence_score", 0)
-    original_overall_quality = original_metrics.get("quality_metrics", {}).get("overall_quality_score", 0)
-    
-    confidence_improvement = enhanced_confidence_score - original_confidence
-    quality_improvement = enhanced_quality_metrics.get('overall_quality_score', 0) - original_overall_quality
-    
-    # Add enhancement comparison to results
-    result["enhancement_comparison"] = {
-        "confidence_scores": {
-            "original": original_confidence,
-            "enhanced": enhanced_confidence_score,
-            "improvement": confidence_improvement,
-            "improvement_percentage": (confidence_improvement / max(0.001, original_confidence)) * 100
-        },
-        "overall_quality_scores": {
-            "original": original_overall_quality,
-            "enhanced": enhanced_quality_metrics.get('overall_quality_score', 0),
-            "improvement": quality_improvement,
-            "improvement_percentage": (quality_improvement / max(0.001, original_overall_quality)) * 100
-        },
-        "enhancement_applied": enable_guitar_term_evaluation and 'guitar_term_evaluation' in result,
-        "guitar_terms_enhanced": result.get('guitar_term_evaluation', {}).get('musical_terms_found', 0) if 'guitar_term_evaluation' in result else 0
-    }
-    
-    logger.info(f"ENHANCED metrics after guitar term enhancement - Confidence: {enhanced_confidence_score:.3f} (+{confidence_improvement:.3f}), "
-               f"Overall quality: {enhanced_quality_metrics.get('overall_quality_score', 0):.3f} (+{quality_improvement:.3f})")
+    if enable_analytics_processing:
+        enhanced_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
+        
+        # Set the final metrics (these are the enhanced versions)
+        result["confidence_score"] = enhanced_confidence_score
+        result["quality_metrics"] = enhanced_quality_metrics
+        
+        # COMPARISON: Create enhancement comparison summary
+        original_metrics = result.get("original_metrics", {})
+        original_confidence = original_metrics.get("confidence_score", 0)
+        original_overall_quality = original_metrics.get("quality_metrics", {}).get("overall_quality_score", 0)
+        
+        confidence_improvement = enhanced_confidence_score - original_confidence
+        quality_improvement = enhanced_quality_metrics.get('overall_quality_score', 0) - original_overall_quality
+        
+        # Add enhancement comparison to results
+        result["enhancement_comparison"] = {
+            "confidence_scores": {
+                "original": original_confidence,
+                "enhanced": enhanced_confidence_score,
+                "improvement": confidence_improvement,
+                "improvement_percentage": (confidence_improvement / max(0.001, original_confidence)) * 100
+            },
+            "overall_quality_scores": {
+                "original": original_overall_quality,
+                "enhanced": enhanced_quality_metrics.get('overall_quality_score', 0),
+                "improvement": quality_improvement,
+                "improvement_percentage": (quality_improvement / max(0.001, original_overall_quality)) * 100
+            },
+            "enhancement_applied": enable_guitar_term_evaluation and 'guitar_term_evaluation' in result,
+            "guitar_terms_enhanced": result.get('guitar_term_evaluation', {}).get('musical_terms_found', 0) if 'guitar_term_evaluation' in result else 0
+        }
+        
+        logger.info(f"ENHANCED metrics after guitar term enhancement - Confidence: {enhanced_confidence_score:.3f} (+{confidence_improvement:.3f}), "
+                   f"Overall quality: {enhanced_quality_metrics.get('overall_quality_score', 0):.3f} (+{quality_improvement:.3f})")
+    else:
+        # Analytics processing disabled - set basic metrics only
+        result["confidence_score"] = enhanced_confidence_score
+        result["quality_metrics"] = {
+            "analytics_processing": "disabled",
+            "basic_confidence_calculated": True,
+            "note": "Full quality metrics require analytics processing to be enabled"
+        }
+        logger.info(f"Final confidence (analytics disabled): {enhanced_confidence_score:.3f}")
     
     # Log the improvement if guitar terms were enhanced
     if enable_guitar_term_evaluation and 'guitar_term_evaluation' in result:
@@ -1674,6 +1699,9 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
         # Run all post-processing steps using the new dedicated function
         logger.info("Step 2: Starting post-processing (alignment, diarization, enhancement, metrics)")
         try:
+            # Check if analytics processing should be enabled (default: True for backward compatibility)
+            enable_analytics = preset_config.get('enable_analytics_processing', True) if preset_config else True
+            
             result = _run_post_processing(
                 transcription_result=result,
                 audio_file=audio_file,
@@ -1683,7 +1711,8 @@ def _process_audio_core(audio_path, model_name="base", initial_prompt=None, pres
                 effective_language=effective_language,
                 min_speakers=min_speakers,
                 max_speakers=max_speakers,
-                preset_name=preset_name
+                preset_name=preset_name,
+                enable_analytics_processing=enable_analytics
             )
         except Exception as post_processing_error:
             logger.error(f"Post-processing failed: {post_processing_error}")
@@ -2603,6 +2632,13 @@ def process_transcription():
         # Check for optimal selection mode (disabled by default for speed)
         enable_optimal_selection = data.get('enable_optimal_selection', False)
         
+        # Check for analytics processing parameter (enabled by default for backward compatibility)
+        enable_analytics_processing = data.get('enable_analytics_processing', True)
+        
+        # Add analytics processing to preset config
+        if preset_config:
+            preset_config['enable_analytics_processing'] = enable_analytics_processing
+        
         # Process the audio with Whisper (using preset config or legacy parameters)
         # Enhanced error handling for minimal speech content
         transcription_result = process_audio(
@@ -2872,6 +2908,13 @@ def transcribe_audio():
         
         # Check for optimal selection mode (disabled by default for speed)
         enable_optimal_selection = data.get('enable_optimal_selection', False)
+        
+        # Check for analytics processing parameter (enabled by default for backward compatibility)
+        enable_analytics_processing = data.get('enable_analytics_processing', True)
+        
+        # Add analytics processing to preset config
+        if preset_config:
+            preset_config['enable_analytics_processing'] = enable_analytics_processing
         
         # Process the audio with Whisper using preset configuration
         transcription_result = process_audio(

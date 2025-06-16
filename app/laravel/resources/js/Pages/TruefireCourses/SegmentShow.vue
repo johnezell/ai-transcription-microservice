@@ -1309,11 +1309,21 @@ function showError(message) {
     showErrorModal.value = true;
 }
 
-// Simplified restart processing method using intelligent detection
+// Enhanced restart processing method with user-selected options
 async function restartProcessing() {
     showRestartProcessingModal.value = false;
     
     try {
+        const requestData = {
+            force_reextraction: restartProcessingOptions.value.forceReextraction,
+            overwrite_existing: restartProcessingOptions.value.overwriteExisting,
+            use_intelligent_detection: restartProcessingOptions.value.enableIntelligentSelection,
+            enable_analytics_processing: restartProcessingOptions.value.enableAnalyticsProcessing,
+            processing_mode: restartProcessingOptions.value.processingMode
+        };
+        
+        console.log('Starting restart with options:', requestData);
+        
         const response = await fetch(`/api/truefire-courses/${props.course.id}/segments/${segmentData.value.id}/redo`, {
             method: 'POST',
             headers: {
@@ -1321,11 +1331,7 @@ async function restartProcessing() {
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             },
-            body: JSON.stringify({
-                force_reextraction: true,
-                overwrite_existing: true,
-                use_intelligent_detection: true
-            })
+            body: JSON.stringify(requestData)
         });
         
         const data = await response.json();
@@ -1387,6 +1393,17 @@ watch(showWhisperPrompt, (newValue) => {
         loadWhisperPrompt();
     }
 });
+
+// Watch processing mode to automatically adjust analytics processing
+watch(() => restartProcessingOptions.value.processingMode, (newMode) => {
+    if (newMode === 'basic') {
+        // Basic mode automatically disables analytics processing
+        restartProcessingOptions.value.enableAnalyticsProcessing = false;
+    } else if (newMode === 'full') {
+        // Full mode enables analytics processing by default
+        restartProcessingOptions.value.enableAnalyticsProcessing = true;
+    }
+}, { immediate: true }); // Apply immediately on component initialization
 
 
 
@@ -1742,6 +1759,15 @@ function getStatusTitle(status) {
         default: return 'Processing Status Unknown';
     }
 }
+
+// Enhanced restart processing options
+const restartProcessingOptions = ref({
+    enableAnalyticsProcessing: true,
+    enableIntelligentSelection: true,
+    forceReextraction: true,
+    overwriteExisting: true,
+    processingMode: 'full' // 'full' or 'basic'
+});
 </script> 
 
 <template>
@@ -3848,30 +3874,156 @@ function getStatusTitle(status) {
             </div>
         </Modal>
 
-        <!-- Restart Processing Confirmation Modal -->
-        <Modal :show="showRestartProcessingModal" @close="showRestartProcessingModal = false" max-width="md">
+        <!-- Enhanced Restart Processing Configuration Modal -->
+        <Modal :show="showRestartProcessingModal" @close="showRestartProcessingModal = false" max-width="lg">
             <div class="p-6">
                 <div class="flex items-center mb-4">
-                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100">
-                        <svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.734 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
+                        <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                         </svg>
                     </div>
                 </div>
                 
-                <div class="text-center">
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">Restart Processing</h3>
-                    <p class="text-sm text-gray-500 mb-6">
-                        Are you sure you want to restart the entire processing? This will overwrite all existing audio and transcript data for this segment using intelligent detection for optimal settings.
+                <div class="text-center mb-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Restart Processing Configuration</h3>
+                    <p class="text-sm text-gray-500">
+                        Choose your processing options. This will overwrite all existing audio and transcript data for this segment.
                     </p>
+                </div>
+                
+                <!-- Processing Options -->
+                <div class="space-y-6 mb-6">
+                    <!-- Processing Mode -->
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 mb-3 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            Processing Mode
+                        </h4>
+                        
+                        <div class="space-y-3">
+                            <label class="flex items-start cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    value="full" 
+                                    v-model="restartProcessingOptions.processingMode"
+                                    class="mt-1 mr-3"
+                                >
+                                <div>
+                                    <div class="font-medium text-gray-900">Full Processing (Recommended)</div>
+                                    <div class="text-sm text-gray-600">
+                                        Complete transcription with advanced analytics, quality metrics, teaching pattern analysis, 
+                                        and comprehensive post-processing. Best for detailed analysis and quality assessment.
+                                    </div>
+                                    <div class="text-xs text-blue-600 mt-1">
+                                        ⏱️ Processing time: ~1.5x real-time | 💾 Storage: Full quality metrics
+                                    </div>
+                                </div>
+                            </label>
+                            
+                            <label class="flex items-start cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    value="basic" 
+                                    v-model="restartProcessingOptions.processingMode"
+                                    class="mt-1 mr-3"
+                                >
+                                <div>
+                                    <div class="font-medium text-gray-900">Basic Processing (Fast)</div>
+                                    <div class="text-sm text-gray-600">
+                                        Essential transcription with word-level timestamps and guitar term enhancement only. 
+                                        Skips analytics for faster bulk processing.
+                                    </div>
+                                    <div class="text-xs text-green-600 mt-1">
+                                        ⚡ Processing time: ~1.2x real-time | 💾 Storage: Basic transcript only
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Advanced Options -->
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 mb-3 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                            Advanced Options
+                        </h4>
+                        
+                        <div class="space-y-3">
+                            <label class="flex items-center cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    v-model="restartProcessingOptions.enableIntelligentSelection"
+                                    class="mr-3"
+                                >
+                                <div>
+                                    <div class="font-medium text-gray-900">Intelligent Model Selection</div>
+                                    <div class="text-sm text-gray-600">
+                                        Automatically choose the best transcription model based on content analysis
+                                    </div>
+                                </div>
+                            </label>
+                            
+                            <div v-if="restartProcessingOptions.processingMode === 'full'">
+                                <label class="flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        v-model="restartProcessingOptions.enableAnalyticsProcessing"
+                                        class="mr-3"
+                                    >
+                                    <div>
+                                        <div class="font-medium text-gray-900">Advanced Analytics Processing</div>
+                                        <div class="text-sm text-gray-600">
+                                            Include speaker diarization, quality metrics, and teaching pattern analysis
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <label class="flex items-center cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    v-model="restartProcessingOptions.forceReextraction"
+                                    class="mr-3"
+                                >
+                                <div>
+                                    <div class="font-medium text-gray-900">Force Audio Re-extraction</div>
+                                    <div class="text-sm text-gray-600">
+                                        Re-extract audio even if audio file already exists
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Processing Summary -->
+                    <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                        <h4 class="font-medium text-blue-900 mb-2 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            Processing Summary
+                        </h4>
+                        <div class="text-sm text-blue-800 space-y-1">
+                            <div><strong>Mode:</strong> {{ restartProcessingOptions.processingMode === 'full' ? 'Full Processing with Analytics' : 'Basic Processing (Fast)' }}</div>
+                            <div><strong>Model Selection:</strong> {{ restartProcessingOptions.enableIntelligentSelection ? 'Intelligent (Automatic)' : 'Default Preset' }}</div>
+                            <div v-if="restartProcessingOptions.processingMode === 'full'"><strong>Analytics:</strong> {{ restartProcessingOptions.enableAnalyticsProcessing ? 'Enabled' : 'Disabled' }}</div>
+                            <div><strong>Audio Re-extraction:</strong> {{ restartProcessingOptions.forceReextraction ? 'Yes' : 'No' }}</div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="flex justify-end space-x-3">
                     <SecondaryButton @click="showRestartProcessingModal = false">
                         Cancel
                     </SecondaryButton>
-                    <DangerButton @click="restartProcessing">
-                        Restart Processing
+                    <DangerButton @click="restartProcessing" class="bg-blue-600 hover:bg-blue-700 border-blue-600">
+                        Start Processing
                     </DangerButton>
                 </div>
             </div>

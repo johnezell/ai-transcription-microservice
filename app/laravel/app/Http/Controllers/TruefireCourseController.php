@@ -4945,12 +4945,16 @@ class TruefireCourseController extends Controller
             $validated = $request->validate([
                 'force_restart' => 'sometimes|boolean',
                 'preset' => 'sometimes|string|in:fast,balanced,high,premium',
+                'enable_analytics_processing' => 'sometimes|boolean',
                 'settings' => 'sometimes|array'
             ]);
 
             $forceRestart = $validated['force_restart'] ?? false;
             $preset = $validated['preset'] ?? $truefireCourse->getTranscriptionPreset();
-            $settings = $validated['settings'] ?? [];
+            $enableAnalyticsProcessing = $validated['enable_analytics_processing'] ?? true;
+            $settings = array_merge($validated['settings'] ?? [], [
+                'enable_analytics_processing' => $enableAnalyticsProcessing
+            ]);
 
             // Load course with segments that have audio files available
             $course = $truefireCourse->load(['channels.segments' => function ($query) {
@@ -5015,6 +5019,7 @@ class TruefireCourseController extends Controller
                 'course_id' => $truefireCourse->id,
                 'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
                 'preset' => $preset,
+                'enable_analytics_processing' => $enableAnalyticsProcessing,
                 'total_segments' => $allSegments->count(),
                 'available_segments' => $availableSegments,
                 'missing_audio_files' => count($missingAudioFiles),
@@ -5031,11 +5036,12 @@ class TruefireCourseController extends Controller
                     'course_id' => $truefireCourse->id,
                     'course_title' => $truefireCourse->title ?? "Course #{$truefireCourse->id}",
                     'preset' => $preset,
+                    'enable_analytics_processing' => $enableAnalyticsProcessing,
                     'total_segments' => $allSegments->count(),
                     'available_segments' => $availableSegments,
                     'missing_audio_files' => count($missingAudioFiles),
                     'force_restart' => $forceRestart,
-                    'estimated_duration_minutes' => ceil($availableSegments * 1.5), // Rough estimate
+                    'estimated_duration_minutes' => ceil($availableSegments * ($enableAnalyticsProcessing ? 1.5 : 1.2)), // Adjust estimate based on analytics
                     'started_at' => now()->toISOString()
                 ]
             ]);

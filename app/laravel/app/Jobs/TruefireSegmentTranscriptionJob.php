@@ -20,14 +20,16 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
 
     protected $processing;
     protected $transcriptionPreset;
+    protected $enableAnalyticsProcessing;
 
     /**
      * Create a new job instance.
      */
-    public function __construct(TruefireSegmentProcessing $processing, string $transcriptionPreset = 'balanced')
+    public function __construct(TruefireSegmentProcessing $processing, string $transcriptionPreset = 'balanced', bool $enableAnalyticsProcessing = true)
     {
         $this->processing = $processing;
         $this->transcriptionPreset = $transcriptionPreset;
+        $this->enableAnalyticsProcessing = $enableAnalyticsProcessing;
     }
 
     /**
@@ -40,6 +42,7 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
                 'segment_id' => $this->processing->segment_id,
                 'course_id' => $this->processing->course_id,
                 'transcription_preset' => $this->transcriptionPreset,
+                'enable_analytics_processing' => $this->enableAnalyticsProcessing,
                 'job_id' => $this->job->getJobId()
             ]);
             
@@ -114,7 +117,8 @@ class TruefireSegmentTranscriptionJob implements ShouldQueue
                 'preset' => $this->transcriptionPreset,  // Send preset name, not transcription_preset
                 'segment_id' => $this->processing->segment_id,
                 'course_id' => $this->processing->course_id,
-                'enable_intelligent_selection' => true  // Enable intelligent model selection
+                'enable_intelligent_selection' => true,  // Enable intelligent model selection
+                'enable_analytics_processing' => $this->enableAnalyticsProcessing // Control advanced analytics
             ];
 
             Log::info('Sending TrueFire segment transcription request', [

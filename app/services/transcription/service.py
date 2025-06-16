@@ -1032,11 +1032,25 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
     
     # Calculate original overall confidence score and quality metrics (if analytics processing enabled)
     if enable_analytics_processing:
-        from quality_metrics import AdvancedQualityAnalyzer
-        quality_analyzer = AdvancedQualityAnalyzer()
-        
-        original_confidence_score = calculate_confidence(segments)
-        original_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
+        try:
+            from quality_metrics import AdvancedQualityAnalyzer
+            quality_analyzer = AdvancedQualityAnalyzer()
+            
+            original_confidence_score = calculate_confidence(segments)
+            original_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
+            
+            logger.info(f"Analytics processing: Quality metrics calculated successfully")
+            if 'teaching_patterns' in original_quality_metrics:
+                teaching_patterns = original_quality_metrics['teaching_patterns']
+                logger.info(f"Teaching patterns detected: {teaching_patterns.get('summary', {}).get('pattern_strength', 'Unknown')}")
+        except ImportError as e:
+            logger.warning(f"Advanced quality analyzer not available: {e}")
+            original_confidence_score = calculate_confidence(segments)
+            original_quality_metrics = calculate_comprehensive_quality_metrics(result, segments, result.get('word_segments', []))
+        except Exception as e:
+            logger.error(f"Error in advanced quality analysis: {e}")
+            original_confidence_score = calculate_confidence(segments)
+            original_quality_metrics = calculate_comprehensive_quality_metrics(result, segments, result.get('word_segments', []))
         
         # Store original metrics for comparison
         result["original_metrics"] = {
@@ -1053,9 +1067,9 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
         original_confidence_score = calculate_confidence(segments)
         logger.info(f"Analytics processing disabled - Basic confidence: {original_confidence_score:.3f}")
     
-    # TEMPORARILY DISABLED: Guitar terminology evaluation and confidence boosting
-    # Disabling due to LLM endpoint configuration issue - will re-enable after fix
-    enable_guitar_term_evaluation = False  # Temporarily disabled
+    # Guitar terminology evaluation and confidence boosting
+    # Re-enabled: LLM endpoint should be working now
+    enable_guitar_term_evaluation = preset_config.get('enable_guitar_term_evaluation', True) if preset_config else True
     
     if enable_guitar_term_evaluation:
         try:
@@ -1071,9 +1085,11 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
                 logger.info(f"Guitar terminology enhancement completed: "
                            f"{eval_data.get('musical_terms_found', 0)} musical terms enhanced "
                            f"out of {eval_data.get('total_words_evaluated', 0)} words evaluated")
+            else:
+                logger.warning("Guitar terminology enhancement completed but no evaluation data found")
             
-        except ImportError:
-            logger.warning("Guitar terminology evaluator not available - skipping enhancement")
+        except ImportError as e:
+            logger.warning(f"Guitar terminology evaluator not available: {e} - skipping enhancement")
         except Exception as e:
             logger.error(f"Guitar terminology enhancement failed: {e} - continuing without enhancement")
     else:
@@ -1103,7 +1119,16 @@ def _run_post_processing(transcription_result: Dict, audio_file, audio_path: str
     enhanced_confidence_score = calculate_confidence(segments)
     
     if enable_analytics_processing:
-        enhanced_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
+        try:
+            enhanced_quality_metrics = quality_analyzer.analyze_comprehensive_quality(result, audio_path)
+            
+            logger.info(f"Enhanced analytics processing: Quality metrics calculated successfully")
+            if 'teaching_patterns' in enhanced_quality_metrics:
+                teaching_patterns = enhanced_quality_metrics['teaching_patterns']
+                logger.info(f"Enhanced teaching patterns: {teaching_patterns.get('summary', {}).get('pattern_strength', 'Unknown')}")
+        except Exception as e:
+            logger.error(f"Error in enhanced quality analysis: {e}")
+            enhanced_quality_metrics = calculate_comprehensive_quality_metrics(result, segments, result.get('word_segments', []))
         
         # Set the final metrics (these are the enhanced versions)
         result["confidence_score"] = enhanced_confidence_score

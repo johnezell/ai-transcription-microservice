@@ -41,6 +41,18 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.laravel_service.id]
   }
 
+  # MySQL/Aurora from Laravel service with ALB
+  dynamic "ingress" {
+    for_each = var.create_alb ? [1] : []
+    content {
+      description     = "MySQL from Laravel ALB service"
+      from_port       = 3306
+      to_port         = 3306
+      protocol        = "tcp"
+      security_groups = [aws_security_group.laravel_service_alb[0].id]
+    }
+  }
+
   # MySQL/Aurora from bastion
   ingress {
     description     = "MySQL from bastion"

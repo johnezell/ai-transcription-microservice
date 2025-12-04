@@ -5,38 +5,30 @@
 # APPLICATION LOAD BALANCER (VPN-ONLY)
 # =============================================================================
 
-# ALB Security Group - VPN/VPC access only
+# ALB Security Group - IP whitelist for now (TODO: VPC peering for VPN access)
 resource "aws_security_group" "alb" {
   count = var.create_alb ? 1 : 0
 
   name_prefix = "${var.project_prefix}-alb-sg-"
-  description = "Security group for Private ALB - VPN-only access"
+  description = "Security group for Public ALB - IP whitelisted"
   vpc_id      = local.vpc_id
 
-  # Allow HTTPS from VPC and VPN only
+  # Allow HTTPS from whitelisted IPs
   ingress {
-    description = "HTTPS from VPC/VPN"
+    description = "HTTPS from whitelisted IPs"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [
-      var.vpc_cidr,             # Local VPC
-      "10.209.0.0/18",          # Shared services VPC (VPN servers)
-      "192.168.227.0/24"        # VPN client subnet
-    ]
+    cidr_blocks = var.bastion_allowed_cidrs  # Reuse bastion allowed CIDRs
   }
 
-  # Allow HTTP from VPC and VPN only (redirect to HTTPS)
+  # Allow HTTP from whitelisted IPs (redirect to HTTPS)
   ingress {
-    description = "HTTP from VPC/VPN"
+    description = "HTTP from whitelisted IPs"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = [
-      var.vpc_cidr,             # Local VPC
-      "10.209.0.0/18",          # Shared services VPC (VPN servers)
-      "192.168.227.0/24"        # VPN client subnet
-    ]
+    cidr_blocks = var.bastion_allowed_cidrs  # Reuse bastion allowed CIDRs
   }
 
   # Allow all outbound
@@ -57,15 +49,15 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Application Load Balancer - Internal (VPN-only)
+# Application Load Balancer - Public with IP whitelist (TODO: VPC peering for VPN)
 resource "aws_lb" "main" {
   count = var.create_alb ? 1 : 0
 
   name               = "${var.project_prefix}-alb-${var.environment}"
-  internal           = true  # Private ALB - VPN access only
+  internal           = false  # Public ALB with IP whitelist
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb[0].id]
-  subnets            = local.private_subnet_ids  # Private subnets for VPN access
+  subnets            = local.public_subnet_ids  # Public subnets for internet access
 
   enable_deletion_protection       = var.environment == "production"
   enable_http2                     = true

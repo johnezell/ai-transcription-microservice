@@ -76,7 +76,7 @@ spot_max_price        = "0.5"
 db_engine         = "aurora-mysql"
 db_engine_version = "8.0.mysql_aurora.3.04.0"
 db_instance_class = "db.t3.medium"  # t3.small not supported for Aurora MySQL 8.0
-db_instance_count = 0               # Skip instances for now - cluster already exists
+db_instance_count = 1               # Single instance for staging
 db_name           = "ai_transcription_staging"
 db_username       = "admin"
 

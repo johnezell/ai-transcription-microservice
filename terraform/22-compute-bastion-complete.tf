@@ -164,14 +164,24 @@ resource "aws_iam_role_policy" "bastion_ecr" {
       {
         Effect = "Allow"
         Action = [
-          "ecr:GetAuthorizationToken",
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
           "ecr:DescribeRepositories",
-          "ecr:ListImages"
+          "ecr:ListImages",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
         ]
-        Resource = "*"
+        Resource = "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_prefix}/*"
       }
     ]
   })

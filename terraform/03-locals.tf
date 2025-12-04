@@ -36,11 +36,11 @@ locals {
     music_term       = 5000
   }
 
-  # ECR repository URLs (to be created or referenced)
+  # ECR repository URLs - must match aws_ecr_repository names in 40-ecr-repositories.tf
   ecr_repositories = {
-    laravel          = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${local.name_prefix}-laravel"
-    audio_extraction = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${local.name_prefix}-audio-extraction"
-    transcription    = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${local.name_prefix}-transcription"
-    music_term       = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${local.name_prefix}-music-term"
+    laravel          = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.project_prefix}/laravel-api"
+    audio_extraction = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.project_prefix}/audio-extraction"
+    transcription    = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.project_prefix}/transcription"
+    music_term       = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.project_prefix}/music-term-recognition"
   }
 }

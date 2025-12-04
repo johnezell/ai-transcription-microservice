@@ -239,9 +239,9 @@ resource "aws_rds_cluster_instance" "main" {
 
   db_parameter_group_name = aws_db_parameter_group.main.name
 
-  # Performance Insights
-  performance_insights_enabled          = true
-  performance_insights_retention_period = 7
+  # Performance Insights (not supported on t3.medium)
+  performance_insights_enabled          = can(regex("^db\\.(r5|r6|m5|m6)", var.db_instance_class))
+  performance_insights_retention_period = can(regex("^db\\.(r5|r6|m5|m6)", var.db_instance_class)) ? 7 : null
 
   # Enhanced monitoring
   monitoring_interval = 60

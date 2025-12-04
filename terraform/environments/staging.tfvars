@@ -15,6 +15,10 @@ common_tags = {
   CostCenter  = "ai-services-staging"
 }
 
+# Laravel task resources (increased for better performance)
+laravel_task_cpu    = "1024"  # 1 vCPU
+laravel_task_memory = "2048"  # 2GB RAM
+
 # Networking - Using new VPC
 vpc_id             = "" # Empty to create new VPC
 vpc_cidr           = "10.25.0.0/16"

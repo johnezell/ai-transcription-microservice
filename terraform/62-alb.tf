@@ -129,11 +129,11 @@ resource "aws_lb_target_group" "laravel_api" {
     healthy_threshold   = 2
     interval            = 30
     matcher             = "200"
-    path                = "/api/health"
+    path                = "/health.php"  # Simple PHP health check (no Laravel)
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 5
-    unhealthy_threshold = 2
+    unhealthy_threshold = 3
   }
 
   deregistration_delay = 30

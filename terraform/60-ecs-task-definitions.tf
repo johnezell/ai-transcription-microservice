@@ -392,7 +392,7 @@ resource "aws_secretsmanager_secret" "app_key" {
 resource "aws_secretsmanager_secret_version" "app_key" {
   secret_id = aws_secretsmanager_secret.app_key.id
   secret_string = jsonencode({
-    key = base64encode(random_password.app_key.result)
+    key = "base64:${base64encode(random_password.app_key.result)}"
   })
 }
 

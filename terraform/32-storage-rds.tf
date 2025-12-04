@@ -126,10 +126,11 @@ resource "aws_db_parameter_group" "main" {
   family      = "aurora-mysql8.0"
   description = "DB instance parameter group for ${var.project_prefix}"
 
-  # Performance monitoring
+  # Performance monitoring (static parameter - requires reboot)
   parameter {
-    name  = "performance_schema"
-    value = "1"
+    name         = "performance_schema"
+    value        = "1"
+    apply_method = "pending-reboot"
   }
 
   tags = var.common_tags

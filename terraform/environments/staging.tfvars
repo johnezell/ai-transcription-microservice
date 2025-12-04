@@ -75,7 +75,8 @@ spot_max_price        = "0.5"
 # Database configuration (for future use)
 db_engine         = "aurora-mysql"
 db_engine_version = "8.0.mysql_aurora.3.04.0"
-db_instance_class = "db.t3.small"
+db_instance_class = "db.t3.medium"  # t3.small not supported for Aurora MySQL 8.0
+db_instance_count = 0               # Skip instances for now - cluster already exists
 db_name           = "ai_transcription_staging"
 db_username       = "admin"
 
@@ -95,7 +96,7 @@ budget_alert_threshold = 80
 
 # Feature flags
 enable_vpc_flow_logs = true
-create_alb           = false # Will be true when we add the ALB
+create_alb           = true  # ALB enabled for public access
 # ECS Task Definitions
 image_tag          = "staging"
 whisper_model_size = "base" # Use "small" or "medium" for better accuracy

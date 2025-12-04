@@ -1,34 +1,42 @@
 # TFS AI Infrastructure - Application Load Balancer
-# Provides external access to Laravel API
+# VPN-only access for internal development
 
 # =============================================================================
-# APPLICATION LOAD BALANCER
+# APPLICATION LOAD BALANCER (VPN-ONLY)
 # =============================================================================
 
-# ALB Security Group
+# ALB Security Group - VPN/VPC access only
 resource "aws_security_group" "alb" {
   count = var.create_alb ? 1 : 0
 
-  name        = "${var.project_prefix}-alb-sg-${var.environment}"
-  description = "Security group for Application Load Balancer"
+  name_prefix = "${var.project_prefix}-alb-sg-"
+  description = "Security group for Private ALB - VPN-only access"
   vpc_id      = local.vpc_id
 
-  # Allow HTTPS from anywhere
+  # Allow HTTPS from VPC and VPN only
   ingress {
-    description = "HTTPS from anywhere"
+    description = "HTTPS from VPC/VPN"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [
+      var.vpc_cidr,             # Local VPC
+      "10.209.0.0/18",          # Shared services VPC (VPN servers)
+      "192.168.227.0/24"        # VPN client subnet
+    ]
   }
 
-  # Allow HTTP from anywhere (redirect to HTTPS)
+  # Allow HTTP from VPC and VPN only (redirect to HTTPS)
   ingress {
-    description = "HTTP from anywhere"
+    description = "HTTP from VPC/VPN"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [
+      var.vpc_cidr,             # Local VPC
+      "10.209.0.0/18",          # Shared services VPC (VPN servers)
+      "192.168.227.0/24"        # VPN client subnet
+    ]
   }
 
   # Allow all outbound
@@ -49,15 +57,15 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Application Load Balancer
+# Application Load Balancer - Internal (VPN-only)
 resource "aws_lb" "main" {
   count = var.create_alb ? 1 : 0
 
   name               = "${var.project_prefix}-alb-${var.environment}"
-  internal           = false
+  internal           = true  # Private ALB - VPN access only
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb[0].id]
-  subnets            = local.public_subnet_ids
+  subnets            = local.private_subnet_ids  # Private subnets for VPN access
 
   enable_deletion_protection       = var.environment == "production"
   enable_http2                     = true
@@ -143,7 +151,7 @@ resource "aws_lb_listener" "https" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = aws_acm_certificate.main.arn
+  certificate_arn   = aws_acm_certificate_validation.thoth_cert.certificate_arn
 
   default_action {
     type             = "forward"

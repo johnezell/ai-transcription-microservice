@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y \
     zip \
     unzip \
     nginx \
-    supervisor
+    supervisor \
+    nodejs \
+    npm
 
 # Install PHP extensions
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
@@ -36,6 +38,9 @@ COPY ./app/laravel .
 
 # Install composer dependencies
 RUN composer install --no-interaction --no-dev --optimize-autoloader
+
+# Install npm dependencies and build assets
+RUN npm install && npm run build
 
 # Create required directories and set permissions
 RUN mkdir -p /var/www/storage/app/public/s3/jobs \

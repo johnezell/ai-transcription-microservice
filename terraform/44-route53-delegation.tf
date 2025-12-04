@@ -152,3 +152,4 @@ output "thoth_dns_records" {
   }
 }
 
+

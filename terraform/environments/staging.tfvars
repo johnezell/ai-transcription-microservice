@@ -46,7 +46,7 @@ create_bastion_static_ip = true
 # Route53 and domain configuration
 route53_zone_id         = "Z07716653GDXJUDL4P879"
 route53_zone_account_id = "542876199144"
-domain_name             = "thoth-staging.tfs.services"
+domain_name             = "staging.thoth.tfs.services"  # Uses delegated zone thoth.tfs.services
 
 # Cross-account configuration
 shared_services_account_id = "542876199144"

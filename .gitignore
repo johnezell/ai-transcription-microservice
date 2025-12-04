@@ -1,5 +1,82 @@
-.sandbox
+# Environment files (contain sensitive data)
 .env
-sample_course
-app/shared/jobs/*
-app/laravel/storage/*
+.env.*
+!.env.example
+
+# Terraform files
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfplan
+tfplan-*.out
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# AWS credentials
+.aws/
+aws-credentials
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+
+# Laravel/PHP
+vendor/
+node_modules/
+npm-debug.log
+yarn-error.log
+.phpunit.result.cache
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Secrets
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+# SSH Keys (keep public keys)
+keys/*
+!keys/*.pub

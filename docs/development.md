@@ -6,30 +6,37 @@
 |------|-----------------|
 | Add API endpoint | `app/laravel/routes/api.php`, `app/laravel/app/Http/Controllers/` |
 | Modify transcription pipeline | `app/laravel/app/Jobs/`, `app/services/transcription/service.py` |
-| Add music terms | `app/services/music-term-recognition/service.py` (FALLBACK_MUSIC_TERMS) or Laravel admin UI |
+| Add terminology terms | Admin UI at `/admin/terminology` or `FALLBACK_MUSIC_TERMS` in service |
 | Change audio extraction | `app/services/audio-extraction/service.py` |
 | Update database schema | `app/laravel/database/migrations/` |
-| Modify TrueFire integration | `app/laravel/app/Models/TrueFire/`, `app/laravel/app/Console/Commands/TranscribeTrueFire*.php` |
+| Add new data source | Create models + CLI command (see TrueFire example) |
 
-## Adding Music Terms
+## Terminology System
 
-**Option 1: Laravel Admin UI** (preferred)
+The terminology recognition service extracts domain-specific terms from transcripts. Terms are organized by category.
+
+**Managing terms via Admin UI** (preferred):
 - Navigate to `/admin/terminology`
-- Add terms via web interface
-- Service fetches from API on startup
+- Add categories and terms via web interface
+- Service fetches from API on startup and refresh
 
-**Option 2: Code fallback** (when API unavailable)
+**Fallback terms** (when API unavailable):
 Edit `app/services/music-term-recognition/service.py`:
 ```python
 FALLBACK_MUSIC_TERMS = {
-    "guitar_techniques": ["palm muting", "hammer-on", ...],
-    "your_new_category": ["term1", "term2", ...]
+    "category_name": ["term1", "term2", ...],
+    "another_category": ["term3", "term4", ...]
 }
 ```
 
+**Adding a new terminology domain**:
+1. Create category in admin UI
+2. Add terms to that category
+3. Optionally add fallback terms in service code
+
 ## Processing Pipeline Extension
 
-The pipeline is: Audio → Transcription → Term Recognition
+Pipeline: Audio Extraction → Transcription → Terminology Recognition
 
 **To add a new processing step:**
 1. Create new Python service in `app/services/your-service/`
@@ -44,38 +51,35 @@ The pipeline is: Audio → Transcription → Term Recognition
 |-------|-------|---------|
 | `Video` | videos | Main transcription records |
 | `TranscriptionLog` | transcription_logs | Timing and progress tracking |
-| `MusicTerm` | music_terms | Recognized term definitions |
-| `Course` | courses | Optional course grouping |
+| `Term` | terms | Recognized term definitions |
+| `TermCategory` | term_categories | Term groupings |
+| `Course` | courses | Optional content grouping |
 
-**TrueFire models** (read-only, external DB):
+## Data Source Integration: TrueFire
+
+TrueFire is one data source integration. Use it as a pattern for adding others.
+
+**Models** (read-only, external PostgreSQL):
 | Model | Connection | Purpose |
 |-------|------------|---------|
 | `TrueFireCourse` | truefire | Course metadata |
 | `TrueFireSegment` | truefire | Video segment info, S3 paths |
 | `TrueFireChannel` | truefire | Channel grouping |
 
-## TrueFire Integration
-
-Videos come from TrueFire's S3 bucket `tfstream`. The segment model handles path conversion:
-
+**S3 path conversion**:
 ```
-Database: "mp4:guitar-course/segment-01"
+Database: "mp4:course-name/segment-01"
     ↓
-S3 Key:   "guitar-course/segment-01_hi.mp4"
+S3 Key:   "course-name/segment-01_hi.mp4"
 ```
 
 Quality options: `_low`, `_med`, `_hi` (default: `_hi`)
 
 **CLI usage:**
 ```bash
-# Dry run (show what would happen)
-php artisan truefire:transcribe 12345 --dry-run
-
-# Queue for ECS processing
-php artisan truefire:transcribe 12345 --dispatch
-
-# Local sync processing (requires local services)
-php artisan truefire:transcribe 12345 --sync
+php artisan truefire:transcribe 12345 --dry-run    # Preview
+php artisan truefire:transcribe 12345 --dispatch   # Queue for ECS
+php artisan truefire:transcribe 12345 --sync       # Run locally
 ```
 
 ## Environment Variables
@@ -84,7 +88,6 @@ Key variables in `.env` / docker-compose:
 ```
 AUDIO_SERVICE_URL=http://audio-extraction-service:5000
 TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
-MUSIC_TERM_SERVICE_URL=http://music-term-recognition-service:5000
-QUEUE_CONNECTION=database  # or 'sqs' for ECS
+TERMINOLOGY_SERVICE_URL=http://terminology-service:5000
+QUEUE_CONNECTION=sqs  # or 'database' for local testing
 ```
-

@@ -14,7 +14,7 @@
 |--------|----------|---------|
 | POST | `/api/transcription` | Dispatch new transcription job |
 | GET | `/api/transcription/{jobId}` | Get job status |
-| POST | `/api/transcription/{jobId}/status` | Update job status (callback from Python services) |
+| POST | `/api/transcription/{jobId}/status` | Update job status (callback from services) |
 
 ### Videos
 | Method | Endpoint | Purpose |
@@ -23,10 +23,11 @@
 | GET | `/api/videos/{id}/status` | Poll processing status |
 | GET | `/api/videos/{id}/transcript-json` | Get full transcript JSON |
 | GET | `/api/videos/{id}/terminology-json` | Get extracted terms JSON |
-| GET | `/api/videos/{id}/music-terms` | Get music terms |
-| POST | `/api/videos/{id}/music-terms` | Trigger term recognition |
+| POST | `/api/videos/{id}/terminology` | Trigger terminology recognition |
 
-### Course Analysis
+*Legacy endpoints (`/api/videos/{id}/music-terms`) redirect to terminology.*
+
+### Course/Content Analysis
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/api/courses/{course}/terminology` | All terms across course |
@@ -44,7 +45,7 @@ All Python services expose the same pattern:
 | GET | `/connectivity-test` | Test Laravel API connection |
 | POST | `/process` | Process a job |
 
-**Music Term Service only:**
+**Terminology Service only:**
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | POST | `/refresh-terms` | Reload terms from Laravel API |
@@ -52,21 +53,21 @@ All Python services expose the same pattern:
 ## Job States
 
 ```
-pending → processing → extracting_audio → transcribing → processing_music_terms → completed
-                ↓              ↓                ↓                  ↓
-              failed        failed           failed             failed
+pending → processing → extracting_audio → transcribing → recognizing_terms → completed
+                ↓              ↓                ↓              ↓
+              failed        failed           failed        failed
 ```
 
 ## Service Communication Flow
 
 ```
 1. Laravel dispatches job to SQS
-2. Laravel calls Audio Service:  POST /process {job_id, s3_bucket, s3_key}
-3. Audio Service calls back:     POST /api/transcription/{id}/status {status: "processing"}
-4. Laravel calls Transcription:  POST /process {job_id}
-5. Transcription calls back:     POST /api/transcription/{id}/status {status: "completed", response_data: {...}}
-6. Laravel calls Music Terms:    POST /process {job_id}
-7. Music Terms calls back:       POST /api/transcription/{id}/status {status: "completed", response_data: {...}}
+2. Laravel calls Audio Service:    POST /process {job_id, source_bucket, source_key}
+3. Audio Service calls back:       POST /api/transcription/{id}/status
+4. Laravel calls Transcription:    POST /process {job_id}
+5. Transcription calls back:       POST /api/transcription/{id}/status
+6. Laravel calls Terminology:      POST /process {job_id}
+7. Terminology calls back:         POST /api/transcription/{id}/status
 ```
 
 ## Status Update Payload
@@ -85,4 +86,3 @@ Python services send status updates:
   "completed_at": "2025-01-01T00:00:00Z"
 }
 ```
-

@@ -4,8 +4,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        TrueFire S3 (tfstream)                       │
-│                         Source Videos                               │
+│                      Video/Audio Sources                            │
+│            (S3, direct upload, external APIs, etc.)                 │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │
                                 ▼
@@ -17,7 +17,7 @@
             │                   │                   │
             ▼                   ▼                   ▼
 ┌───────────────────┐ ┌─────────────────┐ ┌─────────────────────────┐
-│ Audio Extraction  │ │  Transcription  │ │ Music Term Recognition  │
+│ Audio Extraction  │ │  Transcription  │ │ Terminology Recognition │
 │    (Fargate)      │ │ (EC2 + GPU)     │ │      (Fargate)          │
 │ Python + FFmpeg   │ │ Python + Whisper│ │   Python + spaCy        │
 │    Port 5000      │ │   Port 5000     │ │     Port 5000           │
@@ -39,14 +39,14 @@
 | Laravel API | Laravel 12 / PHP 8.2 | ECS Fargate | 80 | Orchestration, Web UI, Job dispatch |
 | Audio Extraction | Python/FFmpeg | ECS Fargate | 5000 | Video → WAV (16kHz mono) |
 | Transcription | Python/Whisper | ECS EC2 (GPU) | 5000 | Speech-to-text |
-| Music Term Recognition | Python/spaCy | ECS Fargate | 5000 | NLP terminology extraction |
+| Terminology Recognition | Python/spaCy | ECS Fargate | 5000 | NLP domain-term extraction |
 
 ## Data Flow
 
-1. **Trigger**: CLI (`truefire:transcribe`) or API dispatches job to SQS
-2. **Audio Extraction**: Downloads video from TrueFire S3, extracts WAV
+1. **Trigger**: API or CLI dispatches job to SQS
+2. **Audio Extraction**: Downloads source video, extracts WAV
 3. **Transcription**: Whisper model on GPU generates transcript
-4. **Term Recognition**: spaCy identifies music terminology
+4. **Terminology Recognition**: spaCy identifies domain-specific terms
 5. **Storage**: Results saved to EFS and database
 
 ## AWS Infrastructure
@@ -72,7 +72,7 @@ Each transcription job creates:
 ├── transcript.txt      # Plain text transcript
 ├── transcript.srt      # SRT subtitles
 ├── transcript.json     # Full Whisper output with timestamps
-└── music_terms.json    # Extracted music terminology
+└── terminology.json    # Extracted domain terminology
 ```
 
 ## Inter-Service Communication
@@ -81,3 +81,12 @@ Services communicate via HTTP callbacks to Laravel API:
 - `POST /api/transcription/{id}/status` - Status updates from Python services
 - Services share storage via EFS mounted at `/var/www/storage/app/public/s3`
 
+## Data Source Integrations
+
+The system is designed to accept video from multiple sources:
+
+| Source | Status | How it works |
+|--------|--------|--------------|
+| TrueFire S3 | Active | Videos pulled from `tfstream` bucket via CLI |
+| Direct Upload | Active | Web UI upload to local storage |
+| Other S3 | Planned | Generic S3 bucket integration |

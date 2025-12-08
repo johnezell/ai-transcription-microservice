@@ -77,7 +77,7 @@ Local dev uses SQS queue (`QUEUE_CONNECTION=sqs`). Jobs are processed by ECS wor
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | Jobs not processing | SQS/ECS not running | Check ECS service status in AWS console |
-| Can't connect to TrueFire DB | VPC peering or creds | Verify `.env.local` has correct creds |
+| Can't connect to external DB | VPC peering or creds | Verify `.env.local` has correct creds |
 | 503 from ALB | ECS task unhealthy | Check CloudWatch logs |
 | Redis connection refused | Container not running | `make local` to restart |
 

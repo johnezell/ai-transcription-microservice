@@ -2,8 +2,9 @@
 
 ## Identity
 - **Name**: Thoth (AI Transcription Microservice)
-- **Purpose**: Generate transcripts from TrueFire guitar instruction videos for AI training data; future multi-language subtitling
-- **Status**: Internal tool, staging environment only
+- **Purpose**: Video/audio transcription with domain-specific terminology extraction
+- **Use Cases**: AI training data, subtitling, searchable content, accessibility
+- **Status**: Internal tool, staging environment
 - **Domain**: thoth-staging.tfs.services
 - **AWS Account**: 087439708020 (tfs-ai-services)
 
@@ -40,11 +41,15 @@ make local-stop     # Stop containers
 | Path | Purpose |
 |------|---------|
 | `app/laravel/` | Laravel API and web UI |
-| `app/services/` | Python microservices (audio, transcription, music-terms) |
+| `app/services/` | Python microservices (audio, transcription, terminology) |
 | `terraform/` | Infrastructure as code |
 | `docker-compose.local.yml` | Local development setup |
 
-## TrueFire Integration
-- Source videos: S3 bucket `tfstream` (TrueFire's account)
-- Database: PostgreSQL connection `truefire` for segment metadata
-- CLI: `php artisan truefire:transcribe {segment_id} --dispatch`
+## Data Source Integrations
+
+Currently integrated:
+- **TrueFire**: Guitar instruction videos from S3 bucket `tfstream`
+  - CLI: `php artisan truefire:transcribe {segment_id} --dispatch`
+  - Models: `app/laravel/app/Models/TrueFire/`
+
+Future integrations could include direct upload, YouTube, Vimeo, etc.

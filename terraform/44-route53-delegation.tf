@@ -65,12 +65,12 @@ resource "aws_acm_certificate_validation" "thoth_cert" {
 # DNS RECORDS IN THOTH ZONE
 # =============================================================================
 
-# A record for staging ALB
-resource "aws_route53_record" "staging_alb" {
-  count = var.create_alb && var.environment == "staging" ? 1 : 0
+# A record for app ALB
+resource "aws_route53_record" "app_alb" {
+  count = var.create_alb ? 1 : 0
 
   zone_id = aws_route53_zone.thoth_subdomain.zone_id
-  name    = "staging.thoth.tfs.services"
+  name    = "app.thoth.tfs.services"
   type    = "A"
 
   alias {
@@ -80,24 +80,9 @@ resource "aws_route53_record" "staging_alb" {
   }
 }
 
-# Wildcard A record for staging (for future PR environments etc)
-resource "aws_route53_record" "wildcard_staging" {
-  count = var.create_alb && var.environment == "staging" ? 1 : 0
-
-  zone_id = aws_route53_zone.thoth_subdomain.zone_id
-  name    = "*.staging.thoth.tfs.services"
-  type    = "A"
-
-  alias {
-    name                   = aws_lb.main[0].dns_name
-    zone_id                = aws_lb.main[0].zone_id
-    evaluate_target_health = true
-  }
-}
-
-# Root domain points to staging for now
+# Root domain also points to ALB
 resource "aws_route53_record" "root" {
-  count = var.create_alb && var.environment == "staging" ? 1 : 0
+  count = var.create_alb ? 1 : 0
 
   zone_id = aws_route53_zone.thoth_subdomain.zone_id
   name    = "thoth.tfs.services"
@@ -146,9 +131,9 @@ output "thoth_certificate_status" {
 output "thoth_dns_records" {
   description = "DNS records created in thoth.tfs.services zone"
   value = {
-    root    = var.create_alb && var.environment == "staging" ? try(aws_route53_record.root[0].fqdn, "") : ""
-    staging = var.create_alb && var.environment == "staging" ? try(aws_route53_record.staging_alb[0].fqdn, "") : ""
-    local   = aws_route53_record.local.fqdn
+    root  = var.create_alb ? try(aws_route53_record.root[0].fqdn, "") : ""
+    app   = var.create_alb ? try(aws_route53_record.app_alb[0].fqdn, "") : ""
+    local = aws_route53_record.local.fqdn
   }
 }
 

@@ -27,6 +27,11 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
+// Health check endpoint for ECS container health checks
+Route::get('/health', function() {
+    return response()->json(['status' => 'healthy', 'timestamp' => now()->toIso8601String()]);
+});
+
 // Hello World endpoint
 Route::get('/hello', [HelloController::class, 'hello'])->name('api.hello');
 

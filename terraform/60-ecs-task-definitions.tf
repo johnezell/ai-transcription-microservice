@@ -2,6 +2,16 @@
 # Defines container configurations for all services
 
 # =============================================================================
+# EXTERNAL SECRETS (data sources for pre-existing secrets)
+# =============================================================================
+
+# TrueFire production database credentials
+# Created manually: aws secretsmanager create-secret --name tfs-ai-truefire-db-credentials
+data "aws_secretsmanager_secret" "truefire_db" {
+  name = "tfs-ai-truefire-db-credentials"
+}
+
+# =============================================================================
 # TASK DEFINITIONS
 # =============================================================================
 
@@ -15,6 +25,20 @@ resource "aws_ecs_task_definition" "laravel_api" {
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
+  # EFS Volume for shared storage - temporarily disabled pending network debugging
+  # volume {
+  #   name = "efs-shared"
+  #
+  #   efs_volume_configuration {
+  #     file_system_id          = aws_efs_file_system.shared_storage.id
+  #     transit_encryption      = "ENABLED"
+  #     authorization_config {
+  #       access_point_id = aws_efs_access_point.shared.id
+  #       iam             = "ENABLED"
+  #     }
+  #   }
+  # }
+
   container_definitions = jsonencode([
     {
       name  = "laravel"
@@ -27,6 +51,15 @@ resource "aws_ecs_task_definition" "laravel_api" {
         }
       ]
 
+      # EFS mount temporarily disabled
+      # mountPoints = [
+      #   {
+      #     sourceVolume  = "efs-shared"
+      #     containerPath = "/mnt/efs"
+      #     readOnly      = false
+      #   }
+      # ]
+
       environment = [
         {
           name  = "APP_ENV"
@@ -35,6 +68,14 @@ resource "aws_ecs_task_definition" "laravel_api" {
         {
           name  = "APP_DEBUG"
           value = var.environment == "production" ? "false" : "true"
+        },
+        {
+          name  = "APP_URL"
+          value = "https://${var.domain_name}"
+        },
+        {
+          name  = "ASSET_URL"
+          value = "https://${var.domain_name}"
         },
         {
           name  = "LOG_CHANNEL"
@@ -66,7 +107,7 @@ resource "aws_ecs_task_definition" "laravel_api" {
         },
         {
           name  = "SQS_QUEUE"
-          value = aws_sqs_queue.audio_uploads.name
+          value = aws_sqs_queue.laravel_jobs.name
         },
         {
           name  = "AWS_DEFAULT_REGION"
@@ -87,6 +128,23 @@ resource "aws_ecs_task_definition" "laravel_api" {
         {
           name  = "MUSIC_TERM_SERVICE_URL"
           value = "http://music-term-recognition.${aws_service_discovery_private_dns_namespace.main.name}:5000"
+        },
+        # Redis configuration
+        {
+          name  = "REDIS_HOST"
+          value = aws_elasticache_cluster.main[0].cache_nodes[0].address
+        },
+        {
+          name  = "REDIS_PORT"
+          value = "6379"
+        },
+        {
+          name  = "CACHE_DRIVER"
+          value = "redis"
+        },
+        {
+          name  = "SESSION_DRIVER"
+          value = "redis"
         }
       ]
 
@@ -102,6 +160,23 @@ resource "aws_ecs_task_definition" "laravel_api" {
         {
           name      = "DB_PASSWORD"
           valueFrom = "${aws_secretsmanager_secret.db_credentials.arn}:password::"
+        },
+        # TrueFire database credentials (read-only access)
+        {
+          name      = "TRUEFIRE_DB_HOST"
+          valueFrom = "${data.aws_secretsmanager_secret.truefire_db.arn}:host::"
+        },
+        {
+          name      = "TRUEFIRE_DB_DATABASE"
+          valueFrom = "${data.aws_secretsmanager_secret.truefire_db.arn}:database::"
+        },
+        {
+          name      = "TRUEFIRE_DB_USERNAME"
+          valueFrom = "${data.aws_secretsmanager_secret.truefire_db.arn}:username::"
+        },
+        {
+          name      = "TRUEFIRE_DB_PASSWORD"
+          valueFrom = "${data.aws_secretsmanager_secret.truefire_db.arn}:password::"
         }
       ]
 

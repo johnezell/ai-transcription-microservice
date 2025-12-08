@@ -58,8 +58,8 @@ for i in "${!SERVICES[@]}"; do
     
     print_status "Building ${SERVICE} using ${DOCKERFILE}..."
     
-    # Build the image
-    docker build -f ${DOCKERFILE} -t ${IMAGE_NAME}:${TAG} .
+    # Build the image for linux/amd64 (ECS Fargate requires x86_64)
+    docker build --platform linux/amd64 -f ${DOCKERFILE} -t ${IMAGE_NAME}:${TAG} .
     
     if [ $? -ne 0 ]; then
         print_error "Failed to build ${SERVICE}"

@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.local.example
 
 # Terraform files
 *.tfstate
@@ -79,4 +80,4 @@ secrets/
 
 # SSH Keys (keep public keys)
 keys/*
-!keys/*.pub
+!keys/*.pub.env.local

@@ -5,30 +5,30 @@
 # APPLICATION LOAD BALANCER (VPN-ONLY)
 # =============================================================================
 
-# ALB Security Group - IP whitelist for now (TODO: VPC peering for VPN access)
+# ALB Security Group - Open to all for staging (bastion SSH remains locked)
 resource "aws_security_group" "alb" {
   count = var.create_alb ? 1 : 0
 
   name_prefix = "${var.project_prefix}-alb-sg-"
-  description = "Security group for Public ALB - IP whitelisted"
+  description = "Security group for Public ALB"
   vpc_id      = local.vpc_id
 
-  # Allow HTTPS from whitelisted IPs
+  # Allow HTTPS from anywhere (staging is public, production can be locked down)
   ingress {
-    description = "HTTPS from whitelisted IPs"
+    description = "HTTPS from anywhere"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = var.bastion_allowed_cidrs  # Reuse bastion allowed CIDRs
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Allow HTTP from whitelisted IPs (redirect to HTTPS)
+  # Allow HTTP from anywhere (redirect to HTTPS)
   ingress {
-    description = "HTTP from whitelisted IPs"
+    description = "HTTP from anywhere"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = var.bastion_allowed_cidrs  # Reuse bastion allowed CIDRs
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # Allow all outbound

@@ -50,7 +50,7 @@ create_bastion_static_ip = true
 # Route53 and domain configuration
 route53_zone_id         = "Z07716653GDXJUDL4P879"
 route53_zone_account_id = "542876199144"
-domain_name             = "staging.thoth.tfs.services"  # Uses delegated zone thoth.tfs.services
+domain_name             = "app.thoth.tfs.services"  # Uses delegated zone thoth.tfs.services
 
 # Cross-account configuration
 shared_services_account_id = "542876199144"
@@ -102,5 +102,5 @@ budget_alert_threshold = 80
 enable_vpc_flow_logs = true
 create_alb           = true  # ALB enabled for public access
 # ECS Task Definitions
-image_tag          = "staging"
+image_tag          = "latest"
 whisper_model_size = "base" # Use "small" or "medium" for better accuracy

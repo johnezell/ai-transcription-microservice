@@ -3,6 +3,8 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\EnhancementIdeaController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\StatusController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -19,12 +21,17 @@ use Inertia\Inertia;
 */
 
 Route::get('/', function () {
-    return redirect()->route('videos.index');
+    return redirect()->route('dashboard');
 });
 
-Route::get('/dashboard', function () {
-    return redirect()->route('videos.index');
-})->name('dashboard');
+// Dashboard routes
+Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+Route::post('/dashboard/bulk-transcribe', [DashboardController::class, 'startBulkTranscription'])->name('dashboard.bulk-transcribe');
+Route::get('/dashboard/queue-status', [DashboardController::class, 'queueStatus'])->name('dashboard.queue-status');
+
+// Status check routes
+Route::get('/status', [StatusController::class, 'index'])->name('status');
+Route::get('/status/json', [StatusController::class, 'json'])->name('status.json');
 
 // Video management routes - no auth required
 Route::resource('videos', VideoController::class);

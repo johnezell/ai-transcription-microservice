@@ -235,12 +235,42 @@ resource "aws_sqs_queue" "audio_uploads" {
   tags = var.common_tags
 }
 
-# Dead letter queue
+# Dead letter queue for audio uploads
 resource "aws_sqs_queue" "audio_uploads_dlq" {
   name                      = "${var.project_prefix}-audio-uploads-dlq"
   message_retention_seconds = 1209600 # 14 days
 
   tags = var.common_tags
+}
+
+# =============================================================================
+# LARAVEL JOB QUEUES
+# =============================================================================
+
+# Main Laravel jobs queue (for transcription jobs, etc.)
+resource "aws_sqs_queue" "laravel_jobs" {
+  name                       = "${var.project_prefix}-laravel-jobs"
+  visibility_timeout_seconds = 900  # 15 minutes (for long transcription jobs)
+  message_retention_seconds  = 345600 # 4 days
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.laravel_jobs_dlq.arn
+    maxReceiveCount     = 3
+  })
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_prefix}-laravel-jobs"
+  })
+}
+
+# Dead letter queue for Laravel jobs
+resource "aws_sqs_queue" "laravel_jobs_dlq" {
+  name                      = "${var.project_prefix}-laravel-jobs-dlq"
+  message_retention_seconds = 1209600 # 14 days
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_prefix}-laravel-jobs-dlq"
+  })
 }
 
 # Queue policy to allow S3 to send messages

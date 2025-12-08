@@ -229,6 +229,22 @@ variable "database_subnet_ids" {
 }
 
 # =============================================================================
+# REDIS VARIABLES
+# =============================================================================
+
+variable "redis_node_type" {
+  description = "ElastiCache node type for Redis"
+  type        = string
+  default     = "cache.t3.micro"
+}
+
+variable "redis_engine_version" {
+  description = "Redis engine version"
+  type        = string
+  default     = "7.1"
+}
+
+# =============================================================================
 # STORAGE VARIABLES
 # =============================================================================
 
@@ -294,6 +310,28 @@ variable "shared_services_account_id" {
   description = "AWS account ID for shared services (for cross-account access)"
   type        = string
   default     = ""
+}
+
+# =============================================================================
+# TRUEFIRE VPC PEERING VARIABLES
+# =============================================================================
+
+variable "truefire_account_id" {
+  description = "TrueFire AWS account ID for VPC peering"
+  type        = string
+  default     = "522470447970"
+}
+
+variable "truefire_vpc_id" {
+  description = "TrueFire VPC ID for peering"
+  type        = string
+  default     = "vpc-a37ce6c6"
+}
+
+variable "truefire_vpc_cidr" {
+  description = "TrueFire VPC CIDR block"
+  type        = string
+  default     = "172.30.0.0/16"
 }
 
 variable "route53_zone_account_id" {
@@ -454,4 +492,35 @@ variable "music_desired_count" {
   description = "Desired number of music term recognition tasks"
   type        = number
   default     = 1
+}
+
+# Queue worker service configuration
+variable "queue_worker_cpu" {
+  description = "CPU units for queue worker task"
+  type        = string
+  default     = "512"
+}
+
+variable "queue_worker_memory" {
+  description = "Memory for queue worker task in MB"
+  type        = string
+  default     = "1024"
+}
+
+variable "queue_worker_desired_count" {
+  description = "Desired number of queue worker tasks"
+  type        = number
+  default     = 1
+}
+
+variable "queue_worker_min_count" {
+  description = "Minimum number of queue worker tasks"
+  type        = number
+  default     = 1
+}
+
+variable "queue_worker_max_count" {
+  description = "Maximum number of queue worker tasks"
+  type        = number
+  default     = 5
 }

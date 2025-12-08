@@ -224,6 +224,32 @@ resource "aws_iam_role_policy" "ecs_s3_access" {
   })
 }
 
+# Policy for SQS access (queue worker)
+resource "aws_iam_role_policy" "ecs_sqs_access" {
+  name = "sqs-access"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:GetQueueUrl",
+          "sqs:ChangeMessageVisibility"
+        ]
+        Resource = [
+          "arn:aws:sqs:${var.aws_region}:${var.aws_account_id}:${var.project_prefix}-*"
+        ]
+      }
+    ]
+  })
+}
+
 # Policy for ECS Exec
 resource "aws_iam_role_policy" "ecs_exec" {
   name = "ecs-exec-policy"
@@ -269,7 +295,8 @@ resource "aws_iam_role_policy" "ecs_secrets" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
-          "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:${var.project_prefix}-*"
+          "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:${var.project_prefix}-*",
+          "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:tfs-ai-truefire-db-credentials-*"
         ]
       }
     ]
@@ -292,6 +319,29 @@ resource "aws_iam_role_policy" "ecs_efs" {
           "elasticfilesystem:ClientRootAccess"
         ]
         Resource = "*"
+      }
+    ]
+  })
+}
+
+# Policy for TrueFire S3 cross-account access (tfstream bucket)
+resource "aws_iam_role_policy" "ecs_truefire_s3" {
+  name = "truefire-s3-access"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::tfstream",
+          "arn:aws:s3:::tfstream/*"
+        ]
       }
     ]
   })

@@ -22,6 +22,9 @@ RUN curl -sL https://deb.nodesource.com/setup_18.x | bash - \
 # Install PHP extensions
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
+# Install Redis extension
+RUN pecl install redis && docker-php-ext-enable redis
+
 # Configure PHP for large uploads
 COPY docker/php/custom.ini /usr/local/etc/php/conf.d/custom.ini
 
@@ -39,17 +42,14 @@ COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # Copy existing application directory
 COPY ./app/laravel .
 
-# Install composer dependencies first
-RUN composer install --no-interaction --no-dev --optimize-autoloader
+# Install composer dependencies (update lock file if needed, then install)
+RUN composer update --no-interaction --no-dev --optimize-autoloader
 
 # Copy .env.example as .env for build process and generate key
 RUN cp .env.example .env && php artisan key:generate
 
 # Install npm dependencies and build assets
 RUN npm ci && npm run build && rm -rf node_modules
-
-# Remove .env file after build (will be injected at runtime)
-RUN rm -f .env
 
 # Create required directories and set permissions
 RUN mkdir -p /var/www/storage/app/public/s3/jobs \
@@ -62,8 +62,11 @@ RUN mkdir -p /var/www/storage/app/public/s3/jobs \
     && chmod -R 775 /var/www/storage \
     && chmod -R 775 /var/www/bootstrap/cache
 
-# Generate optimized autoload files
-RUN php artisan optimize:clear
+# Clear file-based caches only (no database required) - while .env still exists
+RUN php artisan config:clear && php artisan route:clear && php artisan view:clear
+
+# Remove .env file after build (will be injected at runtime)
+RUN rm -f .env
 
 # Expose port 80
 EXPOSE 80

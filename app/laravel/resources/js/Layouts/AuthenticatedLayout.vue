@@ -20,7 +20,7 @@ const showingNavigationDropdown = ref(false);
                         <div class="flex">
                             <!-- Logo -->
                             <div class="flex shrink-0 items-center">
-                                <Link :href="route('videos.index')">
+                                <Link :href="route('dashboard')">
                                     <ApplicationLogo
                                         class="block h-9 w-auto fill-current text-gray-800"
                                     />
@@ -32,6 +32,12 @@ const showingNavigationDropdown = ref(false);
                                 class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex"
                             >
                                 <NavLink
+                                    :href="route('dashboard')"
+                                    :active="route().current('dashboard')"
+                                >
+                                    Dashboard
+                                </NavLink>
+                                <NavLink
                                     :href="route('videos.index')"
                                     :active="route().current('videos.*')"
                                 >
@@ -41,19 +47,20 @@ const showingNavigationDropdown = ref(false);
                                     :href="route('courses.index')"
                                     :active="route().current('courses.*')"
                                 >
-                                    Courses
-                                </NavLink>
-                                <NavLink
-                                    :href="route('enhancement-ideas.index')"
-                                    :active="route().current('enhancement-ideas.*')"
-                                >
-                                    Enhancement Ideas
+                                    Local Courses
                                 </NavLink>
                                 <NavLink
                                     :href="route('admin.terminology.index')"
                                     :active="route().current('admin.terminology.*')"
                                 >
                                     Terminology
+                                </NavLink>
+                                <NavLink
+                                    :href="route('status')"
+                                    :active="route().current('status')"
+                                    class="text-slate-500"
+                                >
+                                    Status
                                 </NavLink>
                             </div>
                         </div>
@@ -111,6 +118,12 @@ const showingNavigationDropdown = ref(false);
                 >
                     <div class="space-y-1 pb-3 pt-2">
                         <ResponsiveNavLink
+                            :href="route('dashboard')"
+                            :active="route().current('dashboard')"
+                        >
+                            Dashboard
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
                             :href="route('videos.index')"
                             :active="route().current('videos.*')"
                         >
@@ -120,13 +133,7 @@ const showingNavigationDropdown = ref(false);
                             :href="route('courses.index')"
                             :active="route().current('courses.*')"
                         >
-                            Courses
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            :href="route('enhancement-ideas.index')"
-                            :active="route().current('enhancement-ideas.*')"
-                        >
-                            Enhancement Ideas
+                            Local Courses
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
                             :href="route('admin.terminology.index')"

@@ -24,6 +24,23 @@ NC := \033[0m # No Color
 # Default target
 .DEFAULT_GOAL := help
 
+# =============================================================================
+# LOCAL DEVELOPMENT
+# =============================================================================
+
+.PHONY: local local-stop local-logs
+
+local: ## Start local Laravel (http://localhost:8080)
+	@echo "$(GREEN)Starting Thoth locally...$(NC)"
+	@docker-compose -f docker-compose.local.yml up -d --build
+	@echo "$(GREEN)✅ Thoth is running at http://localhost:8080$(NC)"
+
+local-stop: ## Stop local Laravel
+	@docker-compose -f docker-compose.local.yml down
+
+local-logs: ## View local Laravel logs
+	@docker-compose -f docker-compose.local.yml logs -f
+
 # Validate environment parameter
 .PHONY: check-env
 check-env:

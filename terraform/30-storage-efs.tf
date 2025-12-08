@@ -120,6 +120,30 @@ resource "aws_efs_access_point" "temp" {
   })
 }
 
+# Access point for shared storage (Laravel and other services)
+resource "aws_efs_access_point" "shared" {
+  file_system_id = aws_efs_file_system.shared_storage.id
+
+  posix_user {
+    gid = 33  # www-data group
+    uid = 33  # www-data user
+  }
+
+  root_directory {
+    path = "/shared"
+    creation_info {
+      owner_gid   = 33
+      owner_uid   = 33
+      permissions = "755"
+    }
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_prefix}-shared-ap"
+    Type = "shared"
+  })
+}
+
 # =============================================================================
 # SECURITY GROUP FOR EFS
 # =============================================================================
@@ -138,13 +162,22 @@ resource "aws_security_group" "efs" {
     cidr_blocks = [var.vpc_cidr]
   }
 
-  # Allow from ECS tasks
+  # Allow from ECS GPU tasks
   ingress {
-    description     = "NFS from ECS tasks"
+    description     = "NFS from ECS GPU tasks"
     from_port       = 2049
     to_port         = 2049
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs_gpu.id]
+  }
+
+  # Allow from Laravel service (for shared storage)
+  ingress {
+    description     = "NFS from Laravel service"
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = var.create_alb ? [aws_security_group.laravel_service_alb[0].id] : []
   }
 
   tags = merge(var.common_tags, {

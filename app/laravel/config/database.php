@@ -112,6 +112,37 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+        // TrueFire Legacy Database Connection (read-only access to courses/videos)
+        // 
+        // This connects to the legacy TrueFire MySQL database which contains:
+        //   - truefire.courses     - Course metadata
+        //   - channels.channels    - Links courses to video segments
+        //   - channels.segments    - Video file references (S3 paths)
+        //
+        // Video path format in segments.video:
+        //   Raw:  "mp4:guitar-solo-factory-texas-blues-videos/ccsftb-07"
+        //   S3:   "truefire2/guitar-solo-factory-texas-blues-videos/ccsftb-07_hi.mp4"
+        //
+        // Environment: Set TRUEFIRE_DB_* vars in .env.local
+        'truefire' => [
+            'driver' => 'mysql',
+            'host' => env('TRUEFIRE_DB_HOST'),
+            'port' => env('TRUEFIRE_DB_PORT', '3306'),
+            'database' => env('TRUEFIRE_DB_DATABASE', 'truefire'),
+            'username' => env('TRUEFIRE_DB_USERNAME'),
+            'password' => env('TRUEFIRE_DB_PASSWORD'),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                PDO::ATTR_TIMEOUT => 5, // 5 second connection timeout
+            ]) : [],
+        ],
+
     ],
 
     /*

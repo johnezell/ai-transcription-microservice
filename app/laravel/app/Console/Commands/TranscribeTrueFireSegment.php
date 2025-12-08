@@ -212,6 +212,7 @@ class TranscribeTrueFireSegment extends Command
             ]);
             return true;
         } catch (\Exception $e) {
+            $this->line("  S3 verification error: " . get_class($e) . " - " . $e->getMessage());
             return false;
         }
     }
@@ -337,7 +338,7 @@ class TranscribeTrueFireSegment extends Command
             
             // Use profile locally, ECS task role in production
             $profile = env('TRUEFIRE_AWS_PROFILE');
-            if ($profile) {
+            if (!empty($profile)) {
                 $config['profile'] = $profile;
             }
             // If no profile set, SDK uses default credential chain (ECS task role)

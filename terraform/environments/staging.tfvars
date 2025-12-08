@@ -31,7 +31,8 @@ bastion_public_key    = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCiXLWcWBwMDjeSLxs
 
 # Allow SSH from these CIDR blocks (locked to specific IPs for security)
 bastion_allowed_cidrs = [
-  "107.146.127.17/32" # John's current IP - update if IP changes
+  "107.146.127.17/32", # John's office IP
+  "71.28.3.179/32"     # John's home IP
 ]
 
 # Additional SSH keys to inject into bastion instances

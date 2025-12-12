@@ -23,12 +23,19 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
 
-        // Force HTTPS for all URL generation in non-local environments
-        // This ensures Inertia/Ziggy routes use HTTPS when behind ALB
-        if ($this->app->environment('staging', 'production')) {
-            URL::forceScheme('https');
-            // Also force the root URL to ensure Ziggy uses HTTPS
-            URL::forceRootUrl(config('app.url'));
+        // Force the root URL based on APP_URL config
+        // This is necessary because:
+        // - In Docker, nginx listens on port 80 but is mapped to 8080 externally
+        // - Behind ALB, we need HTTPS
+        $appUrl = config('app.url');
+        
+        if ($appUrl) {
+            URL::forceRootUrl($appUrl);
+            
+            // Force HTTPS for non-local environments
+            if ($this->app->environment('staging', 'production')) {
+                URL::forceScheme('https');
+            }
         }
     }
 }

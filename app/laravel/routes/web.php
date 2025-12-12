@@ -259,4 +259,26 @@ Route::get('/fix-status-immediate/{id}', function ($id) {
     }
 });
 
+// =============================================================================
+// ARTICLE GENERATION ROUTES
+// =============================================================================
+
+Route::prefix('articles')->name('articles.')->group(function () {
+    // Brand selection page (entry point)
+    Route::get('/select-brand', [\App\Http\Controllers\ArticleController::class, 'selectBrand'])->name('selectBrand');
+    
+    // Article list (main page)
+    Route::get('/', [\App\Http\Controllers\ArticleController::class, 'index'])->name('index');
+    
+    // Create new article page
+    Route::get('/create', [\App\Http\Controllers\ArticleController::class, 'create'])->name('create');
+    
+    // Article settings page (must be before {article} route)
+    Route::get('/settings', [\App\Http\Controllers\ArticleController::class, 'settings'])->name('settings');
+    
+    // View/edit single article
+    Route::get('/{article}', [\App\Http\Controllers\ArticleController::class, 'show'])->name('show');
+    Route::get('/{article}/edit', [\App\Http\Controllers\ArticleController::class, 'edit'])->name('edit');
+});
+
 require __DIR__.'/auth.php';

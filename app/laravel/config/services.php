@@ -24,6 +24,14 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'aws' => [
+        'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+    ],
+
+    'bedrock' => [
+        'default_model' => env('BEDROCK_DEFAULT_MODEL', 'us.anthropic.claude-haiku-4-5-20251001-v1:0'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_KEY'),
     ],

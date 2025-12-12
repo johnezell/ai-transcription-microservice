@@ -441,3 +441,47 @@ Route::put('/videos/{id}/status', function($id) {
         ], 500);
     }
 });
+
+// =============================================================================
+// ARTICLE GENERATION API ROUTES
+// =============================================================================
+
+Route::prefix('articles')->group(function () {
+    // List all articles (with pagination and brand filtering)
+    Route::get('/', [\App\Http\Controllers\Api\ArticleController::class, 'index']);
+    
+    // Get a single article
+    Route::get('/{id}', [\App\Http\Controllers\Api\ArticleController::class, 'show']);
+    
+    // Create article from Thoth video transcript
+    Route::post('/from-video', [\App\Http\Controllers\Api\ArticleController::class, 'createFromVideo']);
+    
+    // Create article from raw transcript text
+    Route::post('/from-transcript', [\App\Http\Controllers\Api\ArticleController::class, 'createFromTranscript']);
+    
+    // Create article from YouTube URL
+    Route::post('/from-youtube', [\App\Http\Controllers\Api\ArticleController::class, 'createFromYoutube']);
+    
+    // Create article from uploaded video file
+    Route::post('/from-upload', [\App\Http\Controllers\Api\ArticleController::class, 'createFromUpload']);
+    
+    // Create article from TrueFire segment URL
+    Route::post('/from-truefire', [\App\Http\Controllers\Api\ArticleController::class, 'createFromTruefire']);
+    
+    // Update an article
+    Route::put('/{id}', [\App\Http\Controllers\Api\ArticleController::class, 'update']);
+    
+    // Delete an article (soft delete)
+    Route::delete('/{id}', [\App\Http\Controllers\Api\ArticleController::class, 'destroy']);
+    
+    // Comments
+    Route::get('/{id}/comments', [\App\Http\Controllers\Api\ArticleController::class, 'getComments']);
+    Route::post('/{id}/comments', [\App\Http\Controllers\Api\ArticleController::class, 'addComment']);
+    Route::delete('/{articleId}/comments/{commentId}', [\App\Http\Controllers\Api\ArticleController::class, 'deleteComment']);
+});
+
+// Brand settings for article generation
+Route::prefix('article-settings')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\ArticleController::class, 'getSettings']);
+    Route::put('/', [\App\Http\Controllers\Api\ArticleController::class, 'updateSettings']);
+});

@@ -224,12 +224,18 @@ class AudioExtractionJob implements ShouldQueue
     
     /**
      * Download a file from S3 (TrueFire bucket).
+     * Note: TrueFire S3 files have incorrect Content-Encoding header (UTF-8),
+     * so we need to disable automatic content decoding.
      */
     private function downloadFromS3(string $bucket, string $key, string $targetPath): void
     {
         $config = [
             'version' => 'latest',
             'region' => 'us-east-1',
+            // Disable automatic content decoding to handle files with invalid Content-Encoding headers
+            'http' => [
+                'decode_content' => false,
+            ],
         ];
         
         // Use profile locally, ECS task role in production
@@ -249,7 +255,10 @@ class AudioExtractionJob implements ShouldQueue
         $result = $s3Client->getObject([
             'Bucket' => $bucket,
             'Key' => $key,
-            'SaveAs' => $targetPath
+            'SaveAs' => $targetPath,
+            '@http' => [
+                'decode_content' => false,
+            ],
         ]);
         
         Log::info('S3 download completed', [

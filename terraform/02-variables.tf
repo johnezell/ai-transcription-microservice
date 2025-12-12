@@ -524,3 +524,20 @@ variable "queue_worker_max_count" {
   type        = number
   default     = 5
 }
+
+# =============================================================================
+# BEDROCK / AI VARIABLES
+# =============================================================================
+
+variable "bedrock_api_key" {
+  description = "AWS Bedrock API Key (bearer token) for article generation"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "bedrock_default_model" {
+  description = "Default Bedrock model ID for article generation"
+  type        = string
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+}

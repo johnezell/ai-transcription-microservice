@@ -56,6 +56,13 @@ const showingNavigationDropdown = ref(false);
                                     Terminology
                                 </NavLink>
                                 <NavLink
+                                    :href="route('articles.index')"
+                                    :active="route().current('articles.*')"
+                                    class="text-emerald-600"
+                                >
+                                    Articles
+                                </NavLink>
+                                <NavLink
                                     :href="route('status')"
                                     :active="route().current('status')"
                                     class="text-slate-500"
@@ -140,6 +147,12 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('admin.terminology.*')"
                         >
                             Terminology
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('articles.index')"
+                            :active="route().current('articles.*')"
+                        >
+                            Articles
                         </ResponsiveNavLink>
                     </div>
                 </div>

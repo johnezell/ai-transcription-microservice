@@ -19,18 +19,20 @@ resource "aws_secretsmanager_secret_version" "laravel" {
   secret_id = aws_secretsmanager_secret.laravel.id
 
   secret_string = jsonencode({
-    APP_KEY     = "base64:${base64encode(random_password.laravel_app_key.result)}"
-    DB_HOST     = aws_rds_cluster.main.endpoint
-    DB_PORT     = "3306"
-    DB_DATABASE = var.db_name
-    DB_USERNAME = var.db_username
-    DB_PASSWORD = random_password.db_master.result
-    REDIS_HOST  = "${var.project_prefix}-redis.${aws_service_discovery_private_dns_namespace.main.name}"
-    REDIS_PORT  = "6379"
-    S3_BUCKET   = aws_s3_bucket.audio_input.id
-    S3_REGION   = var.aws_region
-    QUEUE_NAME  = aws_sqs_queue.audio_uploads.name
-    API_URL     = "https://${var.domain_name}"
+    APP_KEY                   = "base64:${base64encode(random_password.laravel_app_key.result)}"
+    DB_HOST                   = aws_rds_cluster.main.endpoint
+    DB_PORT                   = "3306"
+    DB_DATABASE               = var.db_name
+    DB_USERNAME               = var.db_username
+    DB_PASSWORD               = random_password.db_master.result
+    REDIS_HOST                = "${var.project_prefix}-redis.${aws_service_discovery_private_dns_namespace.main.name}"
+    REDIS_PORT                = "6379"
+    S3_BUCKET                 = aws_s3_bucket.audio_input.id
+    S3_REGION                 = var.aws_region
+    QUEUE_NAME                = aws_sqs_queue.audio_uploads.name
+    API_URL                   = "https://${var.domain_name}"
+    AWS_BEARER_TOKEN_BEDROCK  = var.bedrock_api_key
+    BEDROCK_DEFAULT_MODEL     = var.bedrock_default_model
   })
 }
 

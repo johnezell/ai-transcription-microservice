@@ -93,8 +93,18 @@ class TranscriptionController extends Controller
         // Find the transcription log
         $log = TranscriptionLog::where('job_id', $jobId)->first();
 
-        // In case job_id is actually a video ID
+        // In case job_id is actually a video ID (legacy behavior)
         $video = Video::find($jobId);
+        
+        // If not found by ID, try to find video via the transcription log
+        if (!$video && $log && $log->video_id) {
+            $video = Video::find($log->video_id);
+        }
+        
+        // Also try to find video by transcription_job_id in metadata (for upload workflow)
+        if (!$video) {
+            $video = Video::where('metadata->transcription_job_id', $jobId)->first();
+        }
 
         if (!$log && !$video) {
             return response()->json([
@@ -428,8 +438,8 @@ class TranscriptionController extends Controller
                     ]);
                 }
                 
-                // Only trigger terminology recognition after the transcription is finished and it's safe to do so
-                // We wait for the transaction to finish first to avoid race conditions
+                // Phase 1: Just update transcription status - no automatic terminology or article generation
+                // Terminology recognition and article generation are Phase 2/3 operations
                 if (isset($responseData['transcript_path']) && 
                     !$isTerminologyCallback && 
                     $videoData['status'] === 'transcribed') {
@@ -438,21 +448,41 @@ class TranscriptionController extends Controller
                         // Fetch the video again to ensure we have the latest data
                         $videoForTerminology = Video::find($video->id);
                         
-                        // Check if we have a transcript path
-                        if (!empty($videoForTerminology->transcript_path) && file_exists($videoForTerminology->transcript_path)) {
-                            // Schedule the task to run after this transaction is committed
-                            DB::afterCommit(function () use ($video) {
-                                Log::info('Automatically triggering terminology recognition after transcription in afterCommit', [
-                                    'video_id' => $video->id
+                        // Mark video as completed (transcription done - Phase 1 complete)
+                        $videoData['status'] = 'completed';
+                        
+                        // Check if there's an article waiting for this transcription
+                        // Just update the article with the transcript - don't auto-generate
+                        $waitingArticle = \App\Models\Article::where('video_id', $video->id)
+                            ->where('status', 'generating')
+                            ->whereNull('transcript')
+                            ->first();
+                        
+                        if ($waitingArticle) {
+                            $transcriptText = $videoForTerminology->transcript_text ?? '';
+                            
+                            DB::afterCommit(function () use ($waitingArticle, $videoForTerminology, $transcriptText) {
+                                Log::info('Transcription completed for article - ready for Phase 2 article generation', [
+                                    'article_id' => $waitingArticle->id,
+                                    'video_id' => $videoForTerminology->id,
+                                    'transcript_length' => strlen($transcriptText),
                                 ]);
                                 
-                                // Use a queued job rather than direct call to avoid race conditions
-                                TerminologyRecognitionJob::dispatch($video)->delay(now()->addSeconds(2));
+                                // Clean up the title (remove Downloading:/Transcribing:/Processing: prefixes)
+                                $cleanTitle = preg_replace('/^(Downloading|Transcribing|Processing):\s*/', '', $waitingArticle->title);
+                                
+                                // Update article with transcript and set to 'draft' (ready for Phase 2 AI generation)
+                                $waitingArticle->update([
+                                    'title' => $cleanTitle,
+                                    'transcript' => $transcriptText ?: null,
+                                    'content' => '<p>Transcription complete! Ready for article generation.</p>',
+                                    'status' => 'draft', // Transcription complete, ready for Phase 2 AI generation
+                                ]);
                             });
                         }
                     } catch (\Exception $e) {
                         // Just log the error but don't fail the whole process
-                        Log::error('Failed to schedule terminology recognition: ' . $e->getMessage(), [
+                        Log::error('Failed to update article after transcription: ' . $e->getMessage(), [
                             'video_id' => $video->id,
                             'error' => $e->getMessage()
                         ]);

@@ -17,4 +17,14 @@ export default defineConfig({
             },
         }),
     ],
+    server: {
+        host: '0.0.0.0',
+        port: parseInt(process.env.VITE_PORT || '3005'),
+        hmr: {
+            host: process.env.VITE_HMR_HOST || 'localhost',
+        },
+        watch: {
+            usePolling: true, // Required for Docker file watching
+        },
+    },
 });

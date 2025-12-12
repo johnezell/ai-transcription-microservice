@@ -28,18 +28,156 @@ NC := \033[0m # No Color
 # LOCAL DEVELOPMENT
 # =============================================================================
 
-.PHONY: local local-stop local-logs
+.PHONY: local local-stop local-logs local-dev local-build local-shell
 
-local: ## Start local Laravel (http://localhost:8080)
+local: ## Start local Laravel (http://localhost:8080) - uses pre-built assets
 	@echo "$(GREEN)Starting Thoth locally...$(NC)"
 	@docker-compose -f docker-compose.local.yml up -d --build
 	@echo "$(GREEN)✅ Thoth is running at http://localhost:8080$(NC)"
+	@echo "$(YELLOW)Note: Using pre-built assets. Run 'make local-dev' for hot-reload.$(NC)"
 
-local-stop: ## Stop local Laravel
-	@docker-compose -f docker-compose.local.yml down
+local-dev: ## Start with Vite hot-reload for UI development
+	@echo "$(GREEN)Starting Thoth with Vite hot-reload...$(NC)"
+	@docker-compose -f docker-compose.local.yml --profile dev up -d --build
+	@echo "$(GREEN)✅ Thoth is running:$(NC)"
+	@echo "   - Laravel: http://localhost:8080"
+	@echo "   - Vite:    http://localhost:3005"
+	@echo "$(YELLOW)Frontend changes will hot-reload automatically!$(NC)"
+
+local-stop: ## Stop all local services
+	@docker-compose -f docker-compose.local.yml --profile dev down
 
 local-logs: ## View local Laravel logs
 	@docker-compose -f docker-compose.local.yml logs -f
+
+local-logs-vite: ## View Vite dev server logs
+	@docker-compose -f docker-compose.local.yml logs -f vite
+
+local-build: ## Build frontend assets for production-like testing
+	@echo "$(GREEN)Building frontend assets...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel npm install
+	@docker-compose -f docker-compose.local.yml exec laravel npm run build
+	@echo "$(GREEN)✅ Frontend assets built$(NC)"
+
+local-shell: ## Open shell in Laravel container
+	@docker-compose -f docker-compose.local.yml exec laravel bash
+
+local-npm: ## Run npm command in container (usage: make local-npm CMD="install axios")
+ifndef CMD
+	@echo "$(RED)Error: CMD not specified$(NC)"
+	@echo "Usage: make local-npm CMD=\"install axios\""
+	@exit 1
+endif
+	@docker-compose -f docker-compose.local.yml exec laravel npm $(CMD)
+
+# =============================================================================
+# TESTING
+# =============================================================================
+
+.PHONY: test test-unit test-feature test-coverage test-filter
+
+test: ## Run all tests locally (in Docker)
+	@echo "$(GREEN)Running all tests...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --parallel
+	@echo "$(GREEN)✅ Tests completed$(NC)"
+
+test-unit: ## Run unit tests only
+	@echo "$(GREEN)Running unit tests...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --testsuite=Unit
+	@echo "$(GREEN)✅ Unit tests completed$(NC)"
+
+test-feature: ## Run feature tests only
+	@echo "$(GREEN)Running feature tests...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --testsuite=Feature
+	@echo "$(GREEN)✅ Feature tests completed$(NC)"
+
+test-coverage: ## Run tests with coverage report
+	@echo "$(GREEN)Running tests with coverage...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --coverage
+	@echo "$(GREEN)✅ Coverage report generated$(NC)"
+
+test-filter: ## Run specific test (usage: make test-filter FILTER=testname)
+ifndef FILTER
+	@echo "$(RED)Error: FILTER not specified$(NC)"
+	@echo "Usage: make test-filter FILTER=test_can_list_articles"
+	@exit 1
+endif
+	@echo "$(GREEN)Running tests matching: $(FILTER)...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --filter=$(FILTER)
+
+test-articles: ## Run article-related tests only
+	@echo "$(GREEN)Running article tests...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --filter=Article
+	@echo "$(GREEN)✅ Article tests completed$(NC)"
+
+test-youtube: ## Run YouTube article tests (mocked)
+	@echo "$(GREEN)Running YouTube article tests...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --filter=YouTubeArticleTest
+	@echo "$(GREEN)✅ YouTube tests completed$(NC)"
+
+test-youtube-e2e: ## Run YouTube REAL E2E tests (hits YouTube API)
+	@echo "$(GREEN)Running YouTube E2E tests (real API calls)...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --filter=YouTubeE2ETest
+	@echo "$(GREEN)✅ YouTube E2E tests completed$(NC)"
+
+test-youtube-full: ## Run full YouTube E2E with Bedrock generation
+	@echo "$(GREEN)Running full YouTube E2E tests (includes Bedrock)...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test --filter=YouTubeE2ETest --group=bedrock
+	@echo "$(GREEN)✅ Full E2E tests completed$(NC)"
+
+test-fresh: ## Run tests with fresh database
+	@echo "$(GREEN)Running tests with fresh database...$(NC)"
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan migrate:fresh --env=testing
+	@docker-compose -f docker-compose.local.yml exec laravel php artisan test
+	@echo "$(GREEN)✅ Tests completed$(NC)"
+
+# =============================================================================
+# E2E BROWSER TESTS (Playwright)
+# =============================================================================
+
+.PHONY: test-e2e test-e2e-ui test-e2e-headed test-e2e-debug test-e2e-report
+
+test-e2e: ## Run E2E browser tests (requires local server running)
+	@echo "$(GREEN)Running E2E browser tests with Playwright...$(NC)"
+	@echo "$(YELLOW)Note: Make sure local server is running (make local or make local-dev)$(NC)"
+	@cd app/laravel && npm run test:e2e
+	@echo "$(GREEN)✅ E2E tests completed$(NC)"
+
+test-e2e-ui: ## Run E2E tests with interactive UI
+	@echo "$(GREEN)Opening Playwright Test UI...$(NC)"
+	@cd app/laravel && npm run test:e2e:ui
+
+test-e2e-headed: ## Run E2E tests in headed browser (visible)
+	@echo "$(GREEN)Running E2E tests in headed mode...$(NC)"
+	@cd app/laravel && npm run test:e2e:headed
+
+test-e2e-debug: ## Run E2E tests in debug mode
+	@echo "$(GREEN)Running E2E tests in debug mode...$(NC)"
+	@cd app/laravel && npm run test:e2e:debug
+
+test-e2e-report: ## Show last E2E test report
+	@echo "$(GREEN)Opening E2E test report...$(NC)"
+	@cd app/laravel && npm run test:e2e:report
+
+test-e2e-brand: ## Run brand selection E2E tests
+	@echo "$(GREEN)Running brand selection E2E tests...$(NC)"
+	@cd app/laravel && npx playwright test brand-selection
+
+test-e2e-articles: ## Run articles index E2E tests
+	@echo "$(GREEN)Running articles index E2E tests...$(NC)"
+	@cd app/laravel && npx playwright test articles-index
+
+test-e2e-create: ## Run create article E2E tests
+	@echo "$(GREEN)Running create article E2E tests...$(NC)"
+	@cd app/laravel && npx playwright test create-article
+
+test-e2e-settings: ## Run settings page E2E tests
+	@echo "$(GREEN)Running settings E2E tests...$(NC)"
+	@cd app/laravel && npx playwright test settings
+
+test-e2e-flow: ## Run full navigation flow E2E tests
+	@echo "$(GREEN)Running navigation flow E2E tests...$(NC)"
+	@cd app/laravel && npx playwright test navigation-flow
 
 # Validate environment parameter
 .PHONY: check-env
@@ -246,10 +384,29 @@ help:
 	@echo ""
 	@echo "Usage: make <target> ENV=<environment>"
 	@echo ""
+	@echo "$(YELLOW)Local Development:$(NC)"
+	@echo "  local                - Start backend only (pre-built assets)"
+	@echo "  local-dev            - Start with Vite hot-reload for UI dev"
+	@echo "  local-stop           - Stop all local services"
+	@echo "  local-logs           - View Laravel logs"
+	@echo "  local-logs-vite      - View Vite dev server logs"
+	@echo "  local-build          - Build frontend assets"
+	@echo "  local-shell          - Open shell in Laravel container"
+	@echo "  local-npm            - Run npm command (CMD=\"...\")"
+	@echo ""
+	@echo "$(YELLOW)Testing:$(NC)"
+	@echo "  test                 - Run all tests locally"
+	@echo "  test-unit            - Run unit tests only"
+	@echo "  test-feature         - Run feature tests only"
+	@echo "  test-articles        - Run article-related tests only"
+	@echo "  test-coverage        - Run tests with coverage report"
+	@echo "  test-filter          - Run specific test (FILTER=testname)"
+	@echo "  test-fresh           - Run tests with fresh database"
+	@echo ""
 	@echo "$(YELLOW)Environments:$(NC)"
 	@echo "  dev, staging, production"
 	@echo ""
-	@echo "$(YELLOW)Common targets:$(NC)"
+	@echo "$(YELLOW)Terraform targets:$(NC)"
 	@echo "  init                 - Initialize Terraform"
 	@echo "  plan                 - Plan infrastructure changes"
 	@echo "  apply                - Apply infrastructure changes"
@@ -278,10 +435,13 @@ help:
 	@echo "  apply-production     - Apply production environment"
 	@echo ""
 	@echo "$(YELLOW)Examples:$(NC)"
+	@echo "  make local-dev                                    - Start with UI hot-reload"
+	@echo "  make local                                        - Start backend only"
+	@echo "  make test                                         - Run all tests"
+	@echo "  make test-filter FILTER=test_can_list_articles    - Run specific test"
+	@echo "  make local-npm CMD=\"install lodash\"               - Run npm command"
 	@echo "  make plan ENV=staging"
 	@echo "  make apply ENV=staging"
-	@echo "  make plan-target ENV=staging TARGET=aws_instance.bastion"
-	@echo "  make ssh-bastion ENV=staging"
 
 .PHONY: check-docker
 check-docker:

@@ -3,10 +3,16 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "test:e2e": "playwright test",
+        "test:e2e:ui": "playwright test --ui",
+        "test:e2e:headed": "playwright test --headed",
+        "test:e2e:debug": "playwright test --debug",
+        "test:e2e:report": "playwright show-report"
     },
     "devDependencies": {
         "@inertiajs/vue3": "^2.0.0",
+        "@playwright/test": "^1.57.0",
         "@tailwindcss/forms": "^0.5.3",
         "@tailwindcss/vite": "^4.0.0",
         "@vitejs/plugin-vue": "^5.0.0",
@@ -20,6 +26,13 @@
         "vue": "^3.4.0"
     },
     "dependencies": {
+        "@tiptap/extension-color": "^3.13.0",
+        "@tiptap/extension-highlight": "^3.13.0",
+        "@tiptap/extension-link": "^3.13.0",
+        "@tiptap/extension-placeholder": "^3.13.0",
+        "@tiptap/extension-text-style": "^3.13.0",
+        "@tiptap/starter-kit": "^3.13.0",
+        "@tiptap/vue-3": "^3.13.0",
         "vuedraggable": "^4.1.0"
     }
 }

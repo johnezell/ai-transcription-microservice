@@ -1,5 +1,10 @@
 # Local development with AWS credential chain
 # Uses ~/.aws for credentials (never hardcode keys)
+#
+# Usage:
+#   make local          - Start backend only (pre-built assets)
+#   make local-dev      - Start backend + Vite hot-reload for UI development
+#   make local-build    - Build frontend assets for production-like testing
 
 services:
   laravel:
@@ -23,10 +28,10 @@ services:
       # Database - SQLite for local (ECS uses RDS)
       - DB_CONNECTION=sqlite
       - DB_DATABASE=/var/www/database/database.sqlite
-      # Queue - use SQS for ECS workers
-      - QUEUE_CONNECTION=sqs
-      - SQS_PREFIX=https://sqs.us-east-1.amazonaws.com/087439708020
-      - SQS_QUEUE=tfs-ai-laravel-jobs
+      # Queue - use sync for local (immediate processing, no external dependencies)
+      - QUEUE_CONNECTION=sync
+      # Bedrock API Key (bearer token authentication)
+      - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK:-}
       # Redis - for cache/session only
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -35,8 +40,26 @@ services:
       # S3 Storage
       - AWS_BUCKET=tfs-ai-transcription-staging-audio-input-staging
       - FILESYSTEM_DISK=s3
+      # Transcription service URL (for video processing with Whisper)
+      - TRANSCRIPTION_SERVICE_URL=http://transcription-service:5000
     depends_on:
       - redis
+
+  # Vite dev server for frontend hot-reloading
+  # Only started with: docker-compose -f docker-compose.local.yml --profile dev up
+  vite:
+    image: node:20-alpine
+    container_name: thoth-vite
+    profiles:
+      - dev
+    working_dir: /app
+    ports:
+      - "3005:3005"
+    volumes:
+      - ./app/laravel:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3005"
+    environment:
+      - VITE_HMR_HOST=localhost
 
   redis:
     image: redis:7-alpine
@@ -44,6 +67,26 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
+
+  # Transcription service (Whisper) - for video processing
+  # Only started with: docker-compose -f docker-compose.local.yml --profile whisper up
+  transcription-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.transcription
+    container_name: thoth-transcription
+    profiles:
+      - whisper
+    restart: unless-stopped
+    volumes:
+      - ./app/services/transcription:/app
+      - ./app/laravel/storage/app/public/s3:/var/www/storage/app/public/s3:delegated
+    environment:
+      - LARAVEL_API_URL=http://laravel/api
+      - WHISPER_MODEL=base
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "5051:5000"
 
 volumes:
   redis-data:
